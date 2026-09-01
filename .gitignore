@@ -1,0 +1,17 @@
+# Build outputs
+build/
+build-*/
+dist/
+tests/build-host/
+*.elf
+*.nso
+*.npdm
+subsdk9
+
+# Editors / OS
+.vs/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
