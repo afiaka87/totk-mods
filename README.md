@@ -14,6 +14,7 @@ Exlaunch authors are owed attribution here.
 |---|---|---|
 | Infinite Ascend | `infinite-ascend/` | Ascend reach extended from ~20 m to 10,000 m; native checks kept. |
 | Phantom Foothold | `phantom-foothold/` | Climb every surface with collision, ceilings included; no game files replaced. |
+| Self Recall | `self-recall/` | Recall Link through his own movement and animation history. |
 
 All code here is MIT-licensed (see `LICENSE`). The mods are exlaunch modules; exlaunch itself is not
 included - see `NOTICE`.
