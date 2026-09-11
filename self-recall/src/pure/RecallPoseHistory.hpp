@@ -1,103 +1,15 @@
 #pragma once
-
-#include <atomic>
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
-#include <limits>
-#include <utility>
-
-#include "RecallHistory.hpp"
+#include "RecallPoseFrame.hpp"
+#include "RecallPosePayload.hpp"
+#include "RecallGameTime.hpp"
 
 namespace self_recall::pure {
-
-inline constexpr std::uint16_t kPoseModelLimit = 32;
-inline constexpr std::uint16_t kPoseBoneLimit = 512;
-inline constexpr std::uint16_t kPoseMaterialLimit = 512;
-inline constexpr std::size_t kPoseHistoryByteLimit = 128u * 1024u * 1024u;
-
-struct alignas(16) RecordedBoneMatrix {
-    std::uint32_t words[16]{};
-};
-static_assert(sizeof(RecordedBoneMatrix) == 64);
-
-struct RecordedModelIdentity {
-    std::uint64_t unit = 0;
-    std::uint64_t skeleton = 0;
-    std::uint64_t resource = 0;
-    std::uint16_t firstBone = 0;
-    std::uint16_t boneCount = 0;
-    std::uint16_t firstMaterial = 0;
-    std::uint16_t materialCount = 0;
-};
-static_assert(sizeof(RecordedModelIdentity) == 32);
-
-struct RecordedModelPose {
-    float renderOrigin[3]{};
-    std::uint32_t visibility = 0;
-    std::uint32_t originRelative = 0;
-    std::uint32_t queueAdmission = 0;
-    RecordedModelIdentity identity{};
-};
-static_assert(sizeof(RecordedModelPose) == 56);
-
-struct PoseFrameKey {
-    std::uint64_t serial = 0;
-    std::uint32_t generation = 0;
-    std::uint32_t slot = 0;
-
-    bool operator==(const PoseFrameKey&) const = default;
-    explicit operator bool() const { return serial != 0 && generation != 0; }
-};
-
-struct PoseFrameHeader {
-    PoseFrameKey key{};
-    std::uint64_t frameEpoch = 0;
-    std::uint64_t elapsedNanoseconds = 0;
-    std::uint32_t worldGeneration = 0;
-    std::uint32_t modelGeneration = 0;
-    HistorySample route{};
-    float wristMatrix[12]{};
-    std::uint16_t modelCount = 0;
-    std::uint16_t boneCount = 0;
-    std::uint16_t materialCount = 0;
-    bool haveWrist = false;
-    std::uint8_t bodyModelCount = 0;
-    std::uint8_t reserved[8]{}; // Existing equipment-effect mask; preserve verbatim.
-    float waterHeight = 0;
-    bool haveWaterHeight = false;
-    std::uint8_t waterPadding[11]{};
-};
-static_assert(sizeof(PoseFrameHeader) % 16 == 0);
-
-struct RecordedVisibility {
-    std::uint32_t bones[kPoseBoneLimit / 32]{};
-    std::uint32_t materials[kPoseMaterialLimit / 32]{};
-};
-static_assert(sizeof(RecordedVisibility) == 128);
-
-inline bool visibilityBit(const std::uint32_t* bits, std::uint16_t index) {
-    return (bits[index / 32] & (1u << (index % 32))) != 0;
-}
-
-struct RecordedPoseFrame {
-    PoseFrameHeader header{};
-    RecordedModelPose models[kPoseModelLimit]{};
-    RecordedBoneMatrix bones[kPoseBoneLimit]{};
-    RecordedVisibility visible{};
-};
-
-struct PoseFrameInput {
-    PoseFrameHeader header{};  // key is assigned by the history
-    const RecordedModelPose* models = nullptr;
-    const RecordedBoneMatrix* bones = nullptr;
-    RecordedVisibility visible{};
-};
 
 struct PoseHistorySlot {
     std::atomic<std::uint32_t> claims{0};
     std::uint32_t reserved[3]{};
-    RecordedPoseFrame frame{};
+    PoseFrameHeader header{};
+    std::uint32_t firstBlock = 0, payloadBytes = 0;
 };
 
 static_assert(sizeof(PoseHistorySlot) * kHistoryCapacity <= kPoseHistoryByteLimit);
@@ -110,6 +22,7 @@ enum class PoseRecordStatus : std::uint8_t {
     TimeWentBackwards,
     ReaderBusy,
     SequenceExhausted,
+    StorageFull,
 };
 
 struct PoseRecordReport {
@@ -126,34 +39,41 @@ public:
     PoseReadLease(const PoseReadLease&) = delete;
     PoseReadLease& operator=(const PoseReadLease&) = delete;
     PoseReadLease(PoseReadLease&& other) noexcept
-        : slot_(std::exchange(other.slot_, nullptr)) {}
+        : slot_(std::exchange(other.slot_, nullptr)), decoded_(std::exchange(other.decoded_, nullptr)) {}
     PoseReadLease& operator=(PoseReadLease&& other) noexcept {
         if (this != &other) {
             release();
             slot_ = std::exchange(other.slot_, nullptr);
+            decoded_ = std::exchange(other.decoded_, nullptr);
         }
         return *this;
     }
 
     explicit operator bool() const { return slot_ != nullptr; }
-    const RecordedPoseFrame* get() const { return slot_ ? &slot_->frame : nullptr; }
+    const RecordedPoseFrame* get() const { return decoded_ ? &decoded_->frame : nullptr; }
     void release() {
         if (slot_) {
             slot_->claims.fetch_sub(1, std::memory_order_release);
             slot_ = nullptr;
+            decoded_->busy.store(false, std::memory_order_release);
+            decoded_ = nullptr;
         }
     }
 
 private:
     friend class PoseHistory;
-    explicit PoseReadLease(PoseHistorySlot* slot) : slot_(slot) {}
+    PoseReadLease(PoseHistorySlot* slot, PoseDecodedFrame* decoded) : slot_(slot), decoded_(decoded) {}
     PoseHistorySlot* slot_ = nullptr;
+    PoseDecodedFrame* decoded_ = nullptr;
 };
 
 class PoseHistory {
 public:
-    PoseHistory(PoseHistorySlot* slots, std::uint32_t capacity)
-        : slots_(slots), capacity_(slots && capacity <= kHistoryCapacity ? capacity : 0) {}
+    PoseHistory(PoseHistorySlot* slots, std::uint32_t capacity, std::span<PosePayloadBlock> blocks)
+        : slots_(slots), capacity_(slots && capacity <= kHistoryCapacity ? capacity : 0), payload_(blocks) {}
+
+    const PosePayloadUsage& payloadUsage() const { return payload_.usage(); }
+    std::uint64_t readFailures() const { return readFailures_.load(std::memory_order_relaxed); }
     PoseHistory(const PoseHistory&) = delete;
     PoseHistory& operator=(const PoseHistory&) = delete;
 
@@ -171,6 +91,7 @@ public:
         head_ = 0;
         nextSerial_ = 1;
         havePrevious_ = false;
+        reclaimExpired();
     }
 
     PoseRecordReport record(const PoseFrameInput& input) {
@@ -214,6 +135,9 @@ public:
                 return {PoseRecordStatus::TimeWentBackwards, {}};
         }
 
+        // Expiry follows the incoming clock even when a previous allocation was refused.
+        trimBefore(h.elapsedNanoseconds > kRecallWindowNanoseconds ?
+                   h.elapsedNanoseconds - kRecallWindowNanoseconds : 0, false);
         auto& slot = slots_[head_];
         std::uint32_t expected = 0;
         if (!slot.claims.compare_exchange_strong(expected, kWriter,
@@ -221,12 +145,19 @@ public:
                                                 std::memory_order_relaxed))
             return {PoseRecordStatus::ReaderBusy, {}};
 
+        const auto bytes = encodePosePayload(input, scratch_);
+        if (bytes && !payload_.canReplace(slot.payloadBytes, bytes)) reclaimExpired();
+        if (!bytes || !payload_.canReplace(slot.payloadBytes, bytes)) {
+            slot.claims.store(0, std::memory_order_release);
+            ++storageFailures_;
+            return {PoseRecordStatus::StorageFull, {}};
+        }
+        payload_.release(slot.firstBlock, slot.payloadBytes);
+        slot.firstBlock = payload_.store({scratch_.data(), bytes});
+        slot.payloadBytes = bytes;
         const PoseFrameKey key{nextSerial_++, currentGeneration, head_};
-        slot.frame.header = h;
-        slot.frame.header.key = key;
-        std::memcpy(slot.frame.models, input.models, sizeof(*input.models) * h.modelCount);
-        std::memcpy(slot.frame.bones, input.bones, sizeof(*input.bones) * h.boneCount);
-        slot.frame.visible = input.visible;
+        slot.header = h;
+        slot.header.key = key;
         slot.claims.store(0, std::memory_order_release);
 
         previousEpoch_ = h.frameEpoch;
@@ -257,20 +188,61 @@ public:
         return lease;
     }
 
+    bool copyHeader(PoseFrameKey key, PoseFrameHeader& out) const {
+        if (!key || key.slot >= capacity_ || key.generation != generation() ||
+            key.serial < oldestSerial_.load(std::memory_order_acquire)) return false;
+        auto* slot = slots_ + key.slot;
+        auto readers = slot->claims.load(std::memory_order_relaxed);
+        while (readers < kWriter - 1) {
+            if (!slot->claims.compare_exchange_weak(readers, readers + 1,
+                    std::memory_order_acquire, std::memory_order_relaxed)) continue;
+            const bool valid = slot->header.key == key && key.generation == generation() &&
+                key.serial >= oldestSerial_.load(std::memory_order_acquire);
+            if (valid) out = slot->header;
+            slot->claims.fetch_sub(1, std::memory_order_release);
+            return valid;
+        }
+        return false;
+    }
+
+    bool copyHeaderBefore(PoseFrameKey anchor, std::uint32_t framesBack, PoseFrameHeader& out) const {
+        PoseFrameHeader latest;
+        if (framesBack >= capacity_ || anchor.serial <= framesBack || !copyHeader(anchor, latest)) return false;
+        if (!framesBack) { out = latest; return true; }
+        return copyHeader({anchor.serial - framesBack, anchor.generation,
+                           (anchor.slot + capacity_ - framesBack) % capacity_}, out);
+    }
+
+    bool contains(PoseFrameKey key) const {
+        PoseFrameHeader header;
+        return copyHeader(key, header);
+    }
+
     void trimToWindow(std::uint64_t windowNanoseconds) {
         if (!havePrevious_) return;
         const auto cutoff = previousTime_ > windowNanoseconds
             ? previousTime_ - windowNanoseconds : 0;
+        trimBefore(cutoff, true);
+    }
+
+private:
+    void trimBefore(std::uint64_t cutoff, bool keepLatest) {
         auto count = count_.load(std::memory_order_relaxed);
+        if (!count) return;
         auto oldest = (head_ + capacity_ - count) % capacity_;
-        while (count > 1 && slots_[oldest].frame.header.elapsedNanoseconds < cutoff) {
+        const auto firstExpired = oldest;
+        unsigned expired = 0;
+        while (count > unsigned(keepLatest) && slots_[oldest].header.elapsedNanoseconds < cutoff) {
             --count;
+            ++expired;
             oldest = (oldest + 1) % capacity_;
         }
         oldestSerial_.store(nextSerial_ - count, std::memory_order_release);
         count_.store(count, std::memory_order_release);
+        for (unsigned i = 0; i < expired; ++i) reclaim((firstExpired + i) % capacity_);
     }
 
+public:
     PoseReadLease newest(std::uint32_t framesBack = 0) const {
         const auto index = latest_.load(std::memory_order_acquire);
         if (index == kNoSlot || framesBack >= count()) return {};
@@ -284,11 +256,9 @@ public:
     }
 
     PoseReadLease before(PoseFrameKey anchor, std::uint32_t framesBack) const {
-        auto pinned = acquire(anchor);
-        if (!pinned || framesBack >= capacity_ || anchor.serial <= framesBack) return {};
-        if (!framesBack) return pinned;
-        return acquire({anchor.serial - framesBack, anchor.generation,
-                        (anchor.slot + capacity_ - framesBack) % capacity_});
+        PoseFrameHeader header;
+        if (!copyHeaderBefore(anchor, framesBack, header)) return {};
+        return acquire(header.key);
     }
 
 private:
@@ -314,10 +284,38 @@ private:
         while (readers < kWriter - 1) {
             if (slot->claims.compare_exchange_weak(readers, readers + 1,
                                                   std::memory_order_acquire,
-                                                  std::memory_order_relaxed))
-                return PoseReadLease(slot);
+                                                  std::memory_order_relaxed)) {
+                for (auto& decoded : decoded_) {
+                    bool available = false;
+                    if (!decoded.busy.compare_exchange_strong(available, true, std::memory_order_acquire)) continue;
+                    decoded.frame.header = slot->header;
+                    if (slot->payloadBytes && payload_.load(slot->firstBlock, slot->payloadBytes, decoded.bytes) &&
+                        decodePosePayload({decoded.bytes.data(), slot->payloadBytes}, decoded.frame))
+                        return PoseReadLease(slot, &decoded);
+                    decoded.busy.store(false, std::memory_order_release);
+                    break;
+                }
+                slot->claims.fetch_sub(1, std::memory_order_release);
+                readFailures_.fetch_add(1, std::memory_order_relaxed);
+                return {};
+            }
         }
         return {};
+    }
+
+    void reclaim(unsigned index) {
+        auto& slot = slots_[index];
+        std::uint32_t expected = 0;
+        if (!slot.claims.compare_exchange_strong(expected, kWriter, std::memory_order_acquire)) return;
+        if (slot.header.key.generation != generation() ||
+            slot.header.key.serial < oldestSerial_.load(std::memory_order_acquire)) {
+            payload_.release(slot.firstBlock, slot.payloadBytes);
+            slot.firstBlock = slot.payloadBytes = 0;
+        }
+        slot.claims.store(0, std::memory_order_release);
+    }
+    void reclaimExpired() {
+        for (unsigned i = 0; i < capacity_; ++i) reclaim(i);
     }
 
     static constexpr std::uint32_t kWriter = 1u << 31;
@@ -338,6 +336,13 @@ private:
     std::uint16_t previousModelCount_ = 0;
     std::uint8_t previousBodyModelCount_ = 0;
     bool havePrevious_ = false;
+    PosePayloadStore payload_;
+    std::array<std::byte, kPosePayloadMaxBytes> scratch_{};
+    mutable std::array<PoseDecodedFrame, kPoseReadBufferCount> decoded_{};
+    mutable std::atomic<std::uint64_t> readFailures_{0};
+    std::uint64_t storageFailures_ = 0;
+public:
+    std::uint64_t storageFailures() const { return storageFailures_; }
 };
 
 }  // namespace self_recall::pure

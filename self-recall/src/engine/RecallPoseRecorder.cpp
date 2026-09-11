@@ -1,4 +1,5 @@
 #include "RecallOffsets121.hpp"
+#include "RecallMemoryProfiler.hpp"
 #include "RecallActorModelView.hpp"
 #include "RecallModelCollection.hpp"
 #include "RecallPoseRecorder.hpp"
@@ -233,8 +234,14 @@ void recordOwnedFrame(const frame::CompletedModelPhase& phase, const Control& co
     header.boneCount = collection.boneCount;
     header.materialCount = collection.materialCount;
     equipment::recordEffects(header, {collection.views.data(), collection.modelCount});
+#if SELF_RECALL_MEMORY_PROFILE
+    const auto captureStart = svcGetSystemTick();
+#endif
     const auto result = model::recordCompleted(header,
         {collection.views.data(), collection.modelCount}, g_workspace, *history);
+#if SELF_RECALL_MEMORY_PROFILE
+    memory_profile::recordCaptureTicks(svcGetSystemTick() - captureStart);
+#endif
     if (result.status != model::CaptureStatus::Recorded) {
         reject(Rejection::CaptureRejected, phase.epoch,
                static_cast<unsigned>(result.status) * 16u + static_cast<unsigned>(result.history.status));
@@ -243,9 +250,12 @@ void recordOwnedFrame(const frame::CompletedModelPhase& phase, const Control& co
     g_lastEpoch = phase.epoch;
     g_lastTimeSerial = frameTime.time.serial;
     if (auto latest = history->acquire(result.history.key); latest && !equipment::recorded(*latest.get())) {
-        reject(Rejection::EquipmentArchive, phase.epoch, 0xA001); return;
+        reject(Rejection::EquipmentArchive, phase.epoch, 0xA001);
+        memory_profile::recordPose(*history, result.history.key);
+        return;
     }
     history->trimToWindow(pure::kRecallWindowNanoseconds);
+    memory_profile::recordPose(*history, result.history.key);
     const auto recorded = g_recorded.fetch_add(1, std::memory_order_relaxed) + 1;
     static std::uint16_t lastFusedLinks = 0, lastFusedModels = 0;
     const bool fusedChanged = collection.fusedLinks != lastFusedLinks || collection.fusedModels != lastFusedModels;

@@ -1,9 +1,45 @@
 #include "RecallAppearanceHistory.hpp"
 #include "RecallAppliedClimb.hpp"
 #include "RecallControllerPose.hpp"
+#include "RecallParameterExchange.hpp"
 #include "doctest.h"
 #include <thread>
 using namespace self_recall::pure;
+
+TEST_CASE("historical body materials follow frame tokens while live clothing parameters survive uploads") {
+    AppearanceBlobs<16, 8, 32> blobs;
+    blobs.initialize();
+    AppearanceFrames<3, 1> frames;
+    std::array<std::byte, 70> bare{}, shirt{}, live{}, upload{}, scratch{};
+    bare.fill(std::byte{0x26}); shirt.fill(std::byte{0x91});
+    bare[35] = std::byte{0}; shirt[35] = std::byte{1};
+    auto first = blobs.create(bare), second = blobs.create(shirt);
+    const std::array<unsigned, 1> bareTokens{first}, shirtTokens{second};
+    const PoseFrameKey older{1, 1, 0}, newer{2, 1, 1};
+    REQUIRE(frames.bind(blobs, older, bareTokens));
+    REQUIRE(frames.bind(blobs, newer, shirtTokens));
+    blobs.release(first); blobs.release(second);
+    for (const auto current : {bare, shirt}) {
+        live = current;
+        for (const auto key : {newer, older, newer}) {
+            const auto token = frames.token(key, 0);
+            REQUIRE(blobs.copy(token, scratch));
+            const auto expected = scratch;
+            REQUIRE(exchangeParameterBytes(live, scratch));
+            upload = live;
+            CHECK(upload == expected);
+            REQUIRE(exchangeParameterBytes(live, scratch));
+            CHECK(live == current);
+            CHECK(blobs.equal(token, scratch));
+        }
+    }
+    const auto before = live;
+    CHECK_FALSE(exchangeParameterBytes(live, std::span{scratch}.first(69)));
+    CHECK(live == before);
+    frames.clear(blobs);
+    CHECK(frames.token(older, 0) == 0);
+    CHECK(blobs.availableBytes() == 512);
+}
 
 TEST_CASE("controller commit writes a complete interleaved matrix and only four velocity vectors") {
     std::array<float, 0x380 / sizeof(float)> actor;

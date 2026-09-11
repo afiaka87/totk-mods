@@ -68,9 +68,9 @@ public:
         elapsed_ = advance >= remaining ? duration_ : elapsed_ + advance;
         if (allowedThrough < count_ - 1) {
             if (allowedThrough < index_) return PosePlaybackStatus::UnavailableFrame;
-            auto boundary = frameAt(allowedThrough);
-            if (!boundary) return PosePlaybackStatus::UnavailableFrame;
-            const auto limit = newestTime_ - boundary.get()->header.elapsedNanoseconds;
+            PoseFrameHeader boundary;
+            if (!headerAt(allowedThrough, boundary)) return PosePlaybackStatus::UnavailableFrame;
+            const auto limit = newestTime_ - boundary.elapsedNanoseconds;
             if (elapsed_ >= limit) { elapsed_ = limit; rateRemainder_ = 0; }
         }
         const auto target = newestTime_ - elapsed_;
@@ -78,17 +78,17 @@ public:
         std::uint32_t high = count_ - 1;
         while (low < high) {
             const auto middle = low + (high - low + 1) / 2;
-            auto frame = history_->before(anchor_, middle);
-            if (!frame) return PosePlaybackStatus::UnavailableFrame;
-            const auto recordedTime = frame.get()->header.elapsedNanoseconds;
+            PoseFrameHeader frame;
+            if (!headerAt(middle, frame)) return PosePlaybackStatus::UnavailableFrame;
+            const auto recordedTime = frame.elapsedNanoseconds;
             const auto tolerance = (static_cast<unsigned>(rate) + 3u) / 4u;
             if (recordedTime >= target || target - recordedTime <= tolerance) low = middle;
             else high = middle - 1;
         }
         for (auto next = index_ + 1; next <= low; ++next) {
-            auto frame = history_->before(anchor_, next);
-            if (!frame) return PosePlaybackStatus::UnavailableFrame;
-            if (!(frame.get()->header.route.flags & SampleAdmissible))
+            PoseFrameHeader frame;
+            if (!headerAt(next, frame)) return PosePlaybackStatus::UnavailableFrame;
+            if (!(frame.route.flags & SampleAdmissible))
                 return PosePlaybackStatus::UnsafeSample;
         }
         const bool changed = low != index_;
@@ -99,10 +99,10 @@ public:
         presentation_ = {selectedKey(), {}};
         const auto& current = selected_.get()->header;
         if (target < current.elapsedNanoseconds && index_ + 1 < count_ && index_ < allowedThrough) {
-            auto older = frameAt(index_ + 1);
-            if (!older) return PosePlaybackStatus::UnavailableFrame;
-            if (!(older.get()->header.route.flags & SampleAdmissible)) return PosePlaybackStatus::UnsafeSample;
-            if (!interpolatePosition(current, older.get()->header, target, presentation_))
+            PoseFrameHeader older;
+            if (!headerAt(index_ + 1, older)) return PosePlaybackStatus::UnavailableFrame;
+            if (!(older.route.flags & SampleAdmissible)) return PosePlaybackStatus::UnsafeSample;
+            if (!interpolatePosition(current, older, target, presentation_))
                 return PosePlaybackStatus::UnavailableFrame;
         }
         if (index_ + 1 == count_) return PosePlaybackStatus::AtEnd;
@@ -135,6 +135,9 @@ public:
     PoseFrameKey anchorKey() const { return anchor_; }
     PoseReadLease frameAt(std::uint32_t index) const {
         return history_ && index < count_ ? history_->before(anchor_, index) : PoseReadLease{};
+    }
+    bool headerAt(std::uint32_t index, PoseFrameHeader& out) const {
+        return history_ && index < count_ && history_->copyHeaderBefore(anchor_, index, out);
     }
     std::uint32_t count() const { return count_; }
     std::uint32_t index() const { return index_; }

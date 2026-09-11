@@ -1,6 +1,7 @@
 #include "RecallArchiveHeap.hpp"
 #include <atomic>
 #include <lib.hpp>
+#include "RecallMemoryProfiler.hpp"
 
 namespace self_recall::equipment {
 namespace {
@@ -34,6 +35,7 @@ void* archiveHeap() {
     using Create = void* (*)(void*, std::size_t, const char* const*, bool, void*);
     heap = reinterpret_cast<Create>(g_mainBase + 0x00E7CF70)(g_arena, sizeof(g_arena), &name, true, nullptr);
     g_heap.store(heap, std::memory_order_release);
+    memory_profile::watchArchive(heap);
     Logging.Log("[self-recall] EQUIPMENT_HEAP ready=%u bytes=%llu", unsigned(heap != nullptr),
                 static_cast<unsigned long long>(sizeof(g_arena)));
     return heap;

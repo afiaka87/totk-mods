@@ -274,6 +274,7 @@ bool remap(const void* component, std::uint32_t actorId, std::uint32_t world,
 bool recorded(const pure::RecordedPoseFrame& frame) {
     beginRecord(frame.header.key.generation);
     std::array<unsigned, pure::kPoseModelLimit> tokens{};
+    if (!captureBodyAppearance(frame, tokens)) return false;
     for (auto& asset : g_assets) {
         if (asset.life.load(std::memory_order_acquire) != Life::Ready) continue;
         for (unsigned i = frame.header.bodyModelCount; i < frame.header.modelCount; ++i)
@@ -322,7 +323,7 @@ void collectExpired(const pure::PoseHistory& history, std::uint32_t world) {
             asset.root.store(nullptr, std::memory_order_release);
             asset.life.store(Life::Empty, std::memory_order_release);
         } else if (life == Life::Ready &&
-                   (asset.world != world || !asset.last || !history.acquire(asset.last))) {
+                   (asset.world != world || !asset.last || !history.contains(asset.last))) {
             retire(asset);
         }
     }

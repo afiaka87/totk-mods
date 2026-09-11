@@ -62,7 +62,8 @@ TEST_CASE("invalid or unavailable clock updates preserve accumulated time") {
 TEST_CASE("history expires by elapsed duration and preserves existing readers") {
     for (const unsigned fps : {30u, 60u}) {
         auto slots = std::make_unique<PoseHistorySlot[]>(256);
-        PoseHistory history(slots.get(), 256);
+        std::unique_ptr<PosePayloadBlock[]> payload = std::make_unique<PosePayloadBlock[]>(256 * 36);
+        PoseHistory history(slots.get(), 256, {payload.get(), 256 * 36});
         RecordedModelPose model{};
         model.identity = {1, 2, 3, 0, 1, 0, 0};
         RecordedBoneMatrix bone{};

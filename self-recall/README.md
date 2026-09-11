@@ -1,4 +1,4 @@
-# Self Recall v1.0.5
+# Self Recall v1.0.6
 
 Self Recall records up to 64 seconds of Link's movement and visible pose, then plays that history backward. It recreates Recall for Link with reversed movement and animation, the native golden ribbon, wrist glow, sound and muted-world presentation.
 
@@ -39,7 +39,7 @@ Every upgraded version of the Glide Mask, Glide Shirt and Glide Tights counts.
 - An emulator or console environment that supports exlaunch `subsdk9` modules.
 - No other executable code mod enabled at the same time.
 
-Developed and tested on Eden. Switch hardware is untested.
+Tested on Eden, Citron, Ryujinx and Yuzu with the standard 4 GiB memory layout. Switch hardware is untested.
 
 ## Install
 
@@ -49,18 +49,16 @@ Developed and tested on Eden. Switch hardware is untested.
 
 ## Known issues
 
+- Link's torso can disappear during Recall when the recorded clothing changes to shirtless.
 - During fast vertical skydiving Recall, a side-on camera can lose Link above or below the frame.
 - The camera can briefly enter terrain while recalling through some climbing overhangs.
 - Static historical pose markers along the ribbon are not included.
 
-## Changes in v1.0.5
+## Changes in v1.0.6
 
-- Replaces the earlier route-only presentation with recorded full-body animation and equipment playback.
-- Uses native Recall rendering, wrist effects, audio and world color treatment.
-- Adds climbing, swimming, gliding, vehicle control, fused attachment and ledge continuity.
-- Adds stamina drain, release damage protection and Glide-set speed scaling.
-- Removes the temporary speed banner, all text-system code and all font assets.
-- Publishes the mod-owned source under the MIT License.
+- Reduces memory reserved by pose and equipment history, allowing the tested emulators to use their standard 4 GiB layout.
+- Stores animation frames losslessly without changing the 64-second history limit or playback speeds.
+- Removes the brief pause at Recall activation caused by decoding animation data during route preparation.
 
 ## Source
 

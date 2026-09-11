@@ -4,6 +4,7 @@
 #include <span>
 #include <cstring>
 #include "RecallPoseHistory.hpp"
+#include "RecallMemoryProfile.hpp"
 
 namespace self_recall::pure {
 template<unsigned Blocks, unsigned States, unsigned BlockBytes = 256>
@@ -13,8 +14,17 @@ class AppearanceBlobs {
     std::array<unsigned, Blocks + 1> next_{};
     std::array<std::array<std::byte, BlockBytes>, Blocks> bytes_{};
     unsigned freeBlock_ = 0, freeState_ = 0, available_ = 0;
+#if SELF_RECALL_MEMORY_PROFILE
+    PoolMemoryUsage usage_{};
+#endif
 public:
+#if SELF_RECALL_MEMORY_PROFILE
+    const PoolMemoryUsage& memoryUsage() const { return usage_; }
+#endif
     void initialize() {
+#if SELF_RECALL_MEMORY_PROFILE
+        usage_ = {};
+#endif
         for (unsigned i = 1; i <= Blocks; ++i) next_[i] = i == Blocks ? 0 : i + 1;
         for (unsigned i = 1; i <= States; ++i) states_[i] = {i == States ? 0 : i + 1, 0, 0};
         freeBlock_ = freeState_ = 1;
@@ -25,10 +35,20 @@ public:
     bool retain(unsigned token) {
         if (!size(token) || states_[token].refs == UINT32_MAX) return false;
         ++states_[token].refs;
+#if SELF_RECALL_MEMORY_PROFILE
+        usage_.retain();
+#endif
         return true;
     }
     void release(unsigned token) {
-        if (!size(token) || --states_[token].refs) return;
+        if (!size(token)) return;
+#if SELF_RECALL_MEMORY_PROFILE
+        usage_.dropReference();
+#endif
+        if (--states_[token].refs) return;
+#if SELF_RECALL_MEMORY_PROFILE
+        usage_.release(states_[token].bytes, (states_[token].bytes + BlockBytes - 1) / BlockBytes * BlockBytes);
+#endif
         unsigned block = states_[token].first;
         while (block) {
             const auto next = next_[block];
@@ -49,9 +69,17 @@ public:
     }
     unsigned create(std::span<const std::byte> input) {
         const auto blocks = (input.size() + BlockBytes - 1) / BlockBytes;
-        if (input.empty() || input.size() > UINT32_MAX || !freeState_ || blocks > available_) return 0;
+        if (input.empty() || input.size() > UINT32_MAX || !freeState_ || blocks > available_) {
+#if SELF_RECALL_MEMORY_PROFILE
+            ++usage_.failures;
+#endif
+            return 0;
+        }
         const auto token = freeState_; freeState_ = states_[token].first;
         auto& state = states_[token]; state = {0, static_cast<unsigned>(input.size()), 1};
+#if SELF_RECALL_MEMORY_PROFILE
+        usage_.create(state.bytes, static_cast<unsigned>(blocks * BlockBytes));
+#endif
         unsigned* link = &state.first;
         for (unsigned offset = 0; offset < input.size();) {
             const auto block = freeBlock_; freeBlock_ = next_[block]; --available_;

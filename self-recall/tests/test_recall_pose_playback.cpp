@@ -9,7 +9,8 @@ using namespace self_recall::pure;
 namespace {
 struct PlaybackFixture {
     std::unique_ptr<PoseHistorySlot[]> slots = std::make_unique<PoseHistorySlot[]>(128);
-    PoseHistory history{slots.get(), 128};
+    std::unique_ptr<PosePayloadBlock[]> payload = std::make_unique<PosePayloadBlock[]>(128 * 36);
+    PoseHistory history{slots.get(), 128, {payload.get(), 128 * 36}};
     GameTimeSnapshot clock{};
 
     void record(unsigned fps = 30, unsigned count = 61, unsigned unsafeFrame = UINT32_MAX,

@@ -5,12 +5,14 @@
 
 #include <atomic>
 #include <new>
+#include <optional>
 #include <lib.hpp>
 #include "RecallFrameHooks.hpp"
 #include "RecallNativeRenderInput.hpp"
 #include "RecallNativeShapeVisibility.hpp"
 #include "RecallNativeAdmission.hpp"
 #include "RecallEquipmentArchive.hpp"
+#include "RecallEquipmentAppearance.hpp"
 #include "RecallEquipmentEffects.hpp"
 #include "RecallPoseSession.hpp"
 #include "RecallPoseStorage.hpp"
@@ -40,7 +42,8 @@ std::atomic<std::uint64_t> g_originChanges{0}, g_culled{0}, g_wristPhaseDifferen
 std::array<std::atomic<std::uintptr_t>, pure::kPoseModelLimit> g_liveEquipment{};
 
 static_assert(sizeof(pure::RenderFrameStore) + sizeof(model::CaptureWorkspace) +
-              sizeof(pure::PoseHistory) + sizeof(pure::PoseHistorySlot) * pure::kHistoryCapacity <=
+              sizeof(pure::PoseHistory) + sizeof(pure::PoseHistorySlot) * pure::kHistoryCapacity +
+              pure::kPosePayloadArenaBytes <=
               pure::kPoseHistoryByteLimit + 3u * pure::kPoseBoneLimit * 12u * sizeof(float) + 64u * 1024u);
 
 enum class Failure : unsigned { Collector = 1, Prepare, Session, Buffer, Model, Input,
@@ -119,6 +122,14 @@ void uploadHistoricalAnimation(void* unit) {
     if (!frame) return;
     model::NativeRenderInput input;
     if (!makeInput(unit, frame, input)) return;
+    std::optional<equipment::BodyAppearanceScope> bodyAppearance;
+    const auto& animation = frame.get()->animation;
+    if (frame.modelIndex() < animation.header.bodyModelCount) {
+        const auto& id = animation.models[frame.modelIndex()].identity;
+        bodyAppearance.emplace(animation.header.key, frame.modelIndex(),
+            model::Identity{id.unit, id.skeleton, id.resource, id.boneCount, id.materialCount});
+        if (!bodyAppearance->ready()) { fail(Failure::Prepare, 0xA002); return; }
+    }
     using Calculate = void (*)(void*, unsigned);
     reinterpret_cast<Calculate>(g_mainBase + kCalculateSkeleton)(input.skeleton, buffer);
     reinterpret_cast<Calculate>(g_mainBase + kCalculateShape)(input.model, buffer);

@@ -22,6 +22,7 @@ add_executable(self_recall_pure_tests
     test_recall_visual.cpp
     test_recall_history.cpp
     test_recall_pose_history.cpp
+    test_recall_pose_payload.cpp
     test_recall_pose_transport.cpp
     test_recall_model_capture.cpp
     test_recall_model_completion.cpp
@@ -38,6 +39,7 @@ add_executable(self_recall_pure_tests
     test_recall_vehicle.cpp
     test_recall_equipment_effects.cpp
     test_recall_appearance.cpp
+    test_recall_memory_profile.cpp
     test_recall_stop_policy.cpp
     test_recall_stamina.cpp
     test_recall_motion_continuity.cpp
@@ -58,7 +60,10 @@ target_include_directories(self_recall_pure_tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/support"
 )
 target_compile_features(self_recall_pure_tests PRIVATE cxx_std_23)
+target_compile_definitions(self_recall_pure_tests PRIVATE SELF_RECALL_MEMORY_PROFILE=1)
 if(MSVC)
+    # Match the usual host stack budget for fixtures containing bounded reader buffers.
+    target_link_options(self_recall_pure_tests PRIVATE /STACK:8388608)
     target_compile_options(self_recall_pure_tests PRIVATE /W4 /WX /permissive- /EHsc)
 else()
     target_compile_options(self_recall_pure_tests PRIVATE -Wall -Wextra -Werror)

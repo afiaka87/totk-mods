@@ -114,7 +114,8 @@ TEST_CASE("both native lanes feed complete animated history that can start and s
     QueueFixture fixture;
     pure::ModelCompletionJoin<> join;
     auto slots = std::make_unique<pure::PoseHistorySlot[]>(61);
-    pure::PoseHistory history(slots.get(), 61);
+    std::unique_ptr<pure::PosePayloadBlock[]> payload = std::make_unique<pure::PosePayloadBlock[]>(61 * 36);
+    pure::PoseHistory history(slots.get(), 61, {payload.get(), 61 * 36});
     auto workspace = std::make_unique<model::CaptureWorkspace>();
     std::array<pure::RecordedBoneMatrix, 3> bones{};
     std::uint32_t visible = 1;

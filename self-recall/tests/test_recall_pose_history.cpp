@@ -10,8 +10,8 @@ using namespace self_recall::pure;
 namespace {
 struct Fixture {
     std::unique_ptr<PoseHistorySlot[]> slots = std::make_unique<PoseHistorySlot[]>(4);
-    PoseHistory history{slots.get(), 4};
-    std::uint64_t matrixAlignmentPadding = 0;
+    std::unique_ptr<PosePayloadBlock[]> payload = std::make_unique<PosePayloadBlock[]>(4 * 36);
+    PoseHistory history{slots.get(), 4, {payload.get(), 4 * 36}};
     RecordedModelPose models[2]{};
     RecordedBoneMatrix bones[3]{};
     PoseFrameInput input{};
@@ -48,7 +48,8 @@ struct Fixture {
 }
 
 TEST_CASE("pose history is bounded and rejects incomplete or oversized inputs") {
-    CHECK(sizeof(PoseHistorySlot) * kHistoryCapacity <= kPoseHistoryByteLimit);
+    CHECK(sizeof(PoseHistorySlot) * kHistoryCapacity + sizeof(PoseHistory) +
+          kPosePayloadArenaBytes <= kPoseHistoryByteLimit);
     Fixture f;
     f.input.header.boneCount = kPoseBoneLimit + 1;
     CHECK(f.history.record(f.input).status == PoseRecordStatus::InvalidInput);

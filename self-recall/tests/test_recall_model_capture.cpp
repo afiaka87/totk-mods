@@ -12,7 +12,8 @@ TEST_CASE("completed model capture requires the whole roster and owns the copied
     auto source = std::make_unique<pure::RecordedBoneMatrix[]>(170);
     auto workspace = std::make_unique<model::CaptureWorkspace>();
     auto storage = std::make_unique<pure::PoseHistorySlot[]>(2);
-    pure::PoseHistory history{storage.get(), 2};
+    std::unique_ptr<pure::PosePayloadBlock[]> payload = std::make_unique<pure::PosePayloadBlock[]>(2 * 36);
+    pure::PoseHistory history{storage.get(), 2, {payload.get(), 2 * 36}};
     std::array<model::View, 5> views{};
     std::array<std::array<std::uint32_t, 3>, 5> boneVisible{};
     std::array<std::array<std::uint32_t, 2>, 5> materialVisible{};

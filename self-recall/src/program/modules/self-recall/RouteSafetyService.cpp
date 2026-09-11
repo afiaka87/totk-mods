@@ -71,13 +71,13 @@ void armProbe(RecallRuntime& runtime) {
     pure::HistorySample samples[pure::kProbeWindowMaxSamples + 1];
     std::size_t count = 0;
     for (; count <= pure::kProbeWindowMaxSamples && start + count < cursor->count(); ++count) {
-        auto frame = cursor->frameAt(static_cast<std::uint32_t>(start + count));
-        if (!frame) {
+        pure::PoseFrameHeader frame;
+        if (!cursor->headerAt(static_cast<std::uint32_t>(start + count), frame)) {
             SRLOG("ROUTE_HISTORY_UNAVAILABLE index=%u offset=%u", start, static_cast<unsigned>(count));
             state.unavailable = true;
             return;
         }
-        samples[count] = frame.get()->header.route;
+        samples[count] = frame.route;
     }
     probe::ArmRequest request{};
     request.rewindIndex = start;

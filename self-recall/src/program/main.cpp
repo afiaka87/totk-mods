@@ -11,6 +11,7 @@
 #include "RecallNativeGameplay.hpp"
 #include "RecallCamera.hpp"
 #include "RecallVehicle.hpp"
+#include "RecallMemoryProfiler.hpp"
 #include "RecallGliderRelease.hpp"
 #include "modules/self-recall/SelfRecallModule.hpp"
 
@@ -58,6 +59,7 @@ HOOK_DEFINE_TRAMPOLINE(NpadCalcHook) {
 extern "C" void exl_main(void*, void*) {
     exl::hook::Initialize();
     const uintptr_t mainBase = exl::util::modules::GetTargetStart();
+    self_recall::memory_profile::install(mainBase);
     self_recall::pose_session::initialize();
     const auto& module = wwpg::modules::selfRecall();
     module.init(mainBase);
@@ -75,7 +77,7 @@ extern "C" void exl_main(void*, void*) {
                                 self_recall::pose_recorder::prepareScene});
     RayCastWorkerHook::InstallAtOffset(kRayCastWorker);
     NpadCalcHook::InstallAtOffset(kNpadCalc);
-    Logging.Log("[self-recall] v1.0.5: Glide outfit selects 1.25/1.5/2/4x Recall speed");
+    Logging.Log("[self-recall] v1.0.6: Glide outfit selects 1.25/1.5/2/4x Recall speed");
 }
 
 extern "C" NORETURN void exl_exception_entry() { EXL_ABORT("unreachable"); }

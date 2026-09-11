@@ -10,4 +10,18 @@ void beginRecord(std::uint32_t historyGeneration);
 bool bindAppearanceFrame(pure::PoseFrameKey key, std::span<const unsigned> tokens);
 unsigned appearanceToken(pure::PoseFrameKey key, unsigned model);
 bool refuseAppearance(const char* reason, std::uint64_t detail, std::uint64_t extra);
+void logAppearanceMemory();
+bool captureBodyAppearance(const pure::RecordedPoseFrame& frame, std::span<unsigned> tokens);
+
+// Restores CPU parameters before returning from the native model callback.
+class BodyAppearanceScope {
+public:
+    BodyAppearanceScope(pure::PoseFrameKey key, unsigned modelIndex, const model::Identity& live);
+    ~BodyAppearanceScope();
+    BodyAppearanceScope(const BodyAppearanceScope&) = delete;
+    BodyAppearanceScope& operator=(const BodyAppearanceScope&) = delete;
+    bool ready() const { return buffer_ >= 0; }
+private:
+    int buffer_ = -1;
+};
 } // namespace self_recall::equipment
