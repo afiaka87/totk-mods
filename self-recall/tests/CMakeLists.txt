@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(self_recall_host_tests LANGUAGES CXX)
+project(self_recall_host_tests LANGUAGES C CXX)
 
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../.." ABSOLUTE)
 set(VENDORED_DOCTEST "${REPO_ROOT}/vendor/doctest")
@@ -39,6 +39,7 @@ add_executable(self_recall_pure_tests
     test_recall_vehicle.cpp
     test_recall_equipment_effects.cpp
     test_recall_appearance.cpp
+    test_recall_lossless.cpp
     test_recall_memory_profile.cpp
     test_recall_stop_policy.cpp
     test_recall_stamina.cpp
@@ -72,3 +73,26 @@ endif()
 enable_testing()
 include("${DOCTEST_CMAKE}")
 doctest_discover_tests(self_recall_pure_tests)
+
+add_executable(self_recall_lossless_tests $<TARGET_PROPERTY:self_recall_pure_tests,SOURCES>)
+target_include_directories(self_recall_lossless_tests PRIVATE $<TARGET_PROPERTY:self_recall_pure_tests,INCLUDE_DIRECTORIES>)
+target_compile_features(self_recall_lossless_tests PRIVATE cxx_std_23)
+target_compile_definitions(self_recall_lossless_tests PRIVATE SELF_RECALL_MEMORY_PROFILE=1 SELF_RECALL_STORAGE_PROFILE=6)
+target_compile_options(self_recall_lossless_tests PRIVATE $<TARGET_PROPERTY:self_recall_pure_tests,COMPILE_OPTIONS>)
+target_link_options(self_recall_lossless_tests PRIVATE $<TARGET_PROPERTY:self_recall_pure_tests,LINK_OPTIONS>)
+doctest_discover_tests(self_recall_lossless_tests TEST_PREFIX "lossless/")
+
+include(Compression.cmake)
+add_executable(self_recall_compressed_tests test_main.cpp test_recall_compression.cpp)
+target_include_directories(self_recall_compressed_tests PRIVATE $<TARGET_PROPERTY:self_recall_pure_tests,INCLUDE_DIRECTORIES>)
+target_compile_features(self_recall_compressed_tests PRIVATE cxx_std_23)
+target_compile_definitions(self_recall_compressed_tests PRIVATE SELF_RECALL_MEMORY_PROFILE=1 SELF_RECALL_STORAGE_PROFILE=7)
+target_compile_options(self_recall_compressed_tests PRIVATE $<TARGET_PROPERTY:self_recall_pure_tests,COMPILE_OPTIONS>)
+target_link_options(self_recall_compressed_tests PRIVATE $<TARGET_PROPERTY:self_recall_pure_tests,LINK_OPTIONS>)
+target_link_libraries(self_recall_compressed_tests PRIVATE self_recall_codecs)
+doctest_discover_tests(self_recall_compressed_tests TEST_PREFIX "compressed/")
+add_executable(recall_corpus_replay recall_corpus_replay.cpp)
+target_include_directories(recall_corpus_replay PRIVATE $<TARGET_PROPERTY:self_recall_pure_tests,INCLUDE_DIRECTORIES>)
+target_compile_features(recall_corpus_replay PRIVATE cxx_std_23)
+target_compile_definitions(recall_corpus_replay PRIVATE SELF_RECALL_MEMORY_PROFILE=1 SELF_RECALL_STORAGE_PROFILE=7)
+target_link_libraries(recall_corpus_replay PRIVATE self_recall_codecs)

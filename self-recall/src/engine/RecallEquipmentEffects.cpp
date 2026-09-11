@@ -1,6 +1,7 @@
 #include "RecallOffsets121.hpp"
 #include "RecallEquipmentEffects.hpp"
 #include "RecallNativeEffectSchema.hpp"
+#include "RecallCorpusCapture.hpp"
 #include "RecallArchiveHeap.hpp"
 #include "RecallPoseRender.hpp"
 #include "RecallPoseSession.hpp"
@@ -10,6 +11,7 @@
 #include <atomic>
 #include <bit>
 #include <optional>
+#include <type_traits>
 #include <lib.hpp>
 
 namespace self_recall::equipment_effects {
@@ -26,7 +28,8 @@ template<class T> void write(void* p, std::size_t offset, T v) {
     std::memcpy(static_cast<std::byte*>(p) + offset, &v, sizeof(v));
 }
 template<class F> F native(std::uintptr_t offset) { return reinterpret_cast<F>(g_main + offset); }
-struct Asset : detail::NativeEffectSchema {
+using Schema = std::conditional_t<pure::kLosslessStorage, detail::PackedEffectSchema, detail::NativeEffectSchema>;
+struct Asset : Schema {
     std::atomic<bool> ready{false};
     std::atomic<const void*> source{nullptr};
     std::atomic<const void*> instance{nullptr};
@@ -341,8 +344,25 @@ bool retain(unsigned asset, const void* actor, const void* copiedRoot) {
         synchronizeExistingLoops(source);
         return true;
     }
-    if (equipment::contiguousArchiveBytes() < 256 * 1024 || !copySchema(a, source))
+    if (equipment::contiguousArchiveBytes() < 256 * 1024)
         return refuse("schema", asset);
+    const auto prepareSchema = [&]<class T>(T& schema) {
+        if constexpr (std::is_base_of_v<detail::PackedEffectSchema, T>) {
+            const auto size = detail::measureSchema(source);
+            auto* bytes = size ? static_cast<std::byte*>(equipment::allocateArchive(size.bytes())) : nullptr;
+            if (!bytes) return false;
+            if (!schema.bind({bytes, size.bytes()}, size) || !copySchema(schema, source)) {
+                equipment::freeArchive(bytes);
+                static_cast<detail::PackedEffectSchema&>(schema) = {};
+                return false;
+            }
+            Logging.Log("[self-recall] EFFECT_SCHEMA_BYTES asset=%u bytes=%u properties=%u enums=%u names=%u",
+                asset, size.bytes(), size.properties, size.enums, size.names);
+            corpus::schema(asset, size.properties, size.enums, size.names, {bytes, size.bytes()});
+            return true;
+        } else return copySchema(schema, source);
+    };
+    if (!prepareSchema(a)) return refuse("schema_copy", asset);
     a.root = copiedRoot;
     native<void (*)(void*)>(kConstructPreActorUser)(a.user);
     a.constructed = true;
@@ -385,6 +405,13 @@ void retire(unsigned asset) {
     a.root = nullptr;
     Lock lock;
     for (auto& slot : g_slots) if (slot.owner == asset) slot = {};
+    const auto releaseSchema = []<class T>(T& schema) {
+        if constexpr (std::is_base_of_v<detail::PackedEffectSchema, T>) {
+            equipment::freeArchive(schema.storage);
+            static_cast<detail::PackedEffectSchema&>(schema) = {};
+        }
+    };
+    releaseSchema(a);
 }
 
 void record(unsigned asset, pure::PoseFrameHeader& header) {

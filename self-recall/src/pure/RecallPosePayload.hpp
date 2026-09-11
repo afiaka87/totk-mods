@@ -3,15 +3,22 @@
 #include <span>
 #include <algorithm>
 #include "RecallPoseFrame.hpp"
+#include "RecallStorageProfile.hpp"
+#if SELF_RECALL_STORAGE_PROFILE == 7
+#include "RecallCompression.hpp"
+#endif
 
 namespace self_recall::pure {
-inline constexpr unsigned kPosePayloadArenaBytes = 72u * 1024u * 1024u;
 inline constexpr unsigned kPoseReadBufferCount = 16;
 inline constexpr unsigned kPosePayloadMaxBytes = sizeof(RecordedPoseFrame) + 4;
+inline constexpr unsigned kPoseBlockDataBytes = kCompressedStorage ? 1008 : 1020;
 
 struct PosePayloadBlock {
     std::uint32_t next = 0;
-    std::byte bytes[1020];
+#if SELF_RECALL_STORAGE_PROFILE == 7
+    std::uint32_t refs = 0, parent = UINT32_MAX, parentBytes = 0;
+#endif
+    std::byte bytes[kPoseBlockDataBytes];
 };
 static_assert(sizeof(PosePayloadBlock) == 1024);
 inline constexpr unsigned kPosePayloadBlockCount = kPosePayloadArenaBytes / sizeof(PosePayloadBlock);
@@ -29,20 +36,28 @@ public:
         if (!blocks.empty()) blocks.back().next = kEnd;
         available_ = static_cast<unsigned>(blocks.size());
     }
-    static unsigned blocksFor(unsigned bytes) { return (bytes + 1019u) / 1020u; }
+    static unsigned blocksFor(unsigned bytes) { return (bytes + kPoseBlockDataBytes - 1) / kPoseBlockDataBytes; }
     bool canReplace(unsigned oldBytes, unsigned newBytes) const {
-        return blocksFor(newBytes) <= available_ + blocksFor(oldBytes);
+        return blocksFor(newBytes) <= available_ + (kCompressedStorage ? 0 : blocksFor(oldBytes));
     }
-    unsigned store(std::span<const std::byte> input) {
+    unsigned store(std::span<const std::byte> input, unsigned parent = UINT32_MAX, unsigned parentBytes = 0) {
         if (input.empty() || input.size() > kPosePayloadMaxBytes ||
             !canReplace(0, static_cast<unsigned>(input.size()))) return kEnd;
         const auto first = free_;
+#if SELF_RECALL_STORAGE_PROFILE == 7
+        blocks_[first].refs = 1;
+        blocks_[first].parent = parent;
+        blocks_[first].parentBytes = parentBytes;
+        if (parentBytes) retain(parent);
+#else
+        (void)parent; (void)parentBytes;
+#endif
         unsigned offset = 0, last = kEnd;
         while (offset < input.size()) {
             auto& block = blocks_[free_];
             last = free_;
             free_ = block.next;
-            const auto count = std::min<unsigned>(1020, static_cast<unsigned>(input.size()) - offset);
+            const auto count = std::min<unsigned>(kPoseBlockDataBytes, static_cast<unsigned>(input.size()) - offset);
             std::memcpy(block.bytes, input.data() + offset, count);
             offset += count;
             --available_;
@@ -55,26 +70,44 @@ public:
         return first;
     }
     void release(unsigned first, unsigned bytes) {
-        if (!bytes) return;
-        unsigned remaining = blocksFor(bytes);
-        while (remaining--) {
-            auto& block = blocks_[first];
-            const auto next = block.next;
-            block.next = free_;
-            free_ = first;
-            first = next;
-            ++available_;
+        while (bytes) {
+#if SELF_RECALL_STORAGE_PROFILE == 7
+            if (--blocks_[first].refs) return;
+            const auto parent = blocks_[first].parent, parentBytes = blocks_[first].parentBytes;
+#endif
+            unsigned remaining = blocksFor(bytes);
+            while (remaining--) {
+                auto& block = blocks_[first];
+                const auto next = block.next;
+                block.next = free_;
+                free_ = first;
+                first = next;
+                ++available_;
+            }
+            usage_.liveBytes -= bytes;
+            usage_.liveAllocated -= blocksFor(bytes) * sizeof(PosePayloadBlock);
+#if SELF_RECALL_STORAGE_PROFILE == 7
+            first = parent; bytes = parentBytes;
+#else
+            bytes = 0;
+#endif
         }
-        usage_.liveBytes -= bytes;
-        usage_.liveAllocated -= blocksFor(bytes) * sizeof(PosePayloadBlock);
     }
+#if SELF_RECALL_STORAGE_PROFILE == 7
+    void retain(unsigned first) { ++blocks_[first].refs; }
+    bool parent(unsigned first, unsigned& parent, unsigned& bytes) const {
+        if (first >= blocks_.size()) return false;
+        parent = blocks_[first].parent; bytes = blocks_[first].parentBytes;
+        return !bytes || parent < blocks_.size();
+    }
+#endif
     bool load(unsigned first, unsigned bytes, std::span<std::byte> output) const {
         if (!bytes || bytes > output.size()) return false;
         unsigned offset = 0;
         while (offset < bytes) {
             if (first >= blocks_.size()) return false;
             const auto& block = blocks_[first];
-            const auto count = std::min(1020u, bytes - offset);
+            const auto count = std::min(kPoseBlockDataBytes, bytes - offset);
             std::memcpy(output.data() + offset, block.bytes, count);
             offset += count;
             first = block.next;
@@ -93,19 +126,23 @@ struct PoseDecodedFrame {
     std::atomic<bool> busy{false};
     RecordedPoseFrame frame{};
     std::array<std::byte, kPosePayloadMaxBytes> bytes{};
+#if SELF_RECALL_STORAGE_PROFILE == 7
+    PoseDecompressor decompressor;
+    std::array<std::byte, kPosePayloadMaxBytes> raw{};
+#endif
 };
 
 // Per-bone two-bit tags: exact +0, exact +1, or the original 32-bit word.
-inline unsigned encodePosePayload(const PoseFrameInput& input, std::span<std::byte> output) {
+inline unsigned encodePosePayload(const PoseFrameInput& input, std::span<std::byte> output, bool rawOnly = false) {
     const auto& h = input.header;
     if (h.modelCount > kPoseModelLimit || h.boneCount > kPoseBoneLimit || !input.models || !input.bones) return 0;
     const unsigned modelBytes = h.modelCount * sizeof(RecordedModelPose);
     const unsigned boneBytes = h.boneCount * sizeof(RecordedBoneMatrix);
     unsigned compactBytes = 4 * h.boneCount;
-    for (unsigned i = 0; i < h.boneCount; ++i)
+    for (unsigned i = 0; !rawOnly && i < h.boneCount; ++i)
         for (auto word : input.bones[i].words)
             if (word != 0 && word != 0x3f800000) compactBytes += 4;
-    const std::uint32_t compact = compactBytes < boneBytes;
+    const std::uint32_t compact = !rawOnly && compactBytes < boneBytes;
     const unsigned total = 4 + sizeof(RecordedVisibility) + modelBytes + (compact ? compactBytes : boneBytes);
     if (total > output.size()) return 0;
     auto* cursor = output.data();

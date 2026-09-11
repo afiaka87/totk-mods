@@ -32,7 +32,7 @@ struct Fixture {
 TEST_CASE("recorded sample format is frozen") {
     CHECK(sizeof(Pose) == 48);
     CHECK(sizeof(HistorySample) == 104);
-    CHECK(kHistoryCapacity == 3840);
+    CHECK(kHistoryCapacity == (kLosslessStorage ? 902 : 3840));
     CHECK(kMinHistory == 90);
 
     CHECK(offsetof(HistorySample, pose) == 0);

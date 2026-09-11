@@ -18,6 +18,27 @@ class AppearanceBlobs {
     PoolMemoryUsage usage_{};
 #endif
 public:
+    class Reader {
+        const AppearanceBlobs* owner_;
+        unsigned block_, offset_ = 0, remaining_;
+    public:
+        Reader(const AppearanceBlobs* owner, unsigned block, unsigned bytes)
+            : owner_(owner), block_(block), remaining_(bytes) {}
+        unsigned remaining() const { return remaining_; }
+        bool get(unsigned& out) {
+            if (!remaining_ || !block_ || block_ > Blocks) return false;
+            out = std::to_integer<unsigned>(owner_->bytes_[block_ - 1][offset_++]);
+            --remaining_;
+            if (offset_ == BlockBytes) { block_ = owner_->next_[block_]; offset_ = 0; }
+            return true;
+        }
+        bool copy(std::span<std::byte> output) {
+            if (output.size() > remaining_) return false;
+            for (auto& byte : output) { unsigned value; if (!get(value)) return false; byte = std::byte(value); }
+            return true;
+        }
+    };
+    Reader reader(unsigned token) const { return {this, size(token) ? states_[token].first : 0, size(token)}; }
 #if SELF_RECALL_MEMORY_PROFILE
     const PoolMemoryUsage& memoryUsage() const { return usage_; }
 #endif
@@ -107,6 +128,16 @@ class AppearanceFrames {
     struct Entry { PoseFrameKey key{}; std::array<unsigned, Models> tokens{}; };
     std::array<Entry, Capacity> frames_{};
 public:
+    template<class Blobs, class Retired> unsigned collect(Blobs& blobs, Retired retired) {
+        unsigned released = 0;
+        for (auto& frame : frames_) {
+            if (!frame.key || !retired(frame.key)) continue;
+            for (auto token : frame.tokens) blobs.release(token);
+            frame = {};
+            ++released;
+        }
+        return released;
+    }
     template<class Blobs> void clear(Blobs& blobs) {
         for (auto& frame : frames_) {
             for (auto token : frame.tokens) blobs.release(token);

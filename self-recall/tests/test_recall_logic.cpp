@@ -38,11 +38,11 @@ struct SimRecorder {
 
 }  // namespace
 
-TEST_CASE("the eightfold ring reverses cleanly across wrap") {
+TEST_CASE("the configured ring reverses cleanly across wrap") {
     std::uint16_t index = 0;
     index = previous(index);
-    CHECK(index == 3839);
-    for (int i = 0; i < 3839; ++i) index = previous(index);
+    CHECK(index == kHistoryCapacity - 1);
+    for (int i = 0; i < kHistoryCapacity - 1; ++i) index = previous(index);
     CHECK(index == 0);
 }
 
@@ -173,4 +173,3 @@ TEST_CASE("rotation and state changes count as motion for idle cropping") {
 
     CHECK(idleMotionExceeded(0.0f, 0, true));
 }
-

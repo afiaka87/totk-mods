@@ -1,0 +1,14 @@
+Self Recall's original source is MIT licensed, copyright Clay Mullis.
+
+The compiled module includes exlaunch, licensed under GPL-2.0.
+Upstream source: https://github.com/shadowninja108/exlaunch
+Mod source: https://github.com/afiaka87/totk-mods/tree/main/self-recall
+
+The Switch binary also includes Zstandard 1.5.7 and LZ4 1.10.0 under their BSD
+licenses, reproduced in the licenses directory. These libraries are external
+dependencies and are not vendored into the mod's public source repository.
+https://github.com/facebook/zstd/tree/v1.5.7
+https://github.com/lz4/lz4/tree/v1.10.0
+
+Host tests use doctest 2.4.11 (MIT). Native builds use devkitPro/devkitA64.
+No Nintendo game assets are distributed in this package.

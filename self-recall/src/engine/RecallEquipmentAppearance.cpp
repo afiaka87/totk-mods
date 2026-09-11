@@ -4,6 +4,10 @@
 #include "RecallOffsets121.hpp"
 #include "RecallMemoryProfiler.hpp"
 #include "RecallParameterExchange.hpp"
+#include "RecallCorpusCapture.hpp"
+#if SELF_RECALL_STORAGE_PROFILE == 7
+#include "RecallCompressedAppearance.hpp"
+#endif
 #include <lib.hpp>
 
 namespace self_recall::equipment {
@@ -11,7 +15,11 @@ using namespace detail;
 using namespace offsets121::equipment_archive;
 namespace {
 std::uintptr_t g_mainBase = 0;
-pure::AppearanceBlobs<16u * 1024u * 1024u / 256u, pure::kHistoryCapacity * pure::kPoseModelLimit + 64> g_appearance;
+#if SELF_RECALL_STORAGE_PROFILE == 7
+pure::CompressedAppearanceBlobs<pure::kAppearanceBlockCount, pure::kAppearanceStateCapacity> g_appearance;
+#else
+pure::AppearanceBlobs<pure::kAppearanceBlockCount, pure::kAppearanceStateCapacity> g_appearance;
+#endif
 pure::AppearanceFrames<> g_appearanceFrames;
 std::uint32_t g_appearanceGeneration = 0;
 std::array<std::byte, 65536> g_appearanceScratch{};
@@ -44,6 +52,13 @@ struct AppearanceIO {
     }
     template<class T> bool field(T& value) { return transfer(&value, sizeof(value)); }
 };
+
+bool effectValues(equipment_effects::Values& values, AppearanceIO& io) {
+    if constexpr (!pure::kLosslessStorage) return io.field(values);
+    if (!io.field(values.count) || values.count > 128) return false;
+    return io.transfer(values.scale, sizeof(values.scale)) &&
+           io.transfer(values.properties, values.count * sizeof(values.properties[0]));
+}
 constexpr unsigned kBodyIdentityBytes = 3 * sizeof(std::uintptr_t) + 2 * sizeof(std::uint16_t);
 bool bodyIdentity(model::Identity& identity, AppearanceIO& io) {
     return io.field(identity.unit) && io.field(identity.skeleton) && io.field(identity.resource) &&
@@ -105,6 +120,7 @@ bool captureBodyAppearance(const pure::RecordedPoseFrame& frame, std::span<unsig
         if (!g_appearance.equal(g_bodyAppearance[i], bytes)) {
             const auto token = g_appearance.create(bytes);
             if (!token) return refuseAppearance("body_appearance_capacity", io.offset, g_appearance.availableBytes());
+            corpus::appearance(token, bytes);
             g_appearance.release(g_bodyAppearance[i]);
             g_bodyAppearance[i] = token;
         }
@@ -180,12 +196,13 @@ bool captureAppearance(Asset& asset, unsigned assetIndex, std::span<const model:
     auto root = reinterpret_cast<std::uintptr_t>(asset.root.load());
     equipment_effects::Values effects;
     equipment_effects::captureValues(index, effects);
-    if (!io.field(index) || !io.field(root) || !io.field(effects)) return false;
+    if (!io.field(index) || !io.field(root) || !effectValues(effects, io)) return false;
     for (const auto& model : source) if (!materialParameters(model.identity, io)) return false;
     const std::span<const std::byte> bytes{io.data, io.offset};
     if (g_appearance.equal(asset.appearance, bytes)) return true;
     const auto snapshot = g_appearance.create(bytes);
     if (!snapshot) return refuseAppearance("appearance_capacity", io.offset, g_appearance.availableBytes());
+    corpus::appearance(snapshot, bytes);
     if (!asset.appearance)
         Logging.Log("[self-recall] EQUIPMENT_APPEARANCE asset=%u bytes=%u properties=%u free=%u",
             index, io.offset, effects.count, g_appearance.availableBytes());
@@ -202,7 +219,7 @@ bool restoreAppearance(unsigned token, std::span<Asset> assets) {
     unsigned index = 0;
     std::uintptr_t root = 0;
     equipment_effects::Values effects;
-    if (!io.field(index) || !io.field(root) || !io.field(effects) || index >= assets.size()) return false;
+    if (!io.field(index) || !io.field(root) || !effectValues(effects, io) || index >= assets.size()) return false;
     auto& asset = assets[index];
     if (asset.life.load(std::memory_order_acquire) != Life::Ready ||
         reinterpret_cast<std::uintptr_t>(asset.root.load()) != root) return false;
@@ -213,11 +230,15 @@ bool restoreAppearance(unsigned token, std::span<Asset> assets) {
 
 void beginRecord(std::uint32_t historyGeneration) {
     if (historyGeneration == g_appearanceGeneration) return;
-    g_appearanceFrames.clear(g_appearance);
+    if constexpr (!pure::kLosslessStorage) g_appearanceFrames.clear(g_appearance);
     for (auto& token : g_bodyAppearance) { g_appearance.release(token); token = 0; }
     g_appearanceGeneration = historyGeneration;
 }
 
+void collectAppearance(const pure::PoseHistory& history) {
+    if constexpr (pure::kLosslessStorage)
+        g_appearanceFrames.collect(g_appearance, [&](auto key) { return history.canReleaseAppearance(key); });
+}
 
 void initializeAppearance(std::uintptr_t mainBase) {
     g_mainBase = mainBase;
@@ -225,7 +246,9 @@ void initializeAppearance(std::uintptr_t mainBase) {
 }
 void releaseAppearance(unsigned token) { g_appearance.release(token); }
 bool bindAppearanceFrame(pure::PoseFrameKey key, std::span<const unsigned> tokens) {
-    return g_appearanceFrames.bind(g_appearance, key, tokens);
+    const auto bound = g_appearanceFrames.bind(g_appearance, key, tokens);
+    if (bound) corpus::binding(key, tokens);
+    return bound;
 }
 unsigned appearanceToken(pure::PoseFrameKey key, unsigned model) {
     return g_appearanceFrames.token(key, model);

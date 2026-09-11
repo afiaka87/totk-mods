@@ -316,6 +316,7 @@ void recordEffects(pure::PoseFrameHeader& header, std::span<const model::View> v
 }
 
 void collectExpired(const pure::PoseHistory& history, std::uint32_t world) {
+    collectAppearance(history);
     for (auto& asset : g_assets) {
         const auto life = asset.life.load(std::memory_order_acquire);
         if (life == Life::Destroyed) {

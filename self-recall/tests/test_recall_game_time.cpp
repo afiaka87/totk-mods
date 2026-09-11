@@ -12,7 +12,7 @@ TEST_CASE("game time preserves duration at native 30 and 60 Hz") {
     for (const unsigned fps : {30u, 60u}) {
         GameTime clock;
         GameTimeSnapshot sample;
-        for (unsigned frame = 0; frame < 64 * fps; ++frame)
+        for (unsigned frame = 0; frame < kHistorySeconds * fps; ++frame)
             sample = clock.update(fps == 60 ? 0.5f : 1.0f, false);
         CHECK(sample.status == GameTimeStatus::Running);
         CHECK(sample.elapsedNanoseconds == kRecallWindowNanoseconds);

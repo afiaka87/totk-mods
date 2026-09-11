@@ -13,6 +13,7 @@
 #include "RecallVehicle.hpp"
 #include "RecallMemoryProfiler.hpp"
 #include "RecallGliderRelease.hpp"
+#include "RecallStorageProfile.hpp"
 #include "modules/self-recall/SelfRecallModule.hpp"
 
 namespace {
@@ -77,7 +78,8 @@ extern "C" void exl_main(void*, void*) {
                                 self_recall::pose_recorder::prepareScene});
     RayCastWorkerHook::InstallAtOffset(kRayCastWorker);
     NpadCalcHook::InstallAtOffset(kNpadCalc);
-    Logging.Log("[self-recall] v1.0.6: Glide outfit selects 1.25/1.5/2/4x Recall speed");
+    Logging.Log("[self-recall] v1.0.6 storage=%s: Glide outfit selects 1.25/1.5/2/4x Recall speed",
+                self_recall::pure::kStorageProfileName);
 }
 
 extern "C" NORETURN void exl_exception_entry() { EXL_ABORT("unreachable"); }

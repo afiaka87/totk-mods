@@ -47,4 +47,17 @@ std::size_t contiguousArchiveBytes() {
     using Size = std::size_t (*)(const void*, int);
     return reinterpret_cast<Size>(g_mainBase + 0x00D8A12C)(heap, 4096);
 }
+
+void* allocateArchive(std::size_t bytes) {
+    auto* heap = archiveHeap();
+    if (!heap || !bytes) return nullptr;
+    using Allocate = void* (*)(void*, std::size_t, int);
+    return reinterpret_cast<Allocate>(g_mainBase + 0x00B6E8E4)(heap, bytes, 8);
+}
+
+void freeArchive(void* address) {
+    if (!address || !archiveOwns(address)) return;
+    using Free = void (*)(void*, void*);
+    reinterpret_cast<Free>(g_mainBase + 0x02A294DC)(g_heap.load(std::memory_order_acquire), address);
+}
 } // namespace self_recall::equipment

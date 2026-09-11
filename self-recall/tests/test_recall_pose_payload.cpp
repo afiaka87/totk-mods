@@ -197,12 +197,13 @@ TEST_CASE("packed history keeps the full frame window at 30 and 60 Hz within mea
             REQUIRE(history->record(input.value).status == PoseRecordStatus::Recorded);
             history->trimToWindow(kRecallWindowNanoseconds);
         }
-        const unsigned expected = std::min<unsigned>(kHistoryCapacity, fps * 64 + 1);
+        const unsigned expected = std::min<unsigned>(kHistoryCapacity, fps * kHistorySeconds + 1);
         REQUIRE(history->count() == expected);
         auto newest = history->newest(), oldest = history->newest(expected - 1);
         REQUIRE(newest); REQUIRE(oldest);
         CHECK(newest.get()->header.elapsedNanoseconds - oldest.get()->header.elapsedNanoseconds >=
-            kRecallWindowNanoseconds - 1'000'000'000 / fps - 1);
+            std::min<std::uint64_t>(kRecallWindowNanoseconds,
+                std::uint64_t(kHistoryCapacity - 1) * 1'000'000'000 / fps) - 1'000'000'000 / fps - 1);
         CHECK(oldest.get()->bones[487].words[15] == 0x3f000000u + (fps * 70 - expected + 1) * 16 + 15);
         CHECK(history->storageFailures() == 0);
         CHECK(history->payloadUsage().peakAllocated <= kPosePayloadArenaBytes);
@@ -213,7 +214,7 @@ TEST_CASE("packed history keeps the full frame window at 30 and 60 Hz within mea
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count() << '\n';
 }
 
-TEST_CASE("72 MiB pose arena retains a full 30 Hz window with maximum incompressible frames") {
+TEST_CASE("pose arena retains a full 30 Hz window with maximum incompressible frames") {
     auto slots = std::make_unique<PoseHistorySlot[]>(kHistoryCapacity);
     auto blocks = std::make_unique<PosePayloadBlock[]>(kPosePayloadBlockCount);
     auto history = std::make_unique<PoseHistory>(slots.get(), kHistoryCapacity,
@@ -228,8 +229,8 @@ TEST_CASE("72 MiB pose arena retains a full 30 Hz window with maximum incompress
         }
         REQUIRE(history->record(input.value).status == PoseRecordStatus::Recorded);
     }
-    REQUIRE(history->count() == 1921);
-    auto newest = history->newest(), oldest = history->newest(1920);
+    REQUIRE(history->count() == kHistorySeconds * 30 + 1);
+    auto newest = history->newest(), oldest = history->newest(kHistorySeconds * 30);
     REQUIRE(newest); REQUIRE(oldest);
     CHECK(newest.get()->header.elapsedNanoseconds - oldest.get()->header.elapsedNanoseconds == kRecallWindowNanoseconds);
     CHECK(std::memcmp(newest.get()->bones, input.bones.data(), sizeof(newest.get()->bones)) == 0);

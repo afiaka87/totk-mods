@@ -1,10 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include "RecallStorageProfile.hpp"
 
 namespace self_recall::pure {
 
-constexpr std::uint16_t kHistoryCapacity = 3840;
+constexpr std::uint16_t kHistoryCapacity = kHistoryFrameCapacity;
 constexpr float kNominalSampleRate = 60.0f;
 
 struct HoldState {
@@ -130,8 +131,8 @@ consteval bool contracts() {
     holdStep(hold, false, threshold);
     if (hold.ticks != 0 || hold.fired) return false;
 
-    if (previous(0) != 3839 || previous(1) != 0 ||
-        previous(3839) != 3838)
+    if (previous(0) != kHistoryCapacity - 1 || previous(1) != 0 ||
+        previous(kHistoryCapacity - 1) != kHistoryCapacity - 2)
         return false;
     if (clampTickDelta(0) != 1 || clampTickDelta(12) != 12 ||
         clampTickDelta(70000) != 0xffff)

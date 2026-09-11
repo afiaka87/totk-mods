@@ -1,5 +1,6 @@
 #include "RecallOffsets121.hpp"
 #include "RecallMemoryProfiler.hpp"
+#include "RecallCorpusCapture.hpp"
 #include "RecallActorModelView.hpp"
 #include "RecallModelCollection.hpp"
 #include "RecallPoseRecorder.hpp"
@@ -249,10 +250,13 @@ void recordOwnedFrame(const frame::CompletedModelPhase& phase, const Control& co
     }
     g_lastEpoch = phase.epoch;
     g_lastTimeSerial = frameTime.time.serial;
-    if (auto latest = history->acquire(result.history.key); latest && !equipment::recorded(*latest.get())) {
-        reject(Rejection::EquipmentArchive, phase.epoch, 0xA001);
-        memory_profile::recordPose(*history, result.history.key);
-        return;
+    if (auto latest = history->acquire(result.history.key); latest) {
+        if (!equipment::recorded(*latest.get())) {
+            reject(Rejection::EquipmentArchive, phase.epoch, 0xA001);
+            memory_profile::recordPose(*history, result.history.key);
+            return;
+        }
+        corpus::pose(*latest.get());
     }
     history->trimToWindow(pure::kRecallWindowNanoseconds);
     memory_profile::recordPose(*history, result.history.key);

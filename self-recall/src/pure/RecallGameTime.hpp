@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include "RecallStorageProfile.hpp"
 
 namespace self_recall::pure {
 
@@ -58,7 +59,7 @@ private:
     std::uint8_t remainder_ = 0;
 };
 
-inline constexpr std::uint64_t kRecallWindowNanoseconds = 64000000000ull;
+inline constexpr std::uint64_t kRecallWindowNanoseconds = kHistorySeconds * 1000000000ull;
 inline constexpr std::uint64_t kRecallMinimumNanoseconds = 1500000000ull;
 
 }  // namespace self_recall::pure

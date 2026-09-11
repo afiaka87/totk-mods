@@ -5,6 +5,7 @@
 #include <lib.hpp>
 
 #include "RecallModelView.hpp"
+#include "RecallCorpusCapture.hpp"
 
 namespace self_recall::pose_storage {
 namespace {
@@ -42,6 +43,7 @@ State prepare() {
     g_history = ::new (static_cast<void*>(g_historyObject))
         pure::PoseHistory(slots, pure::kHistoryCapacity, {blocks, pure::kPosePayloadBlockCount});
     g_state.store(State::Ready, std::memory_order_release);
+    corpus::start();
     Logging.Log("[self-recall] pose storage ready: owner=module_bss bytes=%llu frames=%u bone_limit=%u",
                 static_cast<unsigned long long>(kBytes),
                 static_cast<unsigned>(pure::kHistoryCapacity),

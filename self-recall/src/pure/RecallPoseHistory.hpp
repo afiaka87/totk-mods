@@ -2,6 +2,9 @@
 #include "RecallPoseFrame.hpp"
 #include "RecallPosePayload.hpp"
 #include "RecallGameTime.hpp"
+#if SELF_RECALL_STORAGE_PROFILE == 7
+#include "RecallPoseChain.hpp"
+#endif
 
 namespace self_recall::pure {
 
@@ -83,6 +86,9 @@ public:
     }
 
     void clear() {
+#if SELF_RECALL_STORAGE_PROFILE == 7
+        chain_.reset(payload_);
+#endif
         latest_.store(kNoSlot, std::memory_order_release);
         count_.store(0, std::memory_order_release);
         oldestSerial_.store(1, std::memory_order_release);
@@ -145,7 +151,12 @@ public:
                                                 std::memory_order_relaxed))
             return {PoseRecordStatus::ReaderBusy, {}};
 
+        unsigned parent = UINT32_MAX, parentBytes = 0;
+#if SELF_RECALL_STORAGE_PROFILE == 7
+        const auto bytes = chain_.prepare(input, scratch_, parent, parentBytes);
+#else
         const auto bytes = encodePosePayload(input, scratch_);
+#endif
         if (bytes && !payload_.canReplace(slot.payloadBytes, bytes)) reclaimExpired();
         if (!bytes || !payload_.canReplace(slot.payloadBytes, bytes)) {
             slot.claims.store(0, std::memory_order_release);
@@ -153,8 +164,11 @@ public:
             return {PoseRecordStatus::StorageFull, {}};
         }
         payload_.release(slot.firstBlock, slot.payloadBytes);
-        slot.firstBlock = payload_.store({scratch_.data(), bytes});
+        slot.firstBlock = payload_.store({scratch_.data(), bytes}, parent, parentBytes);
         slot.payloadBytes = bytes;
+#if SELF_RECALL_STORAGE_PROFILE == 7
+        chain_.commit(payload_, slot.firstBlock, bytes);
+#endif
         const PoseFrameKey key{nextSerial_++, currentGeneration, head_};
         slot.header = h;
         slot.header.key = key;
@@ -216,6 +230,15 @@ public:
     bool contains(PoseFrameKey key) const {
         PoseFrameHeader header;
         return copyHeader(key, header);
+    }
+
+    // Called by the recorder; retired frames may still have render readers.
+    bool canReleaseAppearance(PoseFrameKey key) const {
+        if (!key || key.slot >= capacity_) return true;
+        if (key.generation == generation() &&
+            key.serial >= oldestSerial_.load(std::memory_order_acquire)) return false;
+        const auto& slot = slots_[key.slot];
+        return slot.claims.load(std::memory_order_acquire) == 0;
     }
 
     void trimToWindow(std::uint64_t windowNanoseconds) {
@@ -289,8 +312,12 @@ private:
                     bool available = false;
                     if (!decoded.busy.compare_exchange_strong(available, true, std::memory_order_acquire)) continue;
                     decoded.frame.header = slot->header;
+#if SELF_RECALL_STORAGE_PROFILE == 7
+                    if (slot->payloadBytes && decodePoseChain(payload_, slot->firstBlock, slot->payloadBytes, decoded, slot->header))
+#else
                     if (slot->payloadBytes && payload_.load(slot->firstBlock, slot->payloadBytes, decoded.bytes) &&
                         decodePosePayload({decoded.bytes.data(), slot->payloadBytes}, decoded.frame))
+#endif
                         return PoseReadLease(slot, &decoded);
                     decoded.busy.store(false, std::memory_order_release);
                     break;
@@ -337,6 +364,9 @@ private:
     std::uint8_t previousBodyModelCount_ = 0;
     bool havePrevious_ = false;
     PosePayloadStore payload_;
+#if SELF_RECALL_STORAGE_PROFILE == 7
+    PoseChainEncoder chain_;
+#endif
     std::array<std::byte, kPosePayloadMaxBytes> scratch_{};
     mutable std::array<PoseDecodedFrame, kPoseReadBufferCount> decoded_{};
     mutable std::atomic<std::uint64_t> readFailures_{0};

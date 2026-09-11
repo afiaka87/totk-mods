@@ -11,6 +11,7 @@ bool bindAppearanceFrame(pure::PoseFrameKey key, std::span<const unsigned> token
 unsigned appearanceToken(pure::PoseFrameKey key, unsigned model);
 bool refuseAppearance(const char* reason, std::uint64_t detail, std::uint64_t extra);
 void logAppearanceMemory();
+void collectAppearance(const pure::PoseHistory& history);
 bool captureBodyAppearance(const pure::RecordedPoseFrame& frame, std::span<unsigned> tokens);
 
 // Restores CPU parameters before returning from the native model callback.
