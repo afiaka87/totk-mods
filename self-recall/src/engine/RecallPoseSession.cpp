@@ -1,15 +1,60 @@
-#include "RecallPoseSession.hpp"
+#include "RecallModelEngine.hpp"
 
 #include <atomic>
 #include <new>
 #include <lib.hpp>
 
-#include "RecallFrameTicket.hpp"
-#include "RecallAppliedClimb.hpp"
-#include "RecallPresentationFrame.hpp"
-#include "RecallPoseRecorder.hpp"
-#include "RecallPoseStorage.hpp"
-#include "RecallPoseRender.hpp"
+#include "RecallBase.hpp"
+#include "RecallVisual.hpp"
+
+namespace self_recall::pose_storage {
+namespace {
+
+constexpr auto kSlotBytes = sizeof(pure::PoseHistorySlot) * pure::kHistoryCapacity;
+constexpr auto kBytes = kSlotBytes + pure::kPosePayloadArenaBytes;
+static_assert(kBytes + sizeof(pure::PoseHistory) + sizeof(model::CaptureWorkspace) <=
+              pure::kPoseHistoryByteLimit);
+
+std::atomic<State> g_state{State::WaitingForGameplay};
+std::atomic<bool> g_preparationAllowed{false};
+alignas(pure::PoseHistorySlot) std::byte g_slotStorage[kSlotBytes]{};
+alignas(pure::PosePayloadBlock) std::byte g_payloadStorage[pure::kPosePayloadArenaBytes];
+alignas(pure::PoseHistory) std::byte g_historyObject[sizeof(pure::PoseHistory)]{};
+pure::PoseHistory* g_history = nullptr;
+
+}
+
+void setPreparationAllowed(bool ready) {
+    g_preparationAllowed.store(ready, std::memory_order_release);
+}
+
+State prepare() {
+    if (!g_preparationAllowed.load(std::memory_order_acquire))
+        return g_state.load(std::memory_order_acquire);
+    auto expected = State::WaitingForGameplay;
+    if (!g_state.compare_exchange_strong(expected, State::Constructing,
+                                         std::memory_order_acq_rel)) return expected;
+    auto* slots = reinterpret_cast<pure::PoseHistorySlot*>(g_slotStorage);
+    for (std::uint32_t i = 0; i < pure::kHistoryCapacity; ++i)
+        ::new (static_cast<void*>(slots + i)) pure::PoseHistorySlot;
+    auto* blocks = reinterpret_cast<pure::PosePayloadBlock*>(g_payloadStorage);
+    for (unsigned i = 0; i < pure::kPosePayloadBlockCount; ++i)
+        ::new (static_cast<void*>(blocks + i)) pure::PosePayloadBlock;
+    g_history = ::new (static_cast<void*>(g_historyObject))
+        pure::PoseHistory(slots, pure::kHistoryCapacity, {blocks, pure::kPosePayloadBlockCount});
+    g_state.store(State::Ready, std::memory_order_release);
+    Logging.Log("[self-recall] pose storage ready: owner=module_bss bytes=%llu frames=%u bone_limit=%u",
+                static_cast<unsigned long long>(kBytes),
+                static_cast<unsigned>(pure::kHistoryCapacity),
+                static_cast<unsigned>(pure::kPoseBoneLimit));
+    return State::Ready;
+}
+
+pure::PoseHistory* history() {
+    return g_state.load(std::memory_order_acquire) == State::Ready ? g_history : nullptr;
+}
+
+}
 
 namespace self_recall::pose_session {
 namespace {
@@ -21,8 +66,7 @@ std::atomic<std::uint64_t> g_sessionSerial{0};
 std::atomic<bool> g_active{false};
 pure::AppliedClimbMailbox g_applied;
 std::atomic<bool> g_haveApplied{false};
-std::atomic<std::uint64_t> g_presentations{0}, g_repeats{0}, g_publishMisses{0};
-std::atomic<std::uint64_t> g_lastPresented{0};
+std::atomic<std::uint64_t> g_publishMisses{0};
 }
 
 void initialize() {
@@ -49,7 +93,6 @@ BeginResult begin(std::uint32_t world, const pure::GameTimeSnapshot& clock) {
     const auto key = g_playback->presentation();
     if (!key || !g_selected.publish(key) || !g_presentation.publish(session, clock.serial, key))
         return {true, pure::PosePlaybackStatus::Ready};
-    g_lastPresented.store(key.key.serial, std::memory_order_relaxed);
     g_active.store(true, std::memory_order_release);
     return {false, pure::PosePlaybackStatus::Ready};
 }
@@ -65,13 +108,7 @@ bool publishSelected() {
 void reset(bool clearHistory) {
     g_active.store(false, std::memory_order_release);
     g_haveApplied.store(false, std::memory_order_release);
-    const auto published = g_presentations.exchange(0, std::memory_order_relaxed);
-    const auto repeats = g_repeats.exchange(0, std::memory_order_relaxed);
-    const auto misses = g_publishMisses.exchange(0, std::memory_order_relaxed);
-    if (published || misses)
-        Logging.Log("[self-recall] PRESENTATION_SUMMARY frames=%llu repeated=%llu publish_miss=%llu",
-            static_cast<unsigned long long>(published), static_cast<unsigned long long>(repeats),
-            static_cast<unsigned long long>(misses));
+    g_publishMisses.store(0, std::memory_order_relaxed);
     pose_render::reset();
     if (g_playback) g_playback->reset();
     pose_recorder::resume(clearHistory);
@@ -119,9 +156,6 @@ void latchPresentation(const pure::GameTimeSnapshot& clock) {
                 unsigned(bool(selected)));
         return;
     }
-    g_presentations.fetch_add(1, std::memory_order_relaxed);
-    if (g_lastPresented.exchange(key.key.serial, std::memory_order_relaxed) == key.key.serial)
-        g_repeats.fetch_add(1, std::memory_order_relaxed);
 }
 
 bool publishApplied(std::uintptr_t player, std::uint32_t actorId, std::uint32_t world,
@@ -130,14 +164,6 @@ bool publishApplied(std::uintptr_t player, std::uint32_t actorId, std::uint32_t 
     g_applied.publish({player, actorId, world, sample});
     g_haveApplied.store(true, std::memory_order_release);
     return true;
-}
-
-bool appliedClimb(std::uintptr_t player, std::uint32_t actorId, std::uint32_t world, pure::Pose& out) {
-    if (!active() || !g_haveApplied.load(std::memory_order_acquire)) return false;
-    pure::AppliedClimb applied;
-    if (!g_applied.snapshot(applied) || !pure::matchesAppliedClimb(applied, player, actorId, world)) return false;
-    out = applied.sample.pose;
-    return active() && g_haveApplied.load(std::memory_order_acquire);
 }
 
 bool appliedPose(std::uintptr_t player, std::uint32_t actorId, std::uint32_t world, pure::Pose& out) {
@@ -152,4 +178,4 @@ bool appliedPose(std::uintptr_t player, std::uint32_t actorId, std::uint32_t wor
     return active() && g_haveApplied.load(std::memory_order_acquire);
 }
 
-}  // namespace self_recall::pose_session
+}

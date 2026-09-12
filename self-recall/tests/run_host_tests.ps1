@@ -1,10 +1,15 @@
 param(
     [string]$Generator = 'Ninja',
-    [string]$Config = 'Debug'
+    [string]$Config = 'Debug',
+    [string]$Corpus = ''
 )
 $ErrorActionPreference = 'Stop'
 $testsDir = $PSScriptRoot
 $buildDir = Join-Path $testsDir 'build-host'
+$corpusPath = ''
+if ($Corpus) {
+    $corpusPath = (Resolve-Path -LiteralPath $Corpus).Path
+}
 
 $vendorTools = [IO.Path]::GetFullPath((Join-Path $testsDir '../../../../vendor/totk-dkp/tools'))
 if (Test-Path -LiteralPath $vendorTools) {
@@ -23,19 +28,17 @@ if ($env:OS -eq 'Windows_NT' -and -not $env:VCToolsInstallDir -and -not $env:TOT
             $env:TOTK_HOST_TESTS_REENTERED = '1'
             $self = $MyInvocation.MyCommand.Path
             $cmd = "set `"PATH=$(Split-Path $vswhere);%PATH%`" && call `"$vcvars`" >nul" +
-                   " && powershell -NoProfile -ExecutionPolicy Bypass -File `"$self`" -Generator `"$Generator`" -Config `"$Config`""
+                   " && powershell -NoProfile -ExecutionPolicy Bypass -File `"$self`" -Generator `"$Generator`"" +
+                   " -Config `"$Config`" -Corpus `"$corpusPath`""
             & cmd.exe /d /c $cmd
             exit $LASTEXITCODE
         }
     }
 }
 
-cmake -S $testsDir -B $buildDir -G $Generator "-DCMAKE_BUILD_TYPE=$Config"
+cmake -S $testsDir -B $buildDir -G $Generator "-DCMAKE_BUILD_TYPE=$Config" "-DSELF_RECALL_CORPUS:FILEPATH=$corpusPath"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 cmake --build $buildDir --config $Config
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 ctest --test-dir $buildDir --build-config $Config --output-on-failure --no-tests=error
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-& (Join-Path $buildDir 'self_recall_pure_tests.exe')
 exit $LASTEXITCODE

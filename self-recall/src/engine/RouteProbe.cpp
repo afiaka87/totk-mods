@@ -1,6 +1,5 @@
 
-#include "RouteProbe.hpp"
-#include "RecallRouteProbeBatch.hpp"
+#include "RecallModelEngine.hpp"
 #include <lib.hpp>
 
 namespace self_recall::probe {
@@ -8,7 +7,7 @@ namespace {
 
 RouteProbeBatch g_batch{};
 
-}  // namespace
+}
 
 void arm(ProbeState& state, std::span<const pure::HistorySample> samples,
          const ArmRequest& request) {
@@ -82,4 +81,4 @@ void observe(totk::engine::RaycastFunction original, const void* from,
     g_batch.observe(original, from, object);
 }
 
-}  // namespace self_recall::probe
+}

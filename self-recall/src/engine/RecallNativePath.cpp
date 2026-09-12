@@ -1,12 +1,12 @@
-#include "RecallNativePath.hpp"
+#include "RecallGraphicsEngine.hpp"
 
 #include <atomic>
 #include <cstring>
 #include <heap/seadHeap.h>
 #include <lib.hpp>
 
-#include "RecallFrameTicket.hpp"
-#include "RecallPoseRender.hpp"
+#include "RecallBase.hpp"
+#include "RecallModelEngine.hpp"
 
 namespace self_recall::native_path {
 namespace {
@@ -19,11 +19,10 @@ pure::NativePathFrame g_path;
 std::uint64_t g_epoch = 0, g_preparedEpoch = 0, g_maskedEpoch = 0;
 std::uint32_t g_generation = 0;
 std::atomic<std::uint64_t> g_failure{0};
-std::uint64_t g_calculations = 0, g_masks = 0, g_ribbons = 0, g_composites = 0;
 std::uint32_t g_packedCount = 0;
 bool g_maskInProgress = false;
 bool g_ownerFault = false;
-constexpr std::size_t kRendererBytes = 11216; // Native allocation C78698.
+constexpr std::size_t kRendererBytes = 11216;
 constexpr std::size_t kSelected = 10848;
 constexpr std::size_t kProcessed = 10968;
 
@@ -75,7 +74,7 @@ bool fillNodes() {
     }
     if (g_path.count >= 2) native<void (*)(void*)>(0x017583E4)(list);
     write(list, 48, g_path.points[0].position);
-    write(list, 96, std::uint32_t{UINT32_MAX}); // No native object-head interpolation.
+    write(list, 96, std::uint32_t{UINT32_MAX});
     write(g_renderer, 11116, g_path.points[g_path.count - 1].position);
     return true;
 }
@@ -98,7 +97,6 @@ HOOK_DEFINE_TRAMPOLINE(CalcViewHook) {
         }
         if (built == pure::NativePathStatus::Empty) {
             g_preparedEpoch = g_epoch;
-            ++g_calculations;
             return result;
         }
         if (!fillNodes()) return result;
@@ -113,7 +111,6 @@ HOOK_DEFINE_TRAMPOLINE(CalcViewHook) {
             fail(Failure::Initialization, 2); return result;
         }
         g_preparedEpoch = g_epoch;
-        ++g_calculations;
         return result;
     }
 };
@@ -133,7 +130,6 @@ HOOK_DEFINE_TRAMPOLINE(AuxiliaryPathsHook) {
         if (renderer != g_renderer || !g_maskInProgress || g_path.count < 2) return result;
         native<void (*)(void*, void*, void*)>(0x00C334E4)(g_renderer, drawContext, sceneContext);
         if (g_packedCount != g_path.count) fail(Failure::PackedPath, g_packedCount);
-        else ++g_ribbons;
         return result;
     }
 };
@@ -156,7 +152,6 @@ HOOK_DEFINE_TRAMPOLINE(MaskHook) {
             fail(Failure::Mask);
         if (g_packedCount != g_path.count) fail(Failure::PackedPath, g_packedCount);
         if (read<std::uintptr_t>(g_renderer, 0x168)) fail(Failure::Mask, 2);
-        ++g_masks;
         return result;
     }
 };
@@ -171,14 +166,8 @@ HOOK_DEFINE_TRAMPOLINE(CompositeHook) {
         }
         if (g_maskedEpoch == g_preparedEpoch && g_preparedEpoch == g_epoch) {
             Orig(g_renderer, drawContext, context, view, buffers);
-            ++g_composites;
         } else fail(Failure::Phase, 3);
         releaseMasks();
-        if (g_composites == 1 || (g_composites && g_composites % 1800 == 0))
-            Logging.Log("[self-recall] NATIVE_PATH epoch=%llu frame=%llu points=%u packed=%u masks=%llu ribbons=%llu composites=%llu",
-                static_cast<unsigned long long>(g_epoch), static_cast<unsigned long long>(g_path.key.serial),
-                g_path.count, g_packedCount, static_cast<unsigned long long>(g_masks),
-                static_cast<unsigned long long>(g_ribbons), static_cast<unsigned long long>(g_composites));
         return result;
     }
 };
@@ -198,7 +187,7 @@ HOOK_DEFINE_TRAMPOLINE(RendererDestroyHook) {
         return Orig(renderer);
     }
 };
-} // namespace
+}
 
 void initializeForScene(void* extension, void* scene, sead::Heap* heap) {
     if (!g_mainBase || !extension || !scene || !heap) return;
@@ -237,10 +226,6 @@ void initializeForScene(void* extension, void* scene, sead::Heap* heap) {
 }
 
 void beginFrame(std::uint64_t epoch, std::uint32_t generation) {
-    if (g_generation && !generation)
-        Logging.Log("[self-recall] NATIVE_PATH_SUMMARY calc=%llu masks=%llu ribbons=%llu composites=%llu",
-            static_cast<unsigned long long>(g_calculations), static_cast<unsigned long long>(g_masks),
-            static_cast<unsigned long long>(g_ribbons), static_cast<unsigned long long>(g_composites));
     g_epoch = epoch;
     g_generation = generation;
     g_preparedEpoch = 0;
@@ -263,4 +248,4 @@ void install(std::uintptr_t mainBase) {
     CompositeHook::InstallAtOffset(0x00C31AFC);
     RendererDestroyHook::InstallAtOffset(0x018AFBF0);
 }
-} // namespace self_recall::native_path
+}

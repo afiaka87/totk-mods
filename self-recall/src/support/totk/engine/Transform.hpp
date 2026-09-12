@@ -1,11 +1,8 @@
 
 #pragma once
 
-#include "totk/core/Result.hpp"
-#include "totk/core/Units.hpp"
-#include "totk/engine/ActorHandle.hpp"
-#include "totk/engine/Pointer.hpp"
-#include "totk/engine/Totk121Offsets.hpp"
+#include "totk/core/Types.hpp"
+#include "totk/engine/Runtime.hpp"
 
 #include <cmath>
 #include <cstdint>
@@ -19,35 +16,19 @@ enum class TransformError : std::uint8_t {
     SceneChanged,
     IdentityChanged,
     NonFiniteTransform,
-    ComponentRegistryUnavailable,
-    PhysicsComponentUnavailable,
-    RigidBodySetUnavailable,
-    RigidBodyUnavailable,
     EngineFunctionUnavailable,
 };
 
 using ForceSetMatrixFunction = void (*)(void*, const float*, std::uint32_t);
-using GetMotionTypeFunction = std::uint32_t (*)(void*);
-using RequestMotionTypeFunction = void (*)(void*, std::uint32_t);
-using RequestLinearVelocityFunction = void (*)(void*, const float*);
 
 struct TransformFunctions {
     ForceSetMatrixFunction forceSetMatrix = nullptr;
-    GetMotionTypeFunction getMotionType = nullptr;
-    RequestMotionTypeFunction requestMotionType = nullptr;
-    RequestLinearVelocityFunction requestLinearVelocity = nullptr;
 
     [[nodiscard]] static TransformFunctions fromMainBase(std::uintptr_t mainBase) {
         if (!isPlausibleAddress(mainBase)) return {};
-        return TransformFunctions{
+        return {
             reinterpret_cast<ForceSetMatrixFunction>(
                 mainBase + Totk121Offsets::kForceSetMatrix.value),
-            reinterpret_cast<GetMotionTypeFunction>(
-                mainBase + Totk121Offsets::kGetMotionType.value),
-            reinterpret_cast<RequestMotionTypeFunction>(
-                mainBase + Totk121Offsets::kRequestChangeMotionType.value),
-            reinterpret_cast<RequestLinearVelocityFunction>(
-                mainBase + Totk121Offsets::kRequestSetLinearVelocity.value),
         };
     }
 };
@@ -124,98 +105,8 @@ public:
         return TransformError::None;
     }
 
-    [[nodiscard]] core::Result<RigidBodyHandle, TransformError>
-    rigidBody(const ActorHandle& actor, core::SceneToken scene) const {
-        const auto error = validateHandle(actor, scene);
-        if (error != TransformError::None) {
-            return core::Result<RigidBodyHandle, TransformError>::failure(error);
-        }
-
-        const auto registry = readMemory<std::uintptr_t>(
-            actor.address + layout::kActorComponentRegistry);
-        if (!isPlausibleAddress(registry)) {
-            return core::Result<RigidBodyHandle, TransformError>::failure(
-                TransformError::ComponentRegistryUnavailable);
-        }
-        const auto physics = readMemory<std::uintptr_t>(
-            registry + layout::kPhysicsFromRegistry);
-        if (!isPlausibleAddress(physics)) {
-            return core::Result<RigidBodyHandle, TransformError>::failure(
-                TransformError::PhysicsComponentUnavailable);
-        }
-        const auto set = readMemory<std::uintptr_t>(
-            physics + layout::kRigidBodySetFromPhysics);
-        if (!isPlausibleAddress(set)) {
-            return core::Result<RigidBodyHandle, TransformError>::failure(
-                TransformError::RigidBodySetUnavailable);
-        }
-        const auto body =
-            readMemory<std::uintptr_t>(set + layout::kRigidBodyFromSet);
-        if (!isPlausibleAddress(body)) {
-            return core::Result<RigidBodyHandle, TransformError>::failure(
-                TransformError::RigidBodyUnavailable);
-        }
-        return core::Result<RigidBodyHandle, TransformError>::success(
-            RigidBodyHandle{body, actor});
-    }
-
-    [[nodiscard]] core::Result<std::uint32_t, TransformError>
-    motionType(const RigidBodyHandle& body, core::SceneToken scene) const {
-        if (validateRigidBody(body, scene) != TransformError::None) {
-            return core::Result<std::uint32_t, TransformError>::failure(
-                TransformError::RigidBodyUnavailable);
-        }
-        if (!functions_.getMotionType) {
-            return core::Result<std::uint32_t, TransformError>::failure(
-                TransformError::EngineFunctionUnavailable);
-        }
-        return core::Result<std::uint32_t, TransformError>::success(
-            functions_.getMotionType(reinterpret_cast<void*>(body.address)));
-    }
-
-    [[nodiscard]] TransformError requestMotionType(
-        const RigidBodyHandle& body, core::SceneToken scene,
-        std::uint32_t motionType) const {
-        if (validateRigidBody(body, scene) != TransformError::None) {
-            return TransformError::RigidBodyUnavailable;
-        }
-        if (!functions_.requestMotionType) {
-            return TransformError::EngineFunctionUnavailable;
-        }
-        functions_.requestMotionType(reinterpret_cast<void*>(body.address), motionType);
-        return TransformError::None;
-    }
-
-    [[nodiscard]] TransformError requestLinearVelocity(
-        const RigidBodyHandle& body, core::SceneToken scene,
-        core::LinearVelocity velocity) const {
-        if (validateRigidBody(body, scene) != TransformError::None) {
-            return TransformError::RigidBodyUnavailable;
-        }
-        if (!std::isfinite(velocity.x + velocity.y + velocity.z)) {
-            return TransformError::NonFiniteTransform;
-        }
-        if (!functions_.requestLinearVelocity) {
-            return TransformError::EngineFunctionUnavailable;
-        }
-        const float values[3] = {velocity.x, velocity.y, velocity.z};
-        functions_.requestLinearVelocity(reinterpret_cast<void*>(body.address),
-                                         values);
-        return TransformError::None;
-    }
-
 private:
-    [[nodiscard]] TransformError validateRigidBody(
-        const RigidBodyHandle& body, core::SceneToken scene) const {
-        if (!body.ownerIsCurrent(scene)) return TransformError::RigidBodyUnavailable;
-        const auto current = rigidBody(body.owner, scene);
-        if (!current || current.value.address != body.address) {
-            return TransformError::RigidBodyUnavailable;
-        }
-        return TransformError::None;
-    }
-
     TransformFunctions functions_{};
 };
 
-} // namespace totk::engine
+}

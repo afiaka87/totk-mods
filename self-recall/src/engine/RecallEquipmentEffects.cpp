@@ -1,17 +1,11 @@
-#include "RecallOffsets121.hpp"
-#include "RecallEquipmentEffects.hpp"
-#include "RecallNativeEffectSchema.hpp"
-#include "RecallCorpusCapture.hpp"
-#include "RecallArchiveHeap.hpp"
-#include "RecallPoseRender.hpp"
-#include "RecallPoseSession.hpp"
-#include "RecallWristProvider.hpp"
-#include "RecallFrameHooks.hpp"
+#include "RecallRuntimeEngine.hpp"
+#include "RecallEffectsEngine.hpp"
+#include "RecallModelEngine.hpp"
+#include "RecallRender.hpp"
 #include <array>
 #include <atomic>
-#include <bit>
+#include <cmath>
 #include <optional>
-#include <type_traits>
 #include <lib.hpp>
 
 namespace self_recall::equipment_effects {
@@ -28,7 +22,7 @@ template<class T> void write(void* p, std::size_t offset, T v) {
     std::memcpy(static_cast<std::byte*>(p) + offset, &v, sizeof(v));
 }
 template<class F> F native(std::uintptr_t offset) { return reinterpret_cast<F>(g_main + offset); }
-using Schema = std::conditional_t<pure::kLosslessStorage, detail::PackedEffectSchema, detail::NativeEffectSchema>;
+using Schema = detail::PackedEffectSchema;
 struct Asset : Schema {
     std::atomic<bool> ready{false};
     std::atomic<const void*> source{nullptr};
@@ -37,8 +31,6 @@ struct Asset : Schema {
     alignas(8) std::byte user[112]{};
     float scale[3]{1, 1, 1};
     bool constructed = false;
-    std::atomic<unsigned> renderedEvent{0};
-    std::atomic<unsigned> renderedReports{0};
 };
 struct Slot {
     unsigned owner = kAssets;
@@ -176,8 +168,13 @@ bool snapshotValues(Asset& a, const void* source) {
 void observe(void* executor) {
     const auto* source = read<const void*>(executor, 0x20);
     unsigned owner = kAssets;
-    for (unsigned i = 0; i < kAssets; ++i)
-        if (g_assets[i].ready.load(std::memory_order_acquire) && g_assets[i].source.load() == source) { owner = i; break; }
+    for (unsigned i = 0; i < kAssets; ++i) {
+        if (g_assets[i].ready.load(std::memory_order_acquire) &&
+            g_assets[i].source.load() == source) {
+            owner = i;
+            break;
+        }
+    }
     if (owner == kAssets || !native<bool (*)(const void*)>(kIsLoopingExecutor)(executor)) return;
     const auto state = read<unsigned>(executor, 0x30);
     const auto* event = read<const void*>(executor, 0x18);
@@ -191,21 +188,17 @@ void observe(void* executor) {
     const auto handle = handleOf(event);
     if (handle.poolIndex < 0) return;
     Lock lock;
-    auto& asset = g_assets[owner];
-    if (!asset.ready.load() || asset.source.load() != source) return;
+    if (!g_assets[owner].ready.load() || g_assets[owner].source.load() != source) return;
     Slot* empty = nullptr;
     for (auto& slot : g_slots) {
         if (slot.owner == owner && !std::strcmp(slot.name, name)) { empty = &slot; break; }
         if (slot.owner == kAssets && !empty) empty = &slot;
     }
     if (!empty) { refuse("event_capacity", pure::kEquipmentEffectLimit); return; }
-    if (empty->owner == kAssets)
-        Logging.Log("[self-recall] EQUIPMENT_LOOP_OBSERVED asset=%u user=%s cue=%s epoch=%llu",
-            owner, asset.userName, name, static_cast<unsigned long long>(frame::diagnostics().frames));
     std::memcpy(empty->name, name, length + 1);
     empty->source = handle;
     empty->owner = owner;
-    empty->seen = frame::diagnostics().frames;
+    empty->seen = frame::epoch();
     const auto* emitter = read<const void*>(executor, 0xB8);
     const auto id = read<unsigned>(executor, 0xC0);
     empty->visible = emitter && read<unsigned>(emitter, 0x234) == id && read<unsigned>(emitter, 0x34) != 0;
@@ -238,7 +231,9 @@ void synchronizeExistingLoops(const void* source) {
             if (executors <= 256 && executorOffset == 8) {
                 for (unsigned x = 0; x < executors && entry && entry != end; ++x) {
                     auto* executor = const_cast<std::byte*>(entry - executorOffset);
-                    if (read<const void*>(executor, 0) == reinterpret_cast<const void*>(g_main + kEffectExecutorVtable)) {
+                    if (read<const void*>(executor, 0) ==
+                        reinterpret_cast<const void*>(
+                            g_main + kEffectExecutorVtable)) {
                         restore(executor);
                         observeAndHideEquipmentEffect(executor);
                     }
@@ -271,21 +266,6 @@ void restore(void* executor) {
 void observeAndHideEquipmentEffect(void* executor) {
     observe(executor);
     const auto* user = read<const void*>(executor, 0x20);
-    for (unsigned i = 0; i < kAssets; ++i) {
-        auto& asset = g_assets[i];
-        if (!user || asset.instance.load(std::memory_order_acquire) != user || !asset.ready.load()) continue;
-        const auto* event = read<const void*>(executor, 0x18);
-        const auto id = event ? read<unsigned>(event, 0x20) : 0;
-        if (!id || asset.renderedEvent.exchange(id) == id) break;
-        const auto reports = asset.renderedReports.fetch_add(1) + 1;
-        if (reports > 3 && reports % 300 != 0) break;
-        const auto* emitter = read<const void*>(executor, 0xB8);
-        const bool emitterValid = emitter && read<unsigned>(emitter, 0x234) == read<unsigned>(executor, 0xC0);
-        Logging.Log("[self-recall] EQUIPMENT_LOOP_RENDER asset=%u event=%u state=%u emitter=%u mask=%x",
-            i, id, read<unsigned>(executor, 0x30), unsigned(emitterValid),
-            emitterValid ? read<unsigned>(emitter, 0x34) : 0);
-        break;
-    }
     if (!user || !hide(user)) return;
     auto* emitter = read<void*>(executor, 0xB8);
     const auto id = read<std::uint32_t>(executor, 0xC0);
@@ -346,23 +326,16 @@ bool retain(unsigned asset, const void* actor, const void* copiedRoot) {
     }
     if (equipment::contiguousArchiveBytes() < 256 * 1024)
         return refuse("schema", asset);
-    const auto prepareSchema = [&]<class T>(T& schema) {
-        if constexpr (std::is_base_of_v<detail::PackedEffectSchema, T>) {
-            const auto size = detail::measureSchema(source);
-            auto* bytes = size ? static_cast<std::byte*>(equipment::allocateArchive(size.bytes())) : nullptr;
-            if (!bytes) return false;
-            if (!schema.bind({bytes, size.bytes()}, size) || !copySchema(schema, source)) {
-                equipment::freeArchive(bytes);
-                static_cast<detail::PackedEffectSchema&>(schema) = {};
-                return false;
-            }
-            Logging.Log("[self-recall] EFFECT_SCHEMA_BYTES asset=%u bytes=%u properties=%u enums=%u names=%u",
-                asset, size.bytes(), size.properties, size.enums, size.names);
-            corpus::schema(asset, size.properties, size.enums, size.names, {bytes, size.bytes()});
-            return true;
-        } else return copySchema(schema, source);
-    };
-    if (!prepareSchema(a)) return refuse("schema_copy", asset);
+    const auto size = detail::measureSchema(source);
+    auto* bytes = size ? static_cast<std::byte*>(
+                             equipment::allocateArchive(size.bytes()))
+                       : nullptr;
+    if (!bytes) return refuse("schema_copy", asset);
+    if (!a.bind({bytes, size.bytes()}, size) || !copySchema(a, source)) {
+        equipment::freeArchive(bytes);
+        static_cast<detail::PackedEffectSchema&>(a) = {};
+        return refuse("schema_copy", asset);
+    }
     a.root = copiedRoot;
     native<void (*)(void*)>(kConstructPreActorUser)(a.user);
     a.constructed = true;
@@ -375,7 +348,6 @@ bool retain(unsigned asset, const void* actor, const void* copiedRoot) {
     const auto* instance = read<const void*>(a.user, 0x18);
     a.instance.store(instance, std::memory_order_release);
     if (!instance) { retire(asset); return refuse("create", asset); }
-    const auto initialFlags = read<unsigned>(instance, 0x18);
     native<void (*)(void*)>(kResetPreActorUser)(a.user);
     if (!snapshotValues(a, source)) { retire(asset); return refuse("property_values", asset); }
     struct MatrixArgument { const void* root; std::uint64_t indices, unused; const float* scale; };
@@ -384,8 +356,8 @@ bool retain(unsigned asset, const void* actor, const void* copiedRoot) {
     a.source.store(source, std::memory_order_release);
     a.ready.store(true, std::memory_order_release);
     synchronizeExistingLoops(source);
-    Logging.Log("[self-recall] EQUIPMENT_EFFECT_ARCHIVED asset=%u user=%s properties=%u flags=%x->%x", asset, a.userName, a.propertyCount,
-        initialFlags, read<unsigned>(instance, 0x18));
+    Logging.Log("[self-recall] EQUIPMENT_EFFECT_ARCHIVED asset=%u user=%s properties=%u",
+                asset, a.userName, a.propertyCount);
     return true;
 }
 
@@ -400,18 +372,11 @@ void retire(unsigned asset) {
         a.constructed = false;
     }
     a.instance.store(nullptr, std::memory_order_release);
-    a.renderedEvent.store(0);
-    a.renderedReports.store(0);
     a.root = nullptr;
     Lock lock;
     for (auto& slot : g_slots) if (slot.owner == asset) slot = {};
-    const auto releaseSchema = []<class T>(T& schema) {
-        if constexpr (std::is_base_of_v<detail::PackedEffectSchema, T>) {
-            equipment::freeArchive(schema.storage);
-            static_cast<detail::PackedEffectSchema&>(schema) = {};
-        }
-    };
-    releaseSchema(a);
+    equipment::freeArchive(a.storage);
+    static_cast<detail::PackedEffectSchema&>(a) = {};
 }
 
 void record(unsigned asset, pure::PoseFrameHeader& header) {
@@ -427,11 +392,7 @@ void record(unsigned asset, pure::PoseFrameHeader& header) {
 
 void selectFrame(const pure::RecordedPoseFrame* frame) {
     const auto mask = frame ? pure::equipmentEffectMask(frame->header) : 0;
-    const auto previous = g_selected.exchange(mask, std::memory_order_acq_rel);
-    if (previous != mask)
-        Logging.Log("[self-recall] EQUIPMENT_LOOP_SELECTION mask=%llx key=%llu",
-            static_cast<unsigned long long>(mask),
-            static_cast<unsigned long long>(frame ? frame->header.key.serial : 0));
+    g_selected.store(mask, std::memory_order_release);
     for (unsigned i = 0; i < g_slots.size(); ++i) {
         unsigned owner;
         char name[128];
@@ -456,25 +417,23 @@ void selectFrame(const pure::RecordedPoseFrame* frame) {
                    action == pure::EquipmentLoopAction::WakeAndEmit) {
             if (action == pure::EquipmentLoopAction::WakeAndEmit) {
                 native<void (*)(void*)>(kResetPreActorUser)(asset.user);
-                Logging.Log("[self-recall] EQUIPMENT_EFFECT_WAKE asset=%u flags=%x->%x",
-                    owner, flags, read<unsigned>(user, 0x18));
             }
             replay = {};
             native<void (*)(void*, const char*, void*)>(kEmitEvent)(user, name, &replay);
-            unsigned attempt;
-            { Lock lock; attempt = ++g_slots[i].attempts; }
-            if (valid(replay) || attempt <= 3 || (attempt & (attempt - 1)) == 0) {
-                const auto currentFlags = read<unsigned>(user, 0x18);
-                const auto* setup = read<const void*>(user, 0x48 + 8 * (currentFlags & 1u));
-                const auto* definition = read<const void*>(user, 0x58);
-                const auto* resource = definition ? read<const void*>(definition, 0x18) : nullptr;
-                const auto choice = resource ? read<unsigned>(resource, 0x18) : 0;
-                const auto* parameters = resource ? read<const void*>(resource, 0x20 + 8 * (choice < 2 ? choice : 0)) : nullptr;
-                const auto* header = parameters ? read<const void*>(parameters, 8) : nullptr;
-                Logging.Log("[self-recall] EQUIPMENT_LOOP_REPLAY asset=%u cue=%s valid=%u key=%llu flags=%x attempt=%u setup=%u calls=%u",
-                    owner, name, unsigned(valid(replay)),
-                    static_cast<unsigned long long>(frame->header.key.serial), currentFlags, attempt,
-                    setup ? read<unsigned char>(setup, 0x20) : 0, header ? read<unsigned>(header, 8) : 0);
+            if (!valid(replay)) {
+                unsigned attempt;
+                {
+                    Lock lock;
+                    attempt = ++g_slots[i].attempts;
+                }
+                if (attempt <= 3 || (attempt & (attempt - 1)) == 0)
+                    Logging.Log(
+                        "[self-recall] EQUIPMENT_LOOP_REPLAY_FAILED asset=%u "
+                        "cue=%s key=%llu attempt=%u",
+                        owner, name,
+                        static_cast<unsigned long long>(
+                            frame ? frame->header.key.serial : 0),
+                        attempt);
             }
         }
         Lock lock;
@@ -532,4 +491,4 @@ bool copyMatrix(const void* descriptor, float out[12]) {
     }
     return false;
 }
-} // namespace self_recall::equipment_effects
+}

@@ -24,4 +24,4 @@ struct Module {
     const char* (*aim)();
 };
 
-} // namespace wwpg
+}

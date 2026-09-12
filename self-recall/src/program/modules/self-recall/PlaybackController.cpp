@@ -1,19 +1,10 @@
 
-#include "PlaybackController.hpp"
-#include "RecallStopText.hpp"
+#include "SelfRecallModule.hpp"
 
 #include <nn/util.h>
 
-#include "PlayerBridge.hpp"
-#include "RecallEffectService.hpp"
-#include "RecallLog.hpp"
-#include "RecallGameClock.hpp"
-#include "RecallPoseSession.hpp"
-#include "RecallPoseRecorder.hpp"
-#include "RecallPoseRender.hpp"
-#include "RecallGliderRelease.hpp"
-#include "RecallNativeGameplay.hpp"
-#include "RouteSafetyService.hpp"
+#include "RecallRuntimeEngine.hpp"
+#include "RecallModelEngine.hpp"
 
 namespace self_recall::playback {
 namespace {
@@ -26,11 +17,7 @@ bool applySample(RecallRuntime& runtime, const pure::HistorySample& sample) {
                                      runtime.session.worldGeneration, sample)) return false;
     if (!world::forcePose(sample.pose)) return false;
     playback.lastApplied = sample.pose;
-    playback.lastAnimKind = sample.animKind;
-    playback.lastAnimSlot = sample.animSlot;
     playback.lastSampleFlags = sample.flags;
-    playback.lastAnimStickX = sample.stickX;
-    playback.lastAnimStickY = sample.stickY;
     playback.lastAppliedRecordedSpeed = sample.pathSpeed;
     playback.lastAppliedRate = runtime.session.speed.rate();
     playback.lastAppliedEngineSpeed = std::sqrt(
@@ -38,9 +25,6 @@ bool applySample(RecallRuntime& runtime, const pure::HistorySample& sample) {
         sample.engineVelocity[1] * sample.engineVelocity[1] +
         sample.engineVelocity[2] * sample.engineVelocity[2]);
     playback.haveApplied = true;
-    playback.lastYawMilliDegrees = pure::yawMilliDegrees(sample.pose);
-    if (sample.pathSpeed > playback.replayPeakRecordedSpeed)
-        playback.replayPeakRecordedSpeed = sample.pathSpeed;
     return true;
 }
 
@@ -144,40 +128,20 @@ void selectAndApplyFrame(RecallRuntime& runtime, pure::PosePlayback* cursor,
         return;
     }
 
-    const auto previousIndex = playback.rewindIndex;
-    const auto previousRemaining = playback.rewindRemaining;
-    if (playback.haveVerified && cursor->index() != previousIndex) {
-        const float advance = pure::distance3(sample.pose.position,
-                                              playback.lastVerified.position);
-        if (std::isfinite(advance)) playback.replayMeters += advance;
-    }
     if (!applySample(runtime, sample)) {
         finish(runtime, self_recall::pure::PlaybackStop::PoseApplyFailed, true);
         return;
     }
-    playback.rewindIndex = static_cast<std::uint16_t>(cursor->index());
     playback.rewindRemaining = static_cast<std::uint16_t>(cursor->count() - cursor->index() - 1);
-    if (playback.rewindRemaining && previousRemaining / 480 != playback.rewindRemaining / 480)
-        SRLOG(
-            "REWIND_PROGRESS remaining=%u path_speed_dms=%d "
-            "engine_speed_dms=%d yaw_mdeg=%d",
-            (unsigned)playback.rewindRemaining,
-            (int)(sample.pathSpeed * 10.0f),
-            (int)(playback.lastAppliedEngineSpeed * 10.0f),
-            playback.lastYawMilliDegrees);
     safety::armProbe(runtime);
 }
 
-}  // namespace
+}
 
-bool clearVelocity(const char* reason) {
-    const bool cleared = world::clearLinearVelocity();
-    if (cleared)
-        SRLOG("VELOCITY_CLEAR reason=%s", reason ? reason : "unspecified");
-    else
+void clearVelocity(const char* reason) {
+    if (!world::clearLinearVelocity())
         SRLOG("VELOCITY_CLEAR skipped reason=%s no-player-component",
               reason ? reason : "unspecified");
-    return cleared;
 }
 
 void start(RecallRuntime& runtime) {
@@ -245,15 +209,9 @@ void start(RecallRuntime& runtime) {
     playback.haveApplied = false;
     playback.haveVerified = false;
     playback.rewindRemaining = playback.rewindTotal = static_cast<std::uint16_t>(cursor.count());
-    playback.rewindIndex = 0;
     playback.selectionPending = true;
     playback.selectedEnd = false;
     playback.lastStepClockSerial = 0;
-    playback.startedNanoseconds = clock.elapsedNanoseconds;
-    playback.replayMeters = 0.0f;
-    playback.replayPeakRecordedSpeed = 0.0f;
-    playback.startYawMilliDegrees = pure::yawMilliDegrees(current);
-    playback.lastYawMilliDegrees = playback.startYawMilliDegrees;
     clearVelocity("rewind start");
     if (!native_gameplay::begin(world::playerActor())) {
         finish(runtime, pure::PlaybackStop::StaminaUnavailable, false);
@@ -263,8 +221,8 @@ void start(RecallRuntime& runtime) {
         finish(runtime, self_recall::pure::PlaybackStop::PoseApplyFailed, false);
         return;
     }
-    const bool presentation = effects::startRewind(runtime);
-    effects::buildRoute(runtime);
+    const bool presentation = effects::startRewind();
+    effects::buildRoute();
     setEvent("REWINDING - B cancels");
 
     SRLOG("REWIND START frames=%u duration_ms=%llu generation=%u present=%u speed=%s",
@@ -283,31 +241,16 @@ void finish(RecallRuntime& runtime, pure::PlaybackStop stop,
                                     playback.rewindRemaining)
             : 0u;
     const unsigned total = playback.rewindTotal;
-    const int yawDelta =
-        playback.lastYawMilliDegrees - playback.startYawMilliDegrees;
-    const auto text = stopText(stop);
+    const auto text = pure::playbackStopText(stop);
     const auto* reason = text.reason;
     const auto exit = pure::playbackExitPlan(stop, runtime.safety.unsafeNow == Unsafe::None,
                                           playback.lastSampleFlags);
 
     native_gameplay::release();
-    effects::stopForExit(runtime, reason, emitEnd, exit.graceful);
+    effects::stopForExit(reason, emitEnd);
     clearVelocity(reason);
-    pure::GameTimeSnapshot stopClock;
-    const auto* cursor = pose_session::playback();
-    const auto historyMs = cursor ? cursor->elapsedNanoseconds() / 1000000 : 0;
-    const auto gameMs = game_clock::snapshot(stopClock) && stopClock.elapsedNanoseconds >= playback.startedNanoseconds
-        ? (stopClock.elapsedNanoseconds - playback.startedNanoseconds) / 1000000 : 0;
-    SRLOG("RECALL_TIMING speed=%s history_ms=%llu game_ms=%llu",
-        pure::playbackRateText(runtime.session.speed.rate()),
-        static_cast<unsigned long long>(historyMs), static_cast<unsigned long long>(gameMs));
-    SRLOG(
-        "REWIND %s completed=%u/%u replay_dm=%d "
-        "peak_recorded_dms=%d yaw_delta_mdeg=%d probe_bypasses=%u",
-        reason ? reason : "STOP", completed, total,
-        (int)(playback.replayMeters * 10.0f),
-        (int)(playback.replayPeakRecordedSpeed * 10.0f), yawDelta,
-        runtime.safety.probe.bypasses);
+    SRLOG("REWIND %s completed=%u/%u", reason ? reason : "STOP", completed,
+          total);
     clearRoute(reason);
     if (exit.releaseGlider) glider_release::request(world::playerActor(), runtime.session.worldGeneration,
                                                runtime.session.tick, true);
@@ -346,8 +289,6 @@ void step(RecallRuntime& runtime) {
 
     world::clearLinearVelocity();
 
-    effects::driveAnimation(runtime);
-
     if (runtime.safety.probe.obstructed && cursor->index() >= runtime.safety.probe.evaluatedThrough) {
         const auto& hit = runtime.safety.probe.hitPosition;
         SRLOG("ROUTE_RAY_BLOCKED hit_cm=(%d,%d,%d)", (int)(hit.x * 100.0f),
@@ -374,10 +315,8 @@ void step(RecallRuntime& runtime) {
     selectAndApplyFrame(runtime, cursor, clock);
 }
 
-void applyRecordedInput(const RecallRuntime& runtime,
-                        const totk::engine::NpadFrame& frame) {
-    (void)runtime;
+void applyRecordedInput(const totk::engine::NpadFrame& frame) {
     frame.writeOwnedLeftStick(0, 0);
 }
 
-}  // namespace self_recall::playback
+}

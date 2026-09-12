@@ -1,22 +1,13 @@
-#include "RecallOffsets121.hpp"
-#include "RecallPoseRender.hpp"
-#include "RecallScenePalette.hpp"
-#include "RecallMonochromeFilter.hpp"
+#include "RecallRuntimeEngine.hpp"
+#include "RecallModelEngine.hpp"
+#include "RecallGraphicsEngine.hpp"
+#include "RecallEffectsEngine.hpp"
 
 #include <atomic>
 #include <new>
 #include <optional>
 #include <lib.hpp>
-#include "RecallFrameHooks.hpp"
-#include "RecallNativeRenderInput.hpp"
-#include "RecallNativeShapeVisibility.hpp"
-#include "RecallNativeAdmission.hpp"
-#include "RecallEquipmentArchive.hpp"
-#include "RecallEquipmentAppearance.hpp"
-#include "RecallEquipmentEffects.hpp"
-#include "RecallPoseSession.hpp"
-#include "RecallPoseStorage.hpp"
-#include "RecallRenderFrames.hpp"
+#include "RecallRender.hpp"
 
 namespace self_recall::pose_render {
 using namespace offsets121::pose_render;
@@ -28,10 +19,6 @@ std::uintptr_t g_mainBase = 0;
 alignas(pure::RenderFrameStore) std::byte g_storage[sizeof(pure::RenderFrameStore)];
 pure::RenderFrameStore* g_frames = nullptr;
 std::atomic<std::uint64_t> g_failure{0};
-std::atomic<std::uint64_t> g_uploads{0};
-std::atomic<std::uint64_t> g_viewUploads{0};
-std::atomic<std::uint64_t> g_bounds{0};
-std::atomic<std::uint64_t> g_admissions{0};
 std::atomic<std::uint64_t> g_startEpoch{0};
 std::atomic<std::uint32_t> g_frameGeneration{0};
 std::atomic<std::uint64_t> g_latchedEpoch{0};
@@ -67,10 +54,10 @@ pure::RenderFrameStore::Lease acquire(const void* unit, unsigned buffer) {
     const auto generation = g_frameGeneration.load(std::memory_order_acquire);
     if (!generation) return {};
     auto found = g_frames->acquireEpoch(reinterpret_cast<std::uintptr_t>(unit),
-        frame::diagnostics().frames, generation);
+        frame::epoch(), generation);
     if (!found.lease) {
         if (found.owned && !equipment::publishedModel(unit) &&
-            frame::diagnostics().frames > g_startEpoch.load(std::memory_order_acquire))
+            frame::epoch() > g_startEpoch.load(std::memory_order_acquire))
             fail(Failure::Buffer, buffer);
     }
     return std::move(found.lease);
@@ -135,14 +122,6 @@ void uploadHistoricalAnimation(void* unit) {
     reinterpret_cast<Calculate>(g_mainBase + kCalculateShape)(input.model, buffer);
     frame.markUploaded();
     monochrome::protectHistoricalModel(unit);
-    const auto count = g_uploads.fetch_add(1, std::memory_order_relaxed) + 1;
-    if (count == 1 || count % 1800 == 0)
-        Logging.Log("[self-recall] animation upload: count=%llu epoch=%llu frame=%llu model=%u buffer=%u views=%llu",
-            static_cast<unsigned long long>(count),
-            static_cast<unsigned long long>(frame.get()->epoch),
-            static_cast<unsigned long long>(frame.get()->animation.header.key.serial),
-            static_cast<unsigned>(frame.modelIndex()), buffer,
-            static_cast<unsigned long long>(g_viewUploads.load(std::memory_order_relaxed)));
     return;
 }
 
@@ -162,7 +141,6 @@ HOOK_DEFINE_TRAMPOLINE(CalculateViewHook) {
         model::NativeRenderInput input;
         if (frame && makeInput(unit, frame, input)) {
             Orig(input.model, view, camera, buffer);
-            g_viewUploads.fetch_add(1, std::memory_order_relaxed);
         } else {
             Orig(modelObject, view, camera, buffer);
         }
@@ -175,7 +153,7 @@ int recalledVisibility(const void* renderUnit) {
     if (!frame) {
         if (equipment::publishedModel(unit)) return 0;
         if (pose_session::active() && g_suppressedEpoch.load(std::memory_order_acquire) ==
-                frame::diagnostics().frames) {
+                frame::epoch()) {
             for (const auto& live : g_liveEquipment)
                 if (live.load(std::memory_order_relaxed) == reinterpret_cast<std::uintptr_t>(unit)) return 0;
         }
@@ -211,7 +189,7 @@ HOOK_DEFINE_TRAMPOLINE(ShapeArrayDrawHook) {
 
 using NativeCalculateBounding = float (*)(void*);
 void updateHistoricalBounds(void* unit, NativeCalculateBounding calculate) {
-    if (g_admittedEpoch.load(std::memory_order_acquire) != frame::diagnostics().frames) return;
+    if (g_admittedEpoch.load(std::memory_order_acquire) != frame::epoch()) return;
     auto frame = acquire(unit, 0);
     if (!frame) return;
     const auto* history = pose_storage::history();
@@ -232,7 +210,6 @@ void updateHistoricalBounds(void* unit, NativeCalculateBounding calculate) {
         pure::translatedBoundsSpace(historical, frame.get()->rootOffset));
     (void)calculate(bounds.unit);
     frame.markBounded();
-    g_bounds.fetch_add(1, std::memory_order_relaxed);
     return;
 }
 
@@ -244,7 +221,7 @@ HOOK_DEFINE_TRAMPOLINE(CalculateBoundingHook) {
     }
 };
 
-} // namespace
+}
 
 bool drawVisible(const void* renderUnit) {
     return renderUnit && recalledVisibility(renderUnit) != 0;
@@ -294,12 +271,6 @@ void admitModels(void* scene, std::uint64_t epoch, std::span<const model::View> 
         std::memcpy(unit + 0x12, &flags, sizeof(flags));
     }
     g_admittedEpoch.store(epoch, std::memory_order_release);
-    const auto count = g_admissions.fetch_add(1, std::memory_order_relaxed) + 1;
-    if (count == 1 || count % 1800 == 0)
-        Logging.Log("[self-recall] animation admission: count=%llu epoch=%llu models=%u roots=%u requested=%u bounds=%llu",
-            static_cast<unsigned long long>(count), static_cast<unsigned long long>(epoch),
-            static_cast<unsigned>(current.size()), static_cast<unsigned>(roots.size()), plan.count,
-            static_cast<unsigned long long>(g_bounds.load(std::memory_order_relaxed)));
 }
 
 void verifyComplete(std::uint64_t epoch, const pure::RecordedPoseFrame& recorded,
@@ -452,7 +423,7 @@ bool copyWrist(std::uint32_t historyGeneration, pure::RenderWristFrame& out) {
     if (header.key.generation != historyGeneration || !header.haveWrist) return false;
     for (float value : header.wristMatrix) if (!std::isfinite(value)) return false;
     out.key = header.key;
-    out.epoch = frame::diagnostics().frames;
+    out.epoch = frame::epoch();
     std::memcpy(out.matrix, header.wristMatrix, sizeof(out.matrix));
     pure::shiftMatrix(out.matrix, presentation.offset);
     pure::RenderWristFrame body;
@@ -467,7 +438,7 @@ bool copyWrist(std::uint32_t historyGeneration, pure::RenderWristFrame& out) {
 }
 std::uint64_t takeFailure() { return g_failure.exchange(0, std::memory_order_acq_rel); }
 void begin() {
-    g_startEpoch.store(frame::diagnostics().frames, std::memory_order_release);
+    g_startEpoch.store(frame::epoch(), std::memory_order_release);
     g_frameGeneration.store(0, std::memory_order_release);
     g_preparedGeneration.store(0, std::memory_order_release);
 }
@@ -487,4 +458,4 @@ void reset() {
     g_preparedGeneration.store(0, std::memory_order_release);
 }
 
-} // namespace self_recall::pose_render
+}

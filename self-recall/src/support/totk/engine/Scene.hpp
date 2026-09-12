@@ -1,10 +1,8 @@
 
 #pragma once
 
-#include "totk/core/Result.hpp"
-#include "totk/core/Units.hpp"
-#include "totk/engine/Pointer.hpp"
-#include "totk/engine/Totk121Offsets.hpp"
+#include "totk/core/Types.hpp"
+#include "totk/engine/Runtime.hpp"
 
 #include <cstdint>
 
@@ -68,49 +66,87 @@ using SceneResult = core::Result<SceneContext, SceneResolveError>;
         mainBase + Totk121Offsets::kSceneModuleInstance.value);
 }
 
-enum class SceneObservation : std::uint8_t {
-    Unavailable,
-    FirstScene,
-    SameScene,
-    ChangedScene,
+enum class VisitControl : std::uint8_t { Continue, Stop };
+
+enum class RosterError : std::uint8_t {
+    ManagerUnavailable,
+    ListUnavailable,
+    CountInvalid,
+    ActorNotFound,
 };
 
-struct SceneSnapshot {
-    SceneContext context{};
-    core::SceneGeneration generation{};
-    SceneObservation observation = SceneObservation::Unavailable;
+struct ResidentActorView {
+    ActorHandle handle{};
+    core::ActorName name{};
 };
 
-class SceneTracker {
-public:
-    [[nodiscard]] SceneSnapshot observe(const SceneResult& resolved) {
-        if (!resolved) {
-            current_ = {};
-            return SceneSnapshot{{}, generation_, SceneObservation::Unavailable};
-        }
+struct RosterWalkReport {
+    std::uint32_t visited = 0;
+    bool complete = false;
+};
 
-        const bool hadScene = current_.token.isValid();
-        const bool changed = hadScene && current_.token != resolved.value.token;
-        if (!hadScene || changed) {
-            ++generation_.value;
-            if (generation_.value == 0) ++generation_.value;
-        }
-        current_ = resolved.value;
-        return SceneSnapshot{
-            current_,
-            generation_,
-            !hadScene ? SceneObservation::FirstScene
-                      : changed ? SceneObservation::ChangedScene
-                                : SceneObservation::SameScene,
-        };
+template <class Visitor>
+[[nodiscard]] core::Result<RosterWalkReport, RosterError>
+visitResidentActors(const SceneContext& scene, Visitor&& visitor) {
+    if (!scene.isReady()) {
+        return core::Result<RosterWalkReport, RosterError>::failure(
+            RosterError::ManagerUnavailable);
     }
 
-    [[nodiscard]] SceneContext current() const { return current_; }
-    [[nodiscard]] core::SceneGeneration generation() const { return generation_; }
+    const auto count =
+        readMemory<std::int32_t>(scene.residentActorManager + layout::kResidentCount);
+    const auto list =
+        readMemory<std::uintptr_t>(scene.residentActorManager + layout::kResidentList);
+    if (!isPlausibleAddress(list)) {
+        return core::Result<RosterWalkReport, RosterError>::failure(
+            RosterError::ListUnavailable);
+    }
+    if (count <= 0 || count > 256) {
+        return core::Result<RosterWalkReport, RosterError>::failure(
+            RosterError::CountInvalid);
+    }
 
-private:
-    SceneContext current_{};
-    core::SceneGeneration generation_{};
-};
+    RosterWalkReport report{};
+    for (std::int32_t index = 0; index < count; ++index) {
+        const auto entry =
+            list + static_cast<std::uintptr_t>(index) *
+                       static_cast<std::uintptr_t>(layout::kResidentDescriptorStride);
+        const auto descriptor =
+            readMemory<std::uintptr_t>(entry + layout::kResidentDescriptor);
+        if (!isPlausibleAddress(descriptor)) continue;
+        const auto actor =
+            readMemory<std::uintptr_t>(descriptor + layout::kActorFromDescriptor);
+        if (!isPlausibleAddress(actor)) continue;
+        const auto namePointer =
+            readMemory<std::uintptr_t>(actor + layout::kActorNamePointer);
+        if (!isPlausibleStringAddress(namePointer)) continue;
 
-} // namespace totk::engine
+        ResidentActorView view{};
+        view.handle = ActorHandle{actor, namePointer, scene.token};
+        view.name.assign(reinterpret_cast<const char*>(namePointer));
+        ++report.visited;
+        if (visitor(view) == VisitControl::Stop) {
+            report.complete = false;
+            return core::Result<RosterWalkReport, RosterError>::success(report);
+        }
+    }
+    report.complete = true;
+    return core::Result<RosterWalkReport, RosterError>::success(report);
+}
+
+[[nodiscard]] inline core::Result<ActorHandle, RosterError>
+findResidentActor(const SceneContext& scene, const char* name) {
+    ActorHandle found{};
+    const auto walk = visitResidentActors(scene, [&](const ResidentActorView& actor) {
+        if (!actor.name.equals(name)) return VisitControl::Continue;
+        found = actor.handle;
+        return VisitControl::Stop;
+    });
+    if (!walk) return core::Result<ActorHandle, RosterError>::failure(walk.error);
+    if (!isPlausibleAddress(found.address)) {
+        return core::Result<ActorHandle, RosterError>::failure(RosterError::ActorNotFound);
+    }
+    return core::Result<ActorHandle, RosterError>::success(found);
+}
+
+}
