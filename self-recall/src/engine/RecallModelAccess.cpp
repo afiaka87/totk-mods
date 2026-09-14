@@ -65,6 +65,21 @@ ViewStatus describe(std::uintptr_t mainBase, const void* unit, View& out) {
     return ViewStatus::Ready;
 }
 
+const char* boneName(const View& view, unsigned bone) {
+    if (bone >= view.identity.boneCount || !view.identity.resource) return nullptr;
+    const auto* dictionary = readViewField<const std::byte*>(
+        reinterpret_cast<const void*>(view.identity.resource), 8);
+    const auto* name = dictionary ? readViewField<const char*>(dictionary, 0x20 + bone * 0x10) : nullptr;
+    return name ? name + 2 : nullptr;
+}
+
+unsigned boneParent(const View& view, unsigned bone) {
+    if (bone >= view.identity.boneCount || !view.identity.resource) return UINT16_MAX;
+    const auto* bones = readViewField<const std::byte*>(
+        reinterpret_cast<const void*>(view.identity.resource), 0x10);
+    return bones ? readViewField<std::uint16_t>(bones, bone * 0x58 + 0x22) : UINT16_MAX;
+}
+
 CaptureReport recordCompleted(const pure::PoseFrameHeader& header,
                               std::span<const View> views,
                               CaptureWorkspace& workspace,

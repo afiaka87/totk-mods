@@ -6,17 +6,37 @@
 
 namespace self_recall::equipment {
 inline constexpr std::size_t kArchiveHeapBytes = pure::kArchiveHeapBytes;
+#if SELF_RECALL_STORAGE_PROFILE == 7
+inline void installHeap(std::uintptr_t) {}
+inline void* archiveHeap() { return nullptr; }
+inline std::size_t contiguousArchiveBytes() { return 0; }
+inline bool archiveOwns(const void*) { return false; }
+inline void* allocateArchive(std::size_t) { return nullptr; }
+inline void freeArchive(void*) {}
+#else
 void installHeap(std::uintptr_t mainBase);
 void* archiveHeap();
 std::size_t contiguousArchiveBytes();
 bool archiveOwns(const void* address);
 void* allocateArchive(std::size_t bytes);
 void freeArchive(void* address);
+#endif
 }
 
 #include "RecallModelEngine.hpp"
 
 namespace self_recall::equipment {
+#if SELF_RECALL_STORAGE_PROFILE == 7
+inline void initializeAppearance(std::uintptr_t) {}
+inline bool captureAppearance(detail::Asset&, unsigned, std::span<const model::View>) { return false; }
+inline bool restoreAppearance(unsigned, std::span<detail::Asset>) { return false; }
+inline void releaseAppearance(unsigned) {}
+inline bool bindAppearanceFrame(pure::PoseFrameKey, std::span<const unsigned>) { return false; }
+inline unsigned appearanceToken(pure::PoseFrameKey, unsigned) { return 0; }
+inline bool refuseAppearance(const char*, std::uint64_t, std::uint64_t) { return false; }
+inline void collectAppearance(const pure::PoseHistory&) {}
+inline bool captureBodyAppearance(const pure::RecordedPoseFrame&, std::span<unsigned>) { return true; }
+#else
 void initializeAppearance(std::uintptr_t mainBase);
 bool captureAppearance(detail::Asset& asset, unsigned assetIndex, std::span<const model::View> source);
 bool restoreAppearance(unsigned token, std::span<detail::Asset> assets);
@@ -27,10 +47,16 @@ unsigned appearanceToken(pure::PoseFrameKey key, unsigned model);
 bool refuseAppearance(const char* reason, std::uint64_t detail, std::uint64_t extra);
 void collectAppearance(const pure::PoseHistory& history);
 bool captureBodyAppearance(const pure::RecordedPoseFrame& frame, std::span<unsigned> tokens);
+#endif
 class BodyAppearanceScope {
 public:
+#if SELF_RECALL_STORAGE_PROFILE == 7
+    BodyAppearanceScope(pure::PoseFrameKey, unsigned, const model::Identity&) {}
+    ~BodyAppearanceScope() = default;
+#else
     BodyAppearanceScope(pure::PoseFrameKey key, unsigned modelIndex, const model::Identity& live);
     ~BodyAppearanceScope();
+#endif
     BodyAppearanceScope(const BodyAppearanceScope&) = delete;
     BodyAppearanceScope& operator=(const BodyAppearanceScope&) = delete;
     bool ready() const { return buffer_ >= 0; }
@@ -47,6 +73,17 @@ struct Values {
     float scale[3]{1, 1, 1};
     std::uint32_t properties[128]{};
 };
+#if SELF_RECALL_STORAGE_PROFILE == 7
+inline void captureValues(unsigned, Values&) {}
+inline bool applyValues(unsigned, const Values&) { return false; }
+inline void install(std::uintptr_t) {}
+inline bool retain(unsigned, const void*, const void*) { return false; }
+inline void retire(unsigned) {}
+inline void record(unsigned, pure::PoseFrameHeader&) {}
+inline void selectFrame(const pure::RecordedPoseFrame*) {}
+inline void publishLive(std::span<const void* const>) {}
+inline bool copyMatrix(const void*, float[12]) { return false; }
+#else
 void captureValues(unsigned asset, Values& out);
 bool applyValues(unsigned asset, const Values& values);
 void install(std::uintptr_t mainBase);
@@ -56,6 +93,7 @@ void record(unsigned asset, pure::PoseFrameHeader& header);
 void selectFrame(const pure::RecordedPoseFrame* frame);
 void publishLive(std::span<const void* const> actors);
 bool copyMatrix(const void* descriptor, float out[12]);
+#endif
 }
 
 #include <cstring>

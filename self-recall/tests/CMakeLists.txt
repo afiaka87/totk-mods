@@ -51,7 +51,8 @@ set(SELF_RECALL_COMMON_TEST_SOURCES
 add_executable(self_recall_pure_tests ${SELF_RECALL_COMMON_TEST_SOURCES})
 configure_self_recall_target(self_recall_pure_tests 8)
 
-add_executable(self_recall_switch_tests test_profile.cpp)
+add_executable(self_recall_switch_tests test_profile.cpp test_model.cpp
+               ../src/engine/RecallModelAccess.cpp)
 configure_self_recall_target(self_recall_switch_tests 7)
 
 add_executable(recall_corpus_replay recall_corpus_replay.cpp)
@@ -74,5 +75,7 @@ if(SELF_RECALL_CORPUS)
     add_test(NAME self-recall/corpus-emulator
              COMMAND $<TARGET_FILE:recall_corpus_replay_emulator> "${SELF_RECALL_CORPUS_PATH}")
     add_test(NAME self-recall/corpus-switch
-             COMMAND $<TARGET_FILE:recall_corpus_replay> "${SELF_RECALL_CORPUS_PATH}")
+             COMMAND $<TARGET_FILE:recall_corpus_replay> "${SELF_RECALL_CORPUS_PATH}" --body-only)
+    add_test(NAME self-recall/corpus-switch-equipment-bones
+             COMMAND $<TARGET_FILE:recall_corpus_replay> "${SELF_RECALL_CORPUS_PATH}" --equipment-bones)
 endif()

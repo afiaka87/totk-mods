@@ -4,6 +4,7 @@
 #include <span>
 
 #include "RecallPoseData.hpp"
+#include "RecallGear.hpp"
 
 namespace self_recall::model {
 
@@ -25,6 +26,13 @@ struct View {
     std::int32_t wristIndex = -1;
 };
 
+struct GearBinding {
+    std::uint32_t actorId = 0;
+    unsigned slot = pure::kGearInvalidSlot, model = 0;
+    unsigned parentModel = 0, parentBone = 0;
+    bool parentResolved = false;
+};
+
 enum class ViewStatus : std::uint8_t {
     Ready,
     UnsupportedType,
@@ -35,6 +43,8 @@ enum class ViewStatus : std::uint8_t {
 };
 
 ViewStatus describe(std::uintptr_t mainBase, const void* unit, View& out);
+const char* boneName(const View& view, unsigned bone);
+unsigned boneParent(const View& view, unsigned bone);
 
 struct CaptureWorkspace {
     pure::RecordedModelPose models[pure::kPoseModelLimit]{};
@@ -187,6 +197,19 @@ struct Asset {
 }
 
 namespace self_recall::equipment {
+#if SELF_RECALL_STORAGE_PROFILE == 7
+inline void install(std::uintptr_t) {}
+inline bool remap(const void*, std::uint32_t, std::uint32_t, const void*,
+                  std::span<model::View>) { return false; }
+inline void beginRecord(std::uint32_t) {}
+inline bool recorded(const pure::RecordedPoseFrame&) { return true; }
+inline bool selectAppearance(const pure::RecordedPoseFrame&) { return true; }
+inline void recordEffects(pure::PoseFrameHeader&, std::span<const model::View>) {}
+inline void collectExpired(const pure::PoseHistory&, std::uint32_t) {}
+inline bool publishedModel(const void*) { return false; }
+inline bool resolve(const pure::RecordedModelIdentity&, const void*, const void*,
+                    model::View&, const void*&) { return false; }
+#else
 void install(std::uintptr_t mainBase);
 bool remap(const void* component, std::uint32_t actorId, std::uint32_t world,
            const void* playerComponent, std::span<model::View> source);
@@ -199,13 +222,14 @@ bool publishedModel(const void* unit);
 
 bool resolve(const pure::RecordedModelIdentity& token, const void* scene,
              const void* playerComponent, model::View& view, const void*& root);
+#endif
 }
 
 #include <initializer_list>
 
 namespace self_recall::model {
 
-enum class EquipmentLinkKind { Dynamic, Static, Attachment, ExtraAttachment };
+enum class EquipmentLinkKind { Dynamic, Static, Attachment, ExtraAttachment, Parasail, Fairy };
 inline constexpr std::size_t kOwnedActorLimit = 1 + 8 + 12 + 8 + 8 + 1 + 2;
 
 template<class ReadPointer, class ReadByte>
@@ -246,6 +270,14 @@ bool hasBoundEquipmentParent(const void* components, ReadPointer&& readPointer,
         if (bind && matchesParent(static_cast<const std::byte*>(bind) + 0x70)) return true;
     }
     return false;
+}
+
+template<class Visit>
+bool visitOwnedEquipmentLinks(const void* equipment, const void* playerComponent, Visit&& visit) {
+    if (!visitEquipmentLinks(equipment, visit)) return false;
+    const auto* bytes = static_cast<const std::byte*>(playerComponent);
+    return !bytes || (visit(bytes + 0x6B8, EquipmentLinkKind::Parasail, 0) &&
+                      visit(bytes + 0x6D0, EquipmentLinkKind::Fairy, 0));
 }
 
 }
@@ -314,6 +346,7 @@ public:
         const void* component = nullptr;
         std::uint32_t actorId = 0;
         std::uint16_t first = 0, count = 0;
+        const void* actor = nullptr;
     };
     std::array<EquipmentGroup, kActorLimit> equipmentGroups{};
     std::uint16_t equipmentCount = 0;
@@ -323,6 +356,10 @@ public:
     std::uint16_t boneCount = 0;
     std::uint16_t materialCount = 0;
     std::uint16_t bodyModels = 0;
+    std::uint16_t clothingModels = 0;
+#if SELF_RECALL_STORAGE_PROFILE == 7
+    std::array<model::GearBinding, pure::kPoseModelLimit> gearBindings{};
+#endif
     Rejection error = Rejection::MissingRoot;
 
     bool appendModel(const void* actor, bool body) {
@@ -363,7 +400,7 @@ public:
             const auto* components = registry(actor);
             equipmentGroups[equipmentCount++] = {
                 read<const void*>(components, kModelComponent), read<std::uint32_t>(actor, kActorId),
-                firstModel, static_cast<std::uint16_t>(modelCount - firstModel)};
+                firstModel, static_cast<std::uint16_t>(modelCount - firstModel), actor};
         }
         bool haveRoot = false;
         for (unsigned i = 0; i < rootCount; ++i) haveRoot |= roots[i] == root;
@@ -375,20 +412,33 @@ public:
     }
 
     bool archiveEquipment(const void* player, std::uint32_t world) {
-        const auto* playerComponent = read<const void*>(registry(player), kModelComponent);
-        for (unsigned i = 0; i < equipmentCount; ++i) {
-            const auto& group = equipmentGroups[i];
-            if (!equipment::remap(group.component, group.actorId, world, playerComponent,
-                                  {views.data() + group.first, group.count})) {
-                error = Rejection::EquipmentArchive;
-                return false;
+        if constexpr (!pure::kHistoricalEquipment) {
+            (void)player; (void)world;
+            return true;
+        } else {
+            const auto* playerComponent = read<const void*>(registry(player), kModelComponent);
+            for (unsigned i = 0; i < equipmentCount; ++i) {
+                const auto& group = equipmentGroups[i];
+                if (!equipment::remap(group.component, group.actorId, world, playerComponent,
+                                      {views.data() + group.first, group.count})) {
+                    error = Rejection::EquipmentArchive;
+                    return false;
+                }
             }
+            return true;
         }
-        return true;
     }
 
     bool useHistoricalEquipment(const void* player, const void* scene,
                                 const pure::RecordedPoseFrame& recorded) {
+        if constexpr (!pure::kHistoricalEquipment) {
+            (void)player;
+            (void)scene;
+            return bodyModels && recorded.header.bodyModelCount == bodyModels &&
+                   recorded.header.modelCount == modelCount &&
+                   recorded.header.boneCount == boneCount &&
+                   recorded.header.materialCount == materialCount;
+        }
         error = Rejection::EquipmentArchive;
         if (!bodyModels || recorded.header.bodyModelCount != bodyModels) return false;
         modelCount = bodyModels;
@@ -418,12 +468,26 @@ public:
                materialCount == recorded.header.materialCount;
     }
 
-    bool addLink(const void* link, const void* player, bool requireParent, bool includeFuse = false) {
+    enum class StaticSelection { Any, Clothing, Accessory };
+
+    static bool acceptsStaticEquipment(const void* components, StaticSelection selection) {
+        if (selection == StaticSelection::Any) return true;
+        // Armor uses SameBoneModelBind; sheaths and the battery use ModelBind.
+        const bool sameBone = components && read<const void*>(components, 0x420);
+        return sameBone == (selection == StaticSelection::Clothing);
+    }
+
+    bool addLink(const void* link, const void* player, bool requireParent, bool includeFuse = false,
+                 unsigned gearSlot = pure::kGearInvalidSlot, unsigned parentModel = 0,
+                 StaticSelection selection = StaticSelection::Any) {
         if (actorCount == kActorLimit) { error = Rejection::ActorLimit; return false; }
         auto& reference = references[actorCount];
         reference.emplace(mainBase_, link);
         const auto* actor = reference->get();
         if (!actor) { reference.reset(); return true; }
+        if (!acceptsStaticEquipment(registry(actor), selection)) {
+            reference.reset(); return true;
+        }
         for (std::uint16_t i = 0; i < actorCount; ++i) {
             if (actors[i] == actor) { reference.reset(); return true; }
         }
@@ -447,13 +511,23 @@ public:
             }
         }
         actors[actorCount++] = actor;
+        const auto firstModel = modelCount;
         if (!appendModel(actor, false)) return false;
+#if SELF_RECALL_STORAGE_PROFILE == 7
+        if (gearSlot < pure::kGearInvalidSlot && modelCount != firstModel) {
+            for (unsigned i = firstModel; i < modelCount; ++i)
+                gearBindings[i] = {read<std::uint32_t>(actor, kActorId), gearSlot, i - firstModel, parentModel, 0};
+        }
+#else
+        (void)firstModel; (void)gearSlot; (void)parentModel;
+#endif
         if (includeFuse) {
             const auto* fusedLink = model::fusedEquipmentLink(registry(actor),
                 [](const void* p, std::size_t offset) { return read<const void*>(p, offset); },
                 [](const void* p, std::size_t offset) { return read<std::uint8_t>(p, offset); });
             if (fusedLink) {
-                if (!addLink(fusedLink, player, false)) return false;
+                if (!addLink(fusedLink, player, false, false,
+                        pure::kGearFuseSlotFirst + gearSlot, firstModel < modelCount ? firstModel : 0)) return false;
             }
         }
         return true;
@@ -467,17 +541,85 @@ public:
         return inspected == model::CompletedQueueStatus::Ready;
     }
 
-    bool appendOwnedModels(const void* player) {
+    bool appendOwnedModels(const void* player, bool presentation = false) {
         const auto* components = registry(player);
         const auto* equipment = components ? read<const void*>(components, kEquipmentUser) : nullptr;
-        if (!model::visitEquipmentLinks(equipment, [&](const void* link,
+        const auto* component = components ? read<const void*>(components, kPlayerComponent) : nullptr;
+#if SELF_RECALL_STORAGE_PROFILE == 7
+        if (presentation && !model::visitEquipmentLinks(equipment, [&](const void* link,
                 model::EquipmentLinkKind kind, unsigned) {
-            if (!addLink(link, player, true, kind == model::EquipmentLinkKind::Dynamic)) return false;
+            return kind != model::EquipmentLinkKind::Static ||
+                addLink(link, player, true, false, pure::kGearInvalidSlot, 0, StaticSelection::Clothing);
+        })) return false;
+        clothingModels = modelCount;
+#endif
+        if (!model::visitOwnedEquipmentLinks(equipment, component, [&](const void* link,
+                model::EquipmentLinkKind kind, unsigned index) {
+            const bool requireParent = kind != model::EquipmentLinkKind::Parasail &&
+                                       kind != model::EquipmentLinkKind::Fairy;
+#if SELF_RECALL_STORAGE_PROFILE == 7
+            const unsigned slot = kind == model::EquipmentLinkKind::Dynamic ? index
+                : kind == model::EquipmentLinkKind::Attachment ? 8 + index
+                : kind == model::EquipmentLinkKind::Static ? pure::kGearStaticSlotFirst + index
+                : kind == model::EquipmentLinkKind::Parasail ? pure::kGearParasailSlot
+                : kind == model::EquipmentLinkKind::Fairy ? pure::kGearFairySlot : 16;
+            if (!addLink(link, player, requireParent, kind == model::EquipmentLinkKind::Dynamic,
+                    slot, 0, kind == model::EquipmentLinkKind::Static
+                        ? StaticSelection::Accessory : StaticSelection::Any)) return false;
+#else
+            (void)index; (void)presentation;
+            if (!addLink(link, player, requireParent, kind == model::EquipmentLinkKind::Dynamic)) return false;
+#endif
             return true;
         })) return false;
-        const auto* component = components ? read<const void*>(components, kPlayerComponent) : nullptr;
-        return !component || (addLink(at(component, 0x6B8), player, false) &&
-                              addLink(at(component, 0x6D0), player, false));
+        return true;
+    }
+
+    void encodeGearIdentities() {
+#if SELF_RECALL_STORAGE_PROFILE == 7
+        for (unsigned i = bodyModels; i < modelCount; ++i) {
+            const auto& binding = gearBindings[i];
+            views[i].identity.unit = pure::gearModelToken(binding.actorId, binding.model);
+            views[i].identity.skeleton = binding.slot + 1;
+        }
+#endif
+    }
+
+    void resolveGearParents(const void* player) {
+#if SELF_RECALL_STORAGE_PROFILE == 7
+        for (unsigned groupIndex = 0; groupIndex < equipmentCount; ++groupIndex) {
+            const auto& group = equipmentGroups[groupIndex];
+            if (gearBindings[group.first].slot == pure::kGearInvalidSlot) continue;
+            const auto* components = group.actor ? registry(group.actor) : nullptr;
+            const auto* bind = components ? read<const void*>(components, 0x18) : nullptr;
+            if (!bind) continue;
+            model::ScopedActorReference parent(mainBase_, at(bind, 0x70));
+            const auto* actor = parent.get();
+            if (!actor) continue;
+            unsigned first = 0, count = actor == player ? bodyModels : 0;
+            for (unsigned p = 0; p < equipmentCount && !count; ++p) {
+                if (equipmentGroups[p].actor != actor) continue;
+                first = equipmentGroups[p].first; count = equipmentGroups[p].count;
+            }
+            if (!count || first >= group.first) continue;
+            const char* target = read<const char*>(bind, 0x88);
+            if (!target || !*target) target = "Root";
+            bool found = false;
+            for (unsigned m = first; m < first + count && !found; ++m) {
+                for (unsigned b = 0; b < views[m].identity.boneCount; ++b) {
+                    const char* name = model::boneName(views[m], b);
+                    if (!name || std::strcmp(name, target)) continue;
+                    for (unsigned i = group.first; i < unsigned(group.first) + group.count; ++i) {
+                        gearBindings[i].parentModel = m; gearBindings[i].parentBone = b;
+                        gearBindings[i].parentResolved = true;
+                    }
+                    found = true; break;
+                }
+            }
+        }
+#else
+        (void)player;
+#endif
     }
 };
 
@@ -574,6 +716,213 @@ enum class RenderInputStatus : std::uint8_t {
     Ready, IdentityChanged, OriginChanged, MissingBoneMetadata, RequiresLocalAnimation,
     MissingShapeMetadata, RequiresShapeAnimation,
 };
+
+inline bool followHistoricalParent(const pure::RecordedBoneMatrix& current,
+        const pure::RecordedModelPose& live, const pure::RecordedBoneMatrix& parent,
+        const pure::RecordedModelPose& parentSpace,
+        const pure::RecordedBoneMatrix& historicalParent, const pure::RecordedModelPose& historical,
+        pure::RecordedBoneMatrix& out) {
+    float c[12], p[12], h[12];
+    if (!pure::boneToWorldMatrix(current, live, c) ||
+        !pure::boneToWorldMatrix(parent, parentSpace, p) ||
+        !pure::boneToWorldMatrix(historicalParent, historical, h)) return false;
+    const double a = p[0], b = p[1], d = p[2], e = p[4], f = p[5], g = p[6],
+                 i = p[8], j = p[9], k = p[10];
+    const double determinant = a * (f*k-g*j) - b * (e*k-g*i) + d * (e*j-f*i);
+    if (!std::isfinite(determinant) || std::abs(determinant) < 1e-12) return false;
+    const double inverse[9]{(f*k-g*j)/determinant, (d*j-b*k)/determinant, (b*g-d*f)/determinant,
+        (g*i-e*k)/determinant, (a*k-d*i)/determinant, (d*e-a*g)/determinant,
+        (e*j-f*i)/determinant, (b*i-a*j)/determinant, (a*f-b*e)/determinant};
+    double local[12]{};
+    for (unsigned row = 0; row < 3; ++row)
+        for (unsigned column = 0; column < 4; ++column)
+            for (unsigned axis = 0; axis < 3; ++axis)
+                local[row * 4 + column] += inverse[row * 3 + axis] *
+                    (double(c[axis * 4 + column]) - (column == 3 ? p[axis * 4 + 3] : 0.0));
+    auto result = current;
+    for (unsigned row = 0; row < 3; ++row) {
+        for (unsigned column = 0; column < 4; ++column) {
+            double value = column == 3 ? h[row * 4 + 3] : 0.0;
+            for (unsigned axis = 0; axis < 3; ++axis)
+                value += double(h[row * 4 + axis]) * local[axis * 4 + column];
+            if (column == 3 && live.originRelative) value -= live.renderOrigin[row];
+            const float stored = static_cast<float>(value);
+            if (!std::isfinite(stored)) return false;
+            std::memcpy(&result.words[column * 4 + row], &stored, sizeof(stored));
+        }
+    }
+    out = result;
+    return true;
+}
+
+enum class ClothingPoseStatus : unsigned {
+    Ready, Roster, Identity, Capacity, BoneName, Parent, Transform,
+};
+
+template<class Name, class Parent>
+ClothingPoseStatus appendCurrentClothing(pure::RecordedPoseFrame& frame,
+        std::span<const View> current, Name&& name, Parent&& parent,
+        unsigned& detail, unsigned& matched, unsigned& inherited) {
+    detail = matched = inherited = 0;
+    const auto bodyCount = frame.header.bodyModelCount;
+    if (!bodyCount || bodyCount != frame.header.modelCount || bodyCount > current.size() ||
+        current.size() > pure::kPoseModelLimit) return ClothingPoseStatus::Roster;
+    for (unsigned model = 0; model < bodyCount; ++model) {
+        const auto& recorded = frame.models[model].identity;
+        const auto& live = current[model].identity;
+        if (recorded.unit != live.unit || recorded.skeleton != live.skeleton ||
+            recorded.resource != live.resource || recorded.boneCount != live.boneCount ||
+            recorded.materialCount != live.materialCount || !current[model].boneBytes)
+            return ClothingPoseStatus::Identity;
+    }
+    for (unsigned model = bodyCount; model < current.size(); ++model) {
+        const auto& view = current[model];
+        const auto bones = view.identity.boneCount;
+        const auto materials = view.identity.materialCount;
+        detail = model << 16;
+        if (!view.boneBytes || !view.boneVisibility || (materials && !view.materialVisibility) || !bones ||
+            frame.header.boneCount + bones > pure::kPoseBoneLimit ||
+            frame.header.materialCount + materials > pure::kPoseMaterialLimit)
+            return ClothingPoseStatus::Capacity;
+        std::array<std::int16_t, pure::kPoseBoneLimit> sourceBone;
+        std::array<std::uint8_t, pure::kPoseBoneLimit> sourceModel{};
+        sourceBone.fill(-1);
+        for (unsigned bone = 0; bone < bones; ++bone) {
+            const char* targetName = name(view, bone);
+            if (!targetName || !*targetName) return ClothingPoseStatus::BoneName;
+            for (unsigned body = 0; body < bodyCount && sourceBone[bone] < 0; ++body) {
+                for (unsigned candidate = 0; candidate < current[body].identity.boneCount; ++candidate) {
+                    const char* sourceName = name(current[body], candidate);
+                    if (!sourceName || std::strcmp(sourceName, targetName)) continue;
+                    sourceBone[bone] = static_cast<std::int16_t>(candidate);
+                    sourceModel[bone] = static_cast<std::uint8_t>(body);
+                    break;
+                }
+            }
+        }
+        const auto firstBone = frame.header.boneCount;
+        const auto firstMaterial = frame.header.materialCount;
+        auto& outputModel = frame.models[model];
+        outputModel = view.pose;
+        outputModel.identity = {view.identity.unit, view.identity.skeleton, view.identity.resource,
+            firstBone, bones, firstMaterial, materials};
+        outputModel.queueAdmission = 1;
+        const auto* liveBones = static_cast<const pure::RecordedBoneMatrix*>(view.boneBytes);
+        for (unsigned bone = 0; bone < bones; ++bone) {
+            detail = (model << 16) | bone;
+            unsigned anchor = bone, steps = 0;
+            while (sourceBone[anchor] < 0) {
+                anchor = parent(view, anchor);
+                if (anchor >= bones || ++steps >= bones) return ClothingPoseStatus::Parent;
+            }
+            const auto& source = frame.models[sourceModel[anchor]];
+            const auto& historical = frame.bones[source.identity.firstBone + unsigned(sourceBone[anchor])];
+            const auto& currentBody = current[sourceModel[anchor]];
+            const auto* bodyBones = static_cast<const pure::RecordedBoneMatrix*>(currentBody.boneBytes);
+            pure::RecordedBoneMatrix historicalAnchor;
+            if (!followHistoricalParent(liveBones[anchor], view.pose,
+                    bodyBones[unsigned(sourceBone[anchor])], currentBody.pose,
+                    historical, source, historicalAnchor)) return ClothingPoseStatus::Transform;
+            auto& output = frame.bones[firstBone + bone];
+            const bool success = anchor == bone ? (output = historicalAnchor, true)
+                : followHistoricalParent(liveBones[bone], view.pose, liveBones[anchor], view.pose,
+                                         historicalAnchor, view.pose, output);
+            if (!success) return ClothingPoseStatus::Transform;
+            if (anchor == bone) ++matched; else ++inherited;
+            const auto index = firstBone + bone;
+            const auto bit = 1u << (index % 32);
+            frame.visible.bones[index / 32] &= ~bit;
+            if (pure::visibilityBit(view.boneVisibility, static_cast<std::uint16_t>(bone)))
+                frame.visible.bones[index / 32] |= bit;
+        }
+        for (unsigned material = 0; material < materials; ++material) {
+            const auto index = firstMaterial + material;
+            const auto bit = 1u << (index % 32);
+            frame.visible.materials[index / 32] &= ~bit;
+            if (pure::visibilityBit(view.materialVisibility, static_cast<std::uint16_t>(material)))
+                frame.visible.materials[index / 32] |= bit;
+        }
+        frame.header.boneCount = static_cast<std::uint16_t>(firstBone + bones);
+        frame.header.materialCount = static_cast<std::uint16_t>(firstMaterial + materials);
+        ++frame.header.modelCount;
+    }
+    return ClothingPoseStatus::Ready;
+}
+
+inline bool appendCurrentGear(pure::RecordedPoseFrame& frame,
+        const pure::RecordedPoseFrame& recorded, std::span<const View> current,
+        std::span<const GearBinding> bindings, unsigned firstGear,
+        unsigned& detail, unsigned& restored, unsigned& fallback,
+        unsigned* unresolvedParents = nullptr) {
+    detail = restored = fallback = 0;
+    if (unresolvedParents) *unresolvedParents = 0;
+    if (bindings.size() != current.size() || firstGear != frame.header.modelCount ||
+        firstGear > current.size() || current.size() > pure::kPoseModelLimit) return false;
+    for (unsigned i = firstGear; i < current.size(); ++i) {
+        const auto& view = current[i];
+        const auto& binding = bindings[i];
+        const auto bones = view.identity.boneCount, materials = view.identity.materialCount;
+        detail = i << 16;
+        if (binding.slot >= pure::kGearInvalidSlot || !binding.actorId || !bones ||
+            !view.boneBytes || !view.boneVisibility || (materials && !view.materialVisibility) ||
+            frame.header.boneCount + bones > pure::kPoseBoneLimit ||
+            frame.header.materialCount + materials > pure::kPoseMaterialLimit) return false;
+        const auto match = pure::findRecordedGear(recorded, binding.actorId, binding.slot,
+            binding.model, view.identity.resource, bones, materials);
+        const auto* source = match.pose;
+        const auto* liveBones = static_cast<const pure::RecordedBoneMatrix*>(view.boneBytes);
+        const auto firstBone = frame.header.boneCount, firstMaterial = frame.header.materialCount;
+        auto& outputModel = frame.models[i];
+        outputModel = view.pose;
+        outputModel.identity = {view.identity.unit, view.identity.skeleton, view.identity.resource,
+            firstBone, bones, firstMaterial, materials};
+        const bool transient = pure::transientGear(binding.slot);
+        outputModel.queueAdmission = transient
+            ? (match.exact ? source->queueAdmission : 0u) : 1u;
+        if (transient && match.exact) outputModel.visibility = source->visibility;
+        if (!source && !transient && !binding.parentResolved && unresolvedParents)
+            ++*unresolvedParents;
+        for (unsigned bone = 0; bone < bones; ++bone) {
+            detail = (i << 16) | bone;
+            auto& output = frame.bones[firstBone + bone];
+            if (match.exact) {
+                if (!pure::rebaseBoneForRender(recorded.bones[source->identity.firstBone + bone],
+                                               *source, view.pose, output)) return false;
+            } else if (source) {
+                if (!followHistoricalParent(liveBones[bone], view.pose, liveBones[0], view.pose,
+                        recorded.bones[source->identity.firstBone], *source, output)) return false;
+            } else {
+                const auto parent = binding.parentModel, parentBone = binding.parentBone;
+                if (parent >= i || parentBone >= current[parent].identity.boneCount ||
+                    !current[parent].boneBytes) return false;
+                const auto& historicalParent = frame.models[parent];
+                const auto* parentBones = static_cast<const pure::RecordedBoneMatrix*>(current[parent].boneBytes);
+                if (!followHistoricalParent(liveBones[bone], view.pose, parentBones[parentBone],
+                        current[parent].pose, frame.bones[historicalParent.identity.firstBone + parentBone],
+                        historicalParent, output)) return false;
+            }
+            const auto index = firstBone + bone, bit = 1u << (index % 32);
+            const bool visible = transient
+                ? (match.exact && pure::visibilityBit(recorded.visible.bones, static_cast<std::uint16_t>(source->identity.firstBone + bone)))
+                : pure::visibilityBit(view.boneVisibility, static_cast<std::uint16_t>(bone));
+            frame.visible.bones[index / 32] &= ~bit;
+            if (visible) frame.visible.bones[index / 32] |= bit;
+        }
+        for (unsigned material = 0; material < materials; ++material) {
+            const auto index = firstMaterial + material, bit = 1u << (index % 32);
+            const bool visible = transient
+                ? (match.exact && pure::visibilityBit(recorded.visible.materials, static_cast<std::uint16_t>(source->identity.firstMaterial + material)))
+                : pure::visibilityBit(view.materialVisibility, static_cast<std::uint16_t>(material));
+            frame.visible.materials[index / 32] &= ~bit;
+            if (visible) frame.visible.materials[index / 32] |= bit;
+        }
+        frame.header.boneCount += bones;
+        frame.header.materialCount += materials;
+        ++frame.header.modelCount;
+        if (source) ++restored; else ++fallback;
+    }
+    return true;
+}
 
 struct NativeRenderInput {
     alignas(16) std::byte skeleton[0x48];
@@ -718,6 +1067,8 @@ struct Control {
 
 void install(std::uintptr_t mainBase);
 void publishControl(const Control& control);
+bool prepareCurrentEquipment(pure::RecordedPoseFrame& frame,
+                             const pure::RecordedPoseFrame& recorded, std::uint64_t& report);
 void beginFrame(std::uint64_t epoch);
 void modelsComplete(const frame::CompletedModelPhase& phase);
 void prepareScene(void* scene, std::uint64_t epoch);
@@ -732,6 +1083,7 @@ void logDiagnostics();
 }
 
 namespace self_recall::pose_render {
+std::uint64_t clothingReport();
 bool copyBone(const void* unit, unsigned bone, float out[12]);
 
 void install(std::uintptr_t mainBase);

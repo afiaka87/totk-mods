@@ -131,7 +131,6 @@ public:
 
 #include <algorithm>
 namespace self_recall::pure {
-inline constexpr unsigned kPoseReadBufferCount = 16;
 inline constexpr unsigned kPosePayloadMaxBytes = sizeof(RecordedPoseFrame) + 4;
 inline constexpr unsigned kPoseBlockDataBytes = 1008;
 

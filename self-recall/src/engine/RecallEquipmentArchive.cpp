@@ -12,6 +12,8 @@
 
 #include <lib.hpp>
 
+#if SELF_RECALL_STORAGE_PROFILE == 8
+
 namespace self_recall::equipment {
 namespace {
 alignas(4096) std::byte g_arena[kArchiveHeapBytes];
@@ -634,3 +636,5 @@ bool resolve(const pure::RecordedModelIdentity& token, const void* scene,
     return refuse("missing", token.unit, token.resource);
 }
 }
+
+#endif

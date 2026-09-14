@@ -432,6 +432,12 @@ public:
 
     RenderPrepareStatus begin(const RecordedPoseFrame& recorded, std::uint64_t epoch,
                              const totk::core::WorldPosition& offset = {}) {
+        return begin(recorded, epoch, offset, [](RecordedPoseFrame&) { return true; });
+    }
+
+    template<class Prepare>
+    RenderPrepareStatus begin(const RecordedPoseFrame& recorded, std::uint64_t epoch,
+                             const totk::core::WorldPosition& offset, Prepare&& prepare) {
         auto& slot = slots_[next_];
         std::uint32_t expected = 0;
         if (!slot.readers.compare_exchange_strong(expected, kWriting,
@@ -439,9 +445,11 @@ public:
             return RenderPrepareStatus::ReadersBusy;
         slot.frame.epoch = 0;
         slot.frame.animation = recorded;
-        const bool valid = epoch && recorded.header.key && recorded.header.modelCount &&
-            recorded.header.modelCount <= kPoseModelLimit && recorded.header.boneCount <= kPoseBoneLimit &&
-            recorded.header.materialCount <= kPoseMaterialLimit &&
+        const bool valid = epoch && recorded.header.key && prepare(slot.frame.animation) &&
+            slot.frame.animation.header.modelCount &&
+            slot.frame.animation.header.modelCount <= kPoseModelLimit &&
+            slot.frame.animation.header.boneCount <= kPoseBoneLimit &&
+            slot.frame.animation.header.materialCount <= kPoseMaterialLimit &&
             translateAnimation(slot.frame.animation, offset) && prepareEffectBones(slot.frame, slot.frame.animation);
         if (valid) {
             slot.frame.rootOffset = offset;

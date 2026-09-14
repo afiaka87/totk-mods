@@ -1,6 +1,7 @@
 #include "RecallRuntimeEngine.hpp"
 #include "RecallModelEngine.hpp"
 #include "RecallBase.hpp"
+#include "../program/StartupTrace.hpp"
 
 #include <array>
 #include <atomic>
@@ -149,6 +150,9 @@ model::CaptureWorkspace g_workspace{};
 std::uint64_t g_lastEpoch = 0;
 std::uint64_t g_lastTimeSerial = 0;
 std::atomic<std::uint64_t> g_rejections{0};
+#if SELF_RECALL_ROMFS_DIAGNOSTIC
+std::atomic<std::uint64_t> g_lastRejection{0};
+#endif
 std::uint32_t g_world = 0;
 
 enum class Gate : unsigned {
@@ -246,6 +250,9 @@ HOOK_DEFINE_TRAMPOLINE(PlayerMatrixHook) {
 };
 
 void reject(Rejection reason, std::uint64_t epoch, std::uint32_t detail = 0) {
+#if SELF_RECALL_ROMFS_DIAGNOSTIC
+    g_lastRejection.store((std::uint64_t{unsigned(reason)} << 32) | detail, std::memory_order_relaxed);
+#endif
     if (pose_session::active()) {
         pose_render::collectorFailed(static_cast<unsigned>(reason), detail);
     } else if (auto* history = pose_storage::history(); history && history->count()) {
@@ -319,9 +326,12 @@ void recordOwnedFrame(const frame::CompletedModelPhase& phase, const Control& co
     header.modelCount = collection.modelCount;
     header.boneCount = collection.boneCount;
     header.materialCount = collection.materialCount;
+#if SELF_RECALL_STORAGE_PROFILE == 7
+    collection.encodeGearIdentities();
+#endif
     equipment::recordEffects(header, {collection.views.data(), collection.modelCount});
     const auto result = model::recordCompleted(header,
-        {collection.views.data(), collection.modelCount}, g_workspace, *history);
+        {collection.views.data(), header.modelCount}, g_workspace, *history);
     if (result.status != model::CaptureStatus::Recorded) {
         reject(Rejection::CaptureRejected, phase.epoch,
                static_cast<unsigned>(result.status) * 16u + static_cast<unsigned>(result.history.status));
@@ -364,6 +374,60 @@ void beginFrame(std::uint64_t epoch) {
     (void)g_modelTime.publish(value);
 }
 
+bool prepareCurrentEquipment(pure::RecordedPoseFrame& frame,
+                             const pure::RecordedPoseFrame& recorded, std::uint64_t& report) {
+    report = 0xFF00000000000000ull;
+    Control control;
+    if (!g_control.snapshot(control) || !control.worldGeneration ||
+        control.worldGeneration != frame.header.worldGeneration) return false;
+    const auto scene = totk::engine::resolveScene(g_mainBase);
+    if (!scene || scene.value.token.value != control.scene) return false;
+    using PlayerLink = const void* (*)(std::uintptr_t);
+    const auto* link = reinterpret_cast<PlayerLink>(g_mainBase + kResidentPlayerLink)(
+        scene.value.residentActorManager);
+    if (!link) return false;
+    OwnedModelCollection collection(g_mainBase);
+    collection.references[0].emplace(g_mainBase, link);
+    const auto* player = collection.references[0]->get();
+    if (!player || reinterpret_cast<std::uintptr_t>(player) != control.player) return false;
+    collection.actors[0] = player;
+    collection.actorCount = 1;
+    if (!collection.appendModel(player, true) || !collection.appendOwnedModels(player, true)) {
+        report |= unsigned(collection.error); return false;
+    }
+    unsigned detail = 0, matched = 0, inherited = 0;
+#if SELF_RECALL_STORAGE_PROFILE == 7
+    const auto& lastBody = frame.models[frame.header.bodyModelCount - 1].identity;
+    frame.header.modelCount = frame.header.bodyModelCount;
+    frame.header.boneCount = lastBody.firstBone + lastBody.boneCount;
+    frame.header.materialCount = lastBody.firstMaterial + lastBody.materialCount;
+    const auto clothingModels = collection.clothingModels;
+#else
+    const auto clothingModels = collection.modelCount;
+    (void)recorded;
+#endif
+    const auto status = model::appendCurrentClothing(frame,
+        {collection.views.data(), clothingModels}, model::boneName, model::boneParent,
+        detail, matched, inherited);
+    report = (std::uint64_t{unsigned(status)} << 56) | (std::uint64_t{frame.header.modelCount} << 48) |
+        (status == model::ClothingPoseStatus::Ready
+            ? (std::uint64_t{matched} << 32) | (std::uint64_t{inherited} << 16) : detail);
+    if (status != model::ClothingPoseStatus::Ready) return false;
+#if SELF_RECALL_STORAGE_PROFILE == 7
+    collection.resolveGearParents(player);
+    unsigned gearModels = 0, fallbackModels = 0, unresolvedParents = 0;
+    if (!model::appendCurrentGear(frame, recorded,
+            {collection.views.data(), collection.modelCount},
+            {collection.gearBindings.data(), collection.modelCount},
+            clothingModels, detail, gearModels, fallbackModels, &unresolvedParents)) {
+        report = 0x0800000000000000ull | detail; return false;
+    }
+    report = (report & 0x0000FFFFFFFF0000ull) | (std::uint64_t{frame.header.modelCount} << 48) |
+             (gearModels << 8) | fallbackModels | (unresolvedParents ? 0x80u : 0u);
+#endif
+    return true;
+}
+
 void prepareScene(void* nativeScene, std::uint64_t epoch) {
     if (!pose_session::active()) return;
     Control control;
@@ -382,7 +446,7 @@ void prepareScene(void* nativeScene, std::uint64_t epoch) {
     if (!root || read<const void*>(root, 0x60) != nativeScene) return;
     collection.actors[0] = player;
     collection.actorCount = 1;
-    if (!collection.appendModel(player, true) || !collection.appendOwnedModels(player)) {
+    if (!collection.appendModel(player, true) || !collection.appendOwnedModels(player, true)) {
         reject(collection.error, epoch);
         return;
     }
@@ -390,8 +454,9 @@ void prepareScene(void* nativeScene, std::uint64_t epoch) {
         reinterpret_cast<const void*>(collection.views[0].identity.unit), epoch);
     if (!historical) return;
     equipment_effects::publishLive({collection.actors.data() + 1, collection.actorCount - 1u});
-    pose_render::suppressEquipment(epoch, {collection.views.data() + collection.bodyModels,
-                               static_cast<std::size_t>(collection.modelCount - collection.bodyModels)});
+    if constexpr (pure::kHistoricalEquipment)
+        pose_render::suppressEquipment(epoch, {collection.views.data() + collection.bodyModels,
+                                   static_cast<std::size_t>(collection.modelCount - collection.bodyModels)});
     if (!collection.useHistoricalEquipment(player, nativeScene, historical.get()->animation)) {
         reject(collection.error, epoch);
         return;
@@ -473,7 +538,7 @@ void modelsComplete(const frame::CompletedModelPhase& phase) {
     if (!rendering && phase.epoch == g_lastEpoch) { skipped(Gate::Duplicate, phase.epoch); return; }
     pure::ActorFrameTicket ticket{};
     if (!rendering && !pairCompletedActorPose(control, player, history, phase.epoch, ticket)) return;
-    if (!collection.appendOwnedModels(player)) {
+    if (!collection.appendOwnedModels(player, rendering)) {
         reject(collection.error, phase.epoch); return;
     }
     auto historical = rendering ? pose_render::currentFrame(
@@ -514,6 +579,17 @@ void logDiagnostics() {
     pure::GameTimeSnapshot clock{};
     const bool haveClock = game_clock::snapshot(clock);
     const auto* history = pose_storage::history();
+#if SELF_RECALL_ROMFS_DIAGNOSTIC
+    startup_trace::mark("60 capture-state",
+        (std::uint64_t{history ? history->count() : 0} << 32) |
+        ((haveClock ? unsigned(clock.status) : 255u) << 16) |
+        (unsigned(g_enabled.load()) << 2) | (unsigned(g_suspended.load()) << 1) | unsigned(g_clearRequested.load()),
+        g_lastRejection.load(std::memory_order_relaxed));
+    startup_trace::mark("60 capture-gate",
+        (std::uint64_t{g_gate.reason.load(std::memory_order_relaxed)} << 56) |
+        (g_gate.count.load(std::memory_order_relaxed) & 0x00FFFFFFFFFFFFFFull),
+        g_gate.detail.load(std::memory_order_relaxed));
+#endif
     Logging.Log(
         "[self-recall] CAPTURE_STATE epoch=%llu history=%u rejected=%llu "
         "enabled=%u suspended=%u clear=%u clock=%u serial=%llu",

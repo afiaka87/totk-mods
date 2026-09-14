@@ -10,12 +10,14 @@ inline constexpr unsigned kMiB = 1024u * 1024u;
 
 #if SELF_RECALL_STORAGE_PROFILE == 7
 inline constexpr const char* kStorageProfileName = "switch-compressed";
-inline constexpr unsigned kPosePayloadArenaBytes = 10u * kMiB;
+inline constexpr unsigned kPosePayloadArenaBytes = 13u * kMiB / 2;
+inline constexpr unsigned kPoseReadBufferCount = 4u;
 inline constexpr unsigned kAppearancePoolBytes = 5u * kMiB / 4u;
 inline constexpr unsigned kArchiveHeapBytes = 2u * kMiB;
 #elif SELF_RECALL_STORAGE_PROFILE == 8
 inline constexpr const char* kStorageProfileName = "emulator-compressed";
 inline constexpr unsigned kPosePayloadArenaBytes = 72u * kMiB;
+inline constexpr unsigned kPoseReadBufferCount = 16u;
 inline constexpr unsigned kAppearancePoolBytes = 16u * kMiB;
 inline constexpr unsigned kArchiveHeapBytes = 16u * kMiB;
 #else
@@ -23,6 +25,7 @@ inline constexpr unsigned kArchiveHeapBytes = 16u * kMiB;
 #endif
 
 inline constexpr bool kReducedHistory = SELF_RECALL_STORAGE_PROFILE == 7;
+inline constexpr bool kHistoricalEquipment = SELF_RECALL_STORAGE_PROFILE == 8;
 inline constexpr unsigned kHistoryFrameCapacity = kReducedHistory ? 902u : 3840u;
 inline constexpr unsigned kHistorySeconds = kReducedHistory ? 30u : 64u;
 
@@ -31,6 +34,7 @@ inline constexpr unsigned kAppearanceBlockCount = kAppearancePoolBytes / kAppear
 inline constexpr unsigned kAppearanceStateCapacity = kAppearanceBlockCount;
 
 static_assert(kPosePayloadArenaBytes % 1024u == 0);
+static_assert(kPoseReadBufferCount >= 4u);
 static_assert(kAppearancePoolBytes % kAppearanceBlockBytes == 0);
 static_assert(kArchiveHeapBytes % 4096u == 0);
 

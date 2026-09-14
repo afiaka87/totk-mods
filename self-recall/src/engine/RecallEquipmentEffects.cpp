@@ -8,6 +8,8 @@
 #include <optional>
 #include <lib.hpp>
 
+#if SELF_RECALL_STORAGE_PROFILE == 8
+
 namespace self_recall::equipment_effects {
 using namespace offsets121::equipment_effects;
 namespace {
@@ -492,3 +494,5 @@ bool copyMatrix(const void* descriptor, float out[12]) {
     return false;
 }
 }
+
+#endif

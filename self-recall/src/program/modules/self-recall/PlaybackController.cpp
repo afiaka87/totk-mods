@@ -5,6 +5,7 @@
 
 #include "RecallRuntimeEngine.hpp"
 #include "RecallModelEngine.hpp"
+#include "../../StartupTrace.hpp"
 
 namespace self_recall::playback {
 namespace {
@@ -150,6 +151,13 @@ void start(RecallRuntime& runtime) {
     glider_release::cancel(pure::GliderReleaseEnd::NewRecall);
 
     const auto stamina = native_gameplay::stamina(world::playerActor());
+    if (!playback.startPending) {
+        const auto* history = pose_storage::history();
+        startup_trace::mark("61 activation-request",
+            (std::uint64_t{unsigned(runtime.safety.unsafeNow)} << 32) | unsigned(stamina),
+            history ? history->count() : 0);
+        pose_recorder::logDiagnostics();
+    }
     if (stamina != pure::StaminaStatus::Available) {
         playback.startPending = false;
         pose_session::reset(false);
@@ -192,7 +200,8 @@ void start(RecallRuntime& runtime) {
     }
     const auto begun = pose_session::begin(runtime.session.worldGeneration, clock);
     playback.startPending = begun.pending;
-    if (begun.pending) { setEvent("starting Recall"); return; }
+    if (begun.pending) { setEvent("starting Recall"); pose_recorder::logDiagnostics(); return; }
+    startup_trace::mark("62 activation-result", unsigned(begun.status), pose_session::active());
     if (begun.status != pure::PosePlaybackStatus::Ready) {
         setEvent(begun.status == pure::PosePlaybackStatus::TooShort
                      ? "not enough animation history yet"

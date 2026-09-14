@@ -1,11 +1,15 @@
 #include "RecallPoseData.hpp"
 #include "RecallAppearance.hpp"
+#include "RecallGear.hpp"
+#include "RecallPlayback.hpp"
 #include <chrono>
+#include <cstdlib>
 #include <deque>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
+#include <string_view>
 #include <vector>
 using namespace self_recall::pure;
 namespace {
@@ -84,6 +88,46 @@ std::uint32_t corpusChecksum(std::span<const std::byte> bytes) {
     return value;
 }
 void require(bool pass, const char* message) { if (!pass) throw std::runtime_error(message); }
+void trimVisibility(std::uint32_t (&words)[kPoseBoneLimit / 32], unsigned count) {
+    const auto complete = count / 32;
+    const auto partial = count % 32;
+    if (partial) words[complete] &= (1u << partial) - 1u;
+    for (unsigned i = complete + unsigned(partial != 0); i < std::size(words); ++i) words[i] = 0;
+}
+void keepBodyOnly(RecordedPoseFrame& frame) {
+    auto& header = frame.header;
+    require(header.bodyModelCount && header.bodyModelCount <= header.modelCount, "invalid body roster");
+    header.modelCount = header.bodyModelCount;
+    const auto& last = frame.models[header.modelCount - 1];
+    header.boneCount = static_cast<std::uint16_t>(last.identity.firstBone + last.identity.boneCount);
+    header.materialCount = static_cast<std::uint16_t>(last.identity.firstMaterial + last.identity.materialCount);
+    trimVisibility(frame.visible.bones, header.boneCount);
+    trimVisibility(frame.visible.materials, header.materialCount);
+}
+// Storage-only stress: retain all body bones and non-body skeletons through the measured
+// 31-bone parasail; runtime uses native binding components rather than skeleton size.
+void keepEquipmentBoneStress(RecordedPoseFrame& frame) {
+    const auto original = frame;
+    frame.visible = {};
+    std::uint16_t models=0,bones=0,materials=0;
+    for(unsigned i=0;i<original.header.modelCount;++i) {
+        const auto& source=original.models[i];
+        if(i>=original.header.bodyModelCount && source.identity.boneCount>31) continue;
+        auto& target=frame.models[models++]; target=source;
+        target.identity.firstBone=bones; target.identity.firstMaterial=materials;
+        for(unsigned b=0;b<source.identity.boneCount;++b) {
+            frame.bones[bones]=original.bones[source.identity.firstBone+b];
+            if(visibilityBit(original.visible.bones,static_cast<std::uint16_t>(source.identity.firstBone+b))) frame.visible.bones[bones/32]|=1u<<(bones%32);
+            ++bones;
+        }
+        for(unsigned m=0;m<source.identity.materialCount;++m) {
+            if(visibilityBit(original.visible.materials,static_cast<std::uint16_t>(source.identity.firstMaterial+m))) frame.visible.materials[materials/32]|=1u<<(materials%32);
+            ++materials;
+        }
+    }
+    frame.header.modelCount=models; frame.header.boneCount=bones; frame.header.materialCount=materials;
+}
+
 void compare(const RecordedPoseFrame& expected, const RecordedPoseFrame& actual) {
     require(actual.header.key == expected.header.key, "key mismatch");
     require(std::memcmp(&actual.header, &expected.header, sizeof(actual.header)) == 0, "header mismatch");
@@ -94,18 +138,42 @@ void compare(const RecordedPoseFrame& expected, const RecordedPoseFrame& actual)
 }
 int main(int argc, char** argv) {
     try {
-        require(argc == 2, "usage: recall_corpus_replay corpus.bin");
+        require(argc >= 2 && argc <= 5,
+                "usage: recall_corpus_replay corpus.bin [--body-only|--equipment-bones] [--capacity-only] [--pose-mib=N|--pose-kib=N]");
+        bool bodyOnly = false, capacityOnly = false, equipmentBones = false;
+        unsigned poseKiB = kPosePayloadArenaBytes / 1024u;
+        for (int i = 2; i < argc; ++i) {
+            const std::string_view argument{argv[i]};
+            if (argument == "--body-only") bodyOnly = true;
+            else if (argument == "--equipment-bones") equipmentBones = true;
+            else if (argument == "--capacity-only") capacityOnly = true;
+            else if (argument.starts_with("--pose-mib=")) {
+                char* end = nullptr;
+                const auto value = std::strtoul(argv[i] + 11, &end, 10);
+                require(end && !*end && value && value <= kPosePayloadArenaBytes / kMiB,
+                        "invalid pose MiB");
+                poseKiB = static_cast<unsigned>(value) * 1024u;
+            } else if (argument.starts_with("--pose-kib=")) {
+                char* end = nullptr;
+                const auto value = std::strtoul(argv[i] + 11, &end, 10);
+                require(end && !*end && value && value <= kPosePayloadArenaBytes / 1024u,
+                        "invalid pose KiB");
+                poseKiB = static_cast<unsigned>(value);
+            } else require(false, "unknown option");
+        }
         std::ifstream stream(argv[1], std::ios::binary); require(bool(stream), "open corpus");
         auto slots = std::make_unique<PoseHistorySlot[]>(kHistoryCapacity);
-        auto blocks = std::make_unique<PosePayloadBlock[]>(kPosePayloadBlockCount);
+        const auto blockCount = poseKiB * 1024u / sizeof(PosePayloadBlock);
+        auto blocks = std::make_unique<PosePayloadBlock[]>(blockCount);
         auto history = std::make_unique<PoseHistory>(slots.get(), kHistoryCapacity,
-            std::span{blocks.get(), kPosePayloadBlockCount});
+            std::span{blocks.get(), blockCount});
         auto appearance = std::make_unique<CompressedAppearanceBlobs<kAppearanceBlockCount,kAppearanceStateCapacity>>();
         appearance->initialize();
         std::deque<RecordedPoseFrame> expected;
         std::uint64_t sequence = 0, poses = 0, checks = 0, appearances = 0, encodeNs = 0, maxEncodeNs = 0, decodeNs = 0, maxDecodeNs = 0;
         unsigned sourceGeneration = 0;
         const auto readPose = [&](const RecordedPoseFrame& frame) {
+            if (capacityOnly) return;
             const auto start = std::chrono::steady_clock::now();
             auto lease = history->acquire(frame.header.key); require(bool(lease), "acquire failed");
             const auto ns = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-start).count());
@@ -150,6 +218,8 @@ int main(int argc, char** argv) {
             std::memcpy(frame.models,cursor,layout[1]*sizeof(RecordedModelPose));cursor+=layout[1]*sizeof(RecordedModelPose);
             std::memcpy(frame.bones,cursor,layout[2]*sizeof(RecordedBoneMatrix));cursor+=layout[2]*sizeof(RecordedBoneMatrix);
             std::memcpy(&frame.visible,cursor,sizeof(frame.visible));
+            if (equipmentBones) keepEquipmentBoneStress(frame);
+            else if (bodyOnly) keepBodyOnly(frame);
             if (sourceGeneration != frame.header.key.generation) {
                 for (auto i=expected.rbegin();i!=expected.rend();++i) readPose(*i);
                 history->clear();expected.clear();sourceGeneration=frame.header.key.generation;
@@ -159,7 +229,11 @@ int main(int argc, char** argv) {
             const auto result = history->record(input);
             const auto ns=static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-start).count());
             encodeNs+=ns;maxEncodeNs=std::max(maxEncodeNs,ns);
-            require(result.status == PoseRecordStatus::Recorded, "record refused");
+            if (result.status != PoseRecordStatus::Recorded) {
+                std::cerr << "record refused: status=" << unsigned(result.status) << " poses=" << poses
+                    << " models=" << frame.header.modelCount << " bones=" << frame.header.boneCount << '\n';
+                require(false, "record refused");
+            }
             frame.header.key=result.key;
             expected.push_back(frame);
             while (!expected.empty() && !history->contains(expected.front().header.key)) expected.pop_front();
@@ -172,9 +246,15 @@ int main(int argc, char** argv) {
         history->clear();
         std::cout << "{\"poses\":"<<poses<<",\"exact_pose_reads\":"<<checks<<",\"appearance_round_trips\":"<<appearances
             <<",\"history_object_bytes\":"<<sizeof(PoseHistory)
-            <<",\"appearance_object_bytes\":"<<sizeof(*appearance)<<",\"desktop_encode_mean_ns\":"<<encodeNs/poses
-            <<",\"desktop_encode_max_ns\":"<<maxEncodeNs<<",\"desktop_decode_mean_ns\":"<<decodeNs/checks
-            <<",\"desktop_decode_max_ns\":"<<maxDecodeNs<<"}\n";
+            <<",\"appearance_object_bytes\":"<<sizeof(*appearance)<<",\"body_only\":"<<(bodyOnly ? "true" : "false")
+            <<",\"equipment_bone_stress\":"<<(equipmentBones ? "true" : "false")
+            <<",\"pose_pool_bytes\":"<<blockCount*sizeof(PosePayloadBlock)
+            <<",\"desktop_encode_mean_ns\":"<<encodeNs/poses
+            <<",\"desktop_encode_max_ns\":"<<maxEncodeNs;
+        if (!capacityOnly)
+            std::cout << ",\"desktop_decode_mean_ns\":"<<decodeNs/checks
+                      <<",\"desktop_decode_max_ns\":"<<maxDecodeNs;
+        std::cout << "}\n";
         return 0;
     } catch(const std::exception& error) { std::cerr<<error.what()<<'\n';return 1; }
 }

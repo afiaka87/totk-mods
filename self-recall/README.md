@@ -1,4 +1,4 @@
-# Self Recall v1.0.9
+# Self Recall v1.0.10
 
 Recall Link through his recent movement and animation history. The regular build
 retains 64 seconds for emulators. The Switch build retains 30 seconds within the
@@ -14,7 +14,7 @@ smaller memory budget of physical hardware.
 
 - Reverses movement and full-body animation, including walking, running, jumping,
   climbing, swimming, gliding and steering-stick movement.
-- Preserves clothing, weapon, shield, bow, fused attachment and paraglider history.
+- Preserves clothing, weapon, shield, bow, fused attachment and paraglider motion.
 - Uses the game's Recall ribbon, wrist glow, sounds and muted-world presentation.
 - Leaves inventory, health, enemies, quests and world state unchanged.
 
@@ -45,6 +45,8 @@ still depends on the particular mods.
 
 ## Known issues
 
+- On Switch, the Master Sword glow and other weapon effects can be out of sync
+  with the weapon during Recall. This does not affect the regular emulator build.
 - On Switch, Link skips along his path at 4x speed and during fast movement at 2x.
   The rest of the game stays smooth. Zero or one Glide piece gives the tested
   smooth 1.25x/1.5x rates.
@@ -54,9 +56,21 @@ still depends on the particular mods.
   climbing overhangs.
 - Historical pose markers along the ribbon are not included.
 
-The regular and Switch builds passed their v1.0.9 boot sessions with no regression
-reported outside the listed known issues. Every possible history and mod
-combination has not been tested.
+The regular and Switch builds passed their v1.0.10 boot sessions. The Switch build
+also passed with a verified eight-mod RomFS stress overlay. Every possible history
+and mod combination has not been tested.
+
+## Changes in v1.0.10
+
+- Reduces Switch static memory enough to run with a verified eight-mod RomFS
+  stress overlay while retaining the 30-second history.
+- Keeps current equipment under the game's ownership on Switch, while recording
+  its complete bone motion so shields, weapon pieces, fused parts, accessories
+  and the paraglider follow the rewind correctly.
+- Retains the full 64-second historical-equipment implementation in the regular
+  emulator build.
+- Fixes a paraglider that could appear early at its future history position and
+  removes redundant Switch playback work that caused occasional stutter.
 
 ## Changes in v1.0.9
 

@@ -26,6 +26,7 @@ std::atomic<std::uint64_t> g_admittedEpoch{0};
 std::atomic<std::uint32_t> g_preparedGeneration{0};
 std::atomic<std::uint64_t> g_suppressedEpoch{0};
 std::atomic<std::uint64_t> g_originChanges{0}, g_culled{0}, g_wristPhaseDifferences{0};
+std::atomic<std::uint64_t> g_clothingReport{0};
 std::array<std::atomic<std::uintptr_t>, pure::kPoseModelLimit> g_liveEquipment{};
 
 static_assert(sizeof(pure::RenderFrameStore) + sizeof(model::CaptureWorkspace) +
@@ -109,6 +110,7 @@ void uploadHistoricalAnimation(void* unit) {
     if (!frame) return;
     model::NativeRenderInput input;
     if (!makeInput(unit, frame, input)) return;
+#if SELF_RECALL_STORAGE_PROFILE == 8
     std::optional<equipment::BodyAppearanceScope> bodyAppearance;
     const auto& animation = frame.get()->animation;
     if (frame.modelIndex() < animation.header.bodyModelCount) {
@@ -117,6 +119,7 @@ void uploadHistoricalAnimation(void* unit) {
             model::Identity{id.unit, id.skeleton, id.resource, id.boneCount, id.materialCount});
         if (!bodyAppearance->ready()) { fail(Failure::Prepare, 0xA002); return; }
     }
+#endif
     using Calculate = void (*)(void*, unsigned);
     reinterpret_cast<Calculate>(g_mainBase + kCalculateSkeleton)(input.skeleton, buffer);
     reinterpret_cast<Calculate>(g_mainBase + kCalculateShape)(input.model, buffer);
@@ -192,10 +195,14 @@ void updateHistoricalBounds(void* unit, NativeCalculateBounding calculate) {
     if (g_admittedEpoch.load(std::memory_order_acquire) != frame::epoch()) return;
     auto frame = acquire(unit, 0);
     if (!frame) return;
+#if SELF_RECALL_STORAGE_PROFILE == 8
     const auto* history = pose_storage::history();
     auto source = history ? history->acquire(frame.get()->animation.header.key) : pure::PoseReadLease{};
     if (!source) { fail(Failure::Prepare, 0xB001); return; }
     const auto& recorded = *source.get();
+#else
+    const auto& recorded = frame.get()->animation;
+#endif
     const auto& historical = recorded.models[frame.modelIndex()];
     model::View live;
     const auto described = model::describe(g_mainBase, unit, live);
@@ -206,8 +213,8 @@ void updateHistoricalBounds(void* unit, NativeCalculateBounding calculate) {
     const auto input = animation.prepare(live, historical, recorded.bones + historical.identity.firstBone);
     if (input != model::RenderInputStatus::Ready) { fail(Failure::Input, unsigned(input)); return; }
     model::NativeBoundingInput bounds;
-    bounds.prepareHistorical(unit, animation,
-        pure::translatedBoundsSpace(historical, frame.get()->rootOffset));
+    bounds.prepareHistorical(unit, animation, pure::kHistoricalEquipment
+        ? pure::translatedBoundsSpace(historical, frame.get()->rootOffset) : historical);
     (void)calculate(bounds.unit);
     frame.markBounded();
     return;
@@ -343,7 +350,22 @@ void beginFrame(std::uint64_t epoch) {
     pure::PosePresentation presentation;
     auto selected = pose_session::acquirePresentation(&presentation);
     if (!selected) { if (pose_session::active()) fail(Failure::Session, 0); return; }
-    const auto result = g_frames->begin(*selected.get(), epoch, presentation.offset);
+    auto result = pure::RenderPrepareStatus::InvalidFrame;
+#if SELF_RECALL_STORAGE_PROFILE == 7
+    std::uint64_t report = 0;
+    bool prepared = false;
+    result = g_frames->begin(*selected.get(), epoch, presentation.offset,
+        [&](pure::RecordedPoseFrame& candidate) {
+            prepared = pose_recorder::prepareCurrentEquipment(candidate, *selected.get(), report);
+            return prepared;
+        });
+    g_clothingReport.store(report, std::memory_order_release);
+    if (!prepared) {
+        fail(Failure::Prepare, 0xC000u | unsigned(report >> 56)); return;
+    }
+#else
+    result = g_frames->begin(*selected.get(), epoch, presentation.offset);
+#endif
     if (result != pure::RenderPrepareStatus::Ready) {
         fail(Failure::Prepare, static_cast<unsigned>(result));
         return;
@@ -355,6 +377,8 @@ void beginFrame(std::uint64_t epoch) {
     }
     equipment_effects::selectFrame(selected.get());
 }
+
+std::uint64_t clothingReport() { return g_clothingReport.load(std::memory_order_acquire); }
 
 bool copyBone(const void* unit, unsigned bone, float out[12]) {
     if (!g_frames || !unit || !pose_session::active()) return false;

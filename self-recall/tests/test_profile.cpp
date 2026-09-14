@@ -18,17 +18,21 @@ TEST_CASE("storage profile constants and allocation budgets remain exact") {
 #if SELF_RECALL_STORAGE_PROFILE == 7
     CHECK(std::string_view{kStorageProfileName} == "switch-compressed");
     CHECK(kReducedHistory);
+    CHECK_FALSE(kHistoricalEquipment);
     CHECK(kHistoryCapacity == 902);
     CHECK(kHistorySeconds == 30);
-    CHECK(kPosePayloadArenaBytes == 10 * kMiB);
+    CHECK(kPosePayloadArenaBytes == 13 * kMiB / 2);
+    CHECK(kPoseReadBufferCount == 4);
     CHECK(kAppearancePoolBytes == 5 * kMiB / 4);
     CHECK(kArchiveHeapBytes == 2 * kMiB);
 #else
     CHECK(std::string_view{kStorageProfileName} == "emulator-compressed");
     CHECK_FALSE(kReducedHistory);
+    CHECK(kHistoricalEquipment);
     CHECK(kHistoryCapacity == 3840);
     CHECK(kHistorySeconds == 64);
     CHECK(kPosePayloadArenaBytes == 72 * kMiB);
+    CHECK(kPoseReadBufferCount == 16);
     CHECK(kAppearancePoolBytes == 16 * kMiB);
     CHECK(kArchiveHeapBytes == 16 * kMiB);
 #endif

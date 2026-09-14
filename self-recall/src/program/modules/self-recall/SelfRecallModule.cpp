@@ -1,4 +1,5 @@
 #include "SelfRecallModule.hpp"
+#include "../../StartupTrace.hpp"
 
 #include <nn/util.h>
 
@@ -116,6 +117,7 @@ void moduleTick(void* device) {
             self_recall::playback::finish(rt, self_recall::pure::PlaybackStop::PaletteFailed, true);
     }
     if (renderFailure) {
+        self_recall::startup_trace::mark("63 animation-failure", renderFailure, rt.playback.rewinding);
         SRLOG("ANIMATION_RENDER_FAILED code=%u detail=%u",
               static_cast<unsigned>(renderFailure >> 32), static_cast<unsigned>(renderFailure));
         if (rt.playback.rewinding)
