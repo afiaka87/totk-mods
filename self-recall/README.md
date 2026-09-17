@@ -1,8 +1,9 @@
-# Self Recall v1.0.11
+# Self Recall v1.0.12
 
-Recall Link through his recent movement and animation history. The regular build
-retains 64 seconds for emulators. The Switch build retains 30 seconds within the
-smaller memory budget of physical hardware.
+Recall Link through his recent movement and animation history. Both builds now
+retain 64 seconds. The regular build keeps the whole history in memory for
+emulators. The Switch build keeps the newest 10 seconds in memory and stores older
+history on the SD card. **SD-card history is an alpha feature** (see below).
 
 ## Controls
 
@@ -43,6 +44,22 @@ Self Recall cannot be combined with another executable mod that supplies
 `subsdk8`. Other subsdk slots can load beside it, but hook and memory compatibility
 still depends on the particular mods.
 
+## Switch SD-card history (alpha)
+
+The Switch build writes older Recall history to the SD card while you play and
+reads it back during Recall. It creates a `self-recall-alpha` folder at the root of
+the SD card containing:
+
+- `history.bin`, a reused history file of up to 16 MiB;
+- one timing log per game session, `log-<number>.txt`, of up to 8 MiB each. These
+  logs help diagnose slow cards. They are not removed automatically; delete old
+  logs whenever you like while the game is closed.
+
+This feature has been tested on one Switch with one SD card. Slower or nearly full
+cards have not been tested. If older history cannot be read back in time, Recall
+ends early at that point. If the card fails repeatedly, the build stops using it
+and Recall falls back to the newest history held in memory.
+
 ## Known issues
 
 - On Switch, Link skips along his path at 4x speed and during fast movement at 2x.
@@ -57,8 +74,19 @@ still depends on the particular mods.
 The regular and Switch builds passed their v1.0.10 boot sessions. The Switch build
 also passed with a verified eight-mod RomFS stress overlay. The v1.0.11 weapon-effect
 fix passed on physical Switch hardware with that overlay installed and in Eden
-running the Switch build. Every possible history and mod combination has not been
-tested.
+running the Switch build. The v1.0.12 Switch SD-card history passed one
+physical-Switch session with the same overlay: full 64-second Recall at 1.25x and
+4x, and Recall after sleep and resume. The regular build's v1.0.12 changes have not
+had a separate boot session. Every possible history, SD card and mod combination
+has not been tested.
+
+## Changes in v1.0.12
+
+- Restores the full 64-second history on Switch. The newest 10 seconds stay in
+  memory and older history is stored on the SD card (alpha).
+- Lowers the Switch build's static memory use slightly compared with v1.0.11.
+- The Switch build still uses the currently equipped gear during Recall.
+- The regular emulator build keeps its existing behavior.
 
 ## Changes in v1.0.11
 
@@ -104,7 +132,8 @@ tested.
 
 The public source contains the mod-owned code and host tests under the MIT License.
 Build the regular profile with `SELF_RECALL_STORAGE_PROFILE=emulator-compressed`;
-build Switch with `SELF_RECALL_STORAGE_PROFILE=switch-compressed`.
+build Switch with `SELF_RECALL_STORAGE_PROFILE=switch-compressed` and
+`SELF_RECALL_SD_HISTORY=10`.
 
 The public repository is source only and is not a standalone Switch build tree.
 Native builds require Tears of the Kingdom 1.2.1 headers, devkitA64 and exlaunch

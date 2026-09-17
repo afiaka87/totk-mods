@@ -24,9 +24,14 @@ set(SELF_RECALL_TEST_INCLUDES
 )
 
 function(configure_self_recall_target target profile)
+    set(sd_history 0)
+    if(ARGC GREATER 2)
+        set(sd_history ${ARGV2})
+    endif()
     target_include_directories(${target} PRIVATE ${SELF_RECALL_TEST_INCLUDES})
     target_compile_features(${target} PRIVATE cxx_std_23)
-    target_compile_definitions(${target} PRIVATE SELF_RECALL_STORAGE_PROFILE=${profile})
+    target_compile_definitions(${target} PRIVATE SELF_RECALL_STORAGE_PROFILE=${profile}
+                               SELF_RECALL_SD_HISTORY=${sd_history})
     target_link_libraries(${target} PRIVATE self_recall_codecs)
     if(MSVC)
         target_link_options(${target} PRIVATE /STACK:8388608)
@@ -61,9 +66,19 @@ configure_self_recall_target(recall_corpus_replay 7)
 add_executable(recall_corpus_replay_emulator recall_corpus_replay.cpp)
 configure_self_recall_target(recall_corpus_replay_emulator 8)
 
+add_executable(self_recall_spill_tests test_spill.cpp)
+configure_self_recall_target(self_recall_spill_tests 7 10)
+
+add_executable(recall_corpus_replay_sd10 recall_corpus_replay.cpp)
+configure_self_recall_target(recall_corpus_replay_sd10 7 10)
+
+add_executable(recall_corpus_replay_sd30 recall_corpus_replay.cpp)
+configure_self_recall_target(recall_corpus_replay_sd30 7 30)
+
 enable_testing()
 add_test(NAME self-recall/emulator COMMAND $<TARGET_FILE:self_recall_pure_tests>)
 add_test(NAME self-recall/switch-profile COMMAND $<TARGET_FILE:self_recall_switch_tests>)
+add_test(NAME self-recall/sd-history COMMAND $<TARGET_FILE:self_recall_spill_tests>)
 
 set(SELF_RECALL_CORPUS "" CACHE FILEPATH "Optional retained pose corpus used by both replay profiles")
 if(SELF_RECALL_CORPUS)
@@ -78,4 +93,10 @@ if(SELF_RECALL_CORPUS)
              COMMAND $<TARGET_FILE:recall_corpus_replay> "${SELF_RECALL_CORPUS_PATH}" --body-only)
     add_test(NAME self-recall/corpus-switch-equipment-bones
              COMMAND $<TARGET_FILE:recall_corpus_replay> "${SELF_RECALL_CORPUS_PATH}" --equipment-bones)
+    add_test(NAME self-recall/corpus-sd10-equipment-bones
+             COMMAND $<TARGET_FILE:recall_corpus_replay_sd10> "${SELF_RECALL_CORPUS_PATH}" --equipment-bones)
+    add_test(NAME self-recall/corpus-sd30-equipment-bones
+             COMMAND $<TARGET_FILE:recall_corpus_replay_sd30> "${SELF_RECALL_CORPUS_PATH}" --equipment-bones)
+    add_test(NAME self-recall/corpus-sd10-stalls
+             COMMAND $<TARGET_FILE:recall_corpus_replay_sd10> "${SELF_RECALL_CORPUS_PATH}" --equipment-bones --sd-stalls)
 endif()

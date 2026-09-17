@@ -153,6 +153,7 @@ public:
     }
     static unsigned blocksFor(unsigned bytes) { return (bytes + kPoseBlockDataBytes - 1) / kPoseBlockDataBytes; }
     bool canStore(unsigned bytes) const { return blocksFor(bytes) <= available_; }
+    unsigned availableBlocks() const { return available_; }
     unsigned store(std::span<const std::byte> input, unsigned parent = UINT32_MAX, unsigned parentBytes = 0) {
         if (input.empty() || input.size() > kPosePayloadMaxBytes ||
             !canStore(static_cast<unsigned>(input.size()))) return kEnd;
@@ -345,10 +346,14 @@ inline bool decodePoseChain(const PosePayloadStore& store, unsigned first, unsig
 }
 }
 
+namespace self_recall::pure { class PoseHistory; }
+#include "RecallPoseSpill.hpp"
+
 namespace self_recall::pure {
 
 struct PoseHistorySlot {
     std::atomic<std::uint32_t> claims{0};
+    // SD builds: [0] tier | node << 8, [1] spill group, [2] low 32 bits of the group token.
     std::uint32_t reserved[3]{};
     PoseFrameHeader header{};
     std::uint32_t firstBlock = 0, payloadBytes = 0;
@@ -370,6 +375,11 @@ enum class PoseRecordStatus : std::uint8_t {
 struct PoseRecordReport {
     PoseRecordStatus status = PoseRecordStatus::InvalidInput;
     PoseFrameKey key{};
+};
+
+struct SpillProbe {
+    std::uint32_t through = 0;
+    SpillAvailability blocked = SpillAvailability::Available;
 };
 
 class PoseHistory;
@@ -411,8 +421,12 @@ private:
 
 class PoseHistory {
 public:
-    PoseHistory(PoseHistorySlot* slots, std::uint32_t capacity, std::span<PosePayloadBlock> blocks)
-        : slots_(slots), capacity_(slots && capacity <= kHistoryCapacity ? capacity : 0), payload_(blocks) {}
+    PoseHistory(PoseHistorySlot* slots, std::uint32_t capacity, std::span<PosePayloadBlock> blocks,
+                PoseSpill* spill = nullptr, std::uint64_t ramWindowNanoseconds = 0)
+        : slots_(slots), capacity_(slots && capacity <= kHistoryCapacity ? capacity : 0), payload_(blocks),
+          spill_(spill), ramWindow_(ramWindowNanoseconds) {
+        if (spill_) spill_->resetGeneration(generation());
+    }
 
     PoseHistory(const PoseHistory&) = delete;
     PoseHistory& operator=(const PoseHistory&) = delete;
@@ -429,6 +443,7 @@ public:
         oldestSerial_.store(1, std::memory_order_release);
         const auto old = generation_.load(std::memory_order_relaxed);
         generation_.store(old == 0 || old == UINT32_MAX ? 0 : old + 1, std::memory_order_release);
+        if (spill_) spill_->resetGeneration(generation());
         head_ = 0;
         nextSerial_ = 1;
         havePrevious_ = false;
@@ -486,8 +501,24 @@ public:
 
         unsigned parent = UINT32_MAX, parentBytes = 0;
         const auto bytes = chain_.prepare(input, scratch_, parent, parentBytes);
+        // Writes queued before this frame closed a group mean the card is behind, not failing.
+        const bool writesQueued = spill_ && spill_->pendingBytes() != 0;
+        const bool headLive = spill_ && count_.load(std::memory_order_relaxed) == capacity_;
+        if (spill_ && bytes) {
+            if (!parentBytes && spill_->openIndex() != PoseSpill::kNone) closeSpillGroup(spill_->openIndex());
+            payload_.release(slot.firstBlock, slot.payloadBytes);
+            slot.firstBlock = slot.payloadBytes = 0;
+            slot.reserved[0] = slot.reserved[1] = slot.reserved[2] = 0;
+        }
         if (bytes && !payload_.canStore(bytes)) reclaimExpired();
+        if (spill_ && bytes && !payload_.canStore(bytes)) makeSpillRoom(bytes, writesQueued);
         if (!bytes || !payload_.canStore(bytes)) {
+            if (headLive && bytes) {
+                // The oldest frame's payload was already released above; stop counting it.
+                const auto count = count_.load(std::memory_order_relaxed) - 1;
+                oldestSerial_.store(nextSerial_ - count, std::memory_order_release);
+                count_.store(count, std::memory_order_release);
+            }
             slot.claims.store(0, std::memory_order_release);
             return {PoseRecordStatus::StorageFull, {}};
         }
@@ -499,6 +530,11 @@ public:
         slot.header = h;
         slot.header.key = key;
         slot.claims.store(0, std::memory_order_release);
+        if (spill_) {
+            std::uint64_t token = 0;
+            if (!parentBytes) (void)spill_->openGroup(head_, key.serial, h.elapsedNanoseconds, token);
+            else (void)spill_->extendGroup(spill_->openIndex(), key.serial, h.elapsedNanoseconds);
+        }
 
         previousEpoch_ = h.frameEpoch;
         previousTime_ = h.elapsedNanoseconds;
@@ -515,7 +551,34 @@ public:
         count_.store(newCount, std::memory_order_release);
         latest_.store(head_, std::memory_order_release);
         head_ = (head_ + 1) % capacity_;
+        if (spill_) {
+            releaseAgedSpill(h.elapsedNanoseconds);
+            spill_->advanceTail(oldestSerial_.load(std::memory_order_acquire));
+            spill_->stats().poolBlocksAvailable.store(payload_.availableBlocks(), std::memory_order_relaxed);
+        }
         return {PoseRecordStatus::Recorded, key};
+    }
+
+    // Highest frames-back index from `from` through `limit` whose payloads can be decoded now.
+    SpillProbe spillAvailableThrough(PoseFrameKey anchor, std::uint32_t from, std::uint32_t limit) const {
+        SpillProbe probe{from, SpillAvailability::Available};
+        if (!spill_) { probe.through = limit; return probe; }
+        for (auto index = from; index <= limit && index < capacity_; ++index) {
+            if (anchor.serial <= index) break;
+            const auto& slot = slots_[(anchor.slot + capacity_ - index) % capacity_];
+            if (slot.header.key.serial != anchor.serial - index || slot.header.key.generation != anchor.generation) {
+                probe.blocked = SpillAvailability::Lost;
+                break;
+            }
+            SpillAvailability state = SpillAvailability::Available;
+            if ((slot.reserved[0] & 0xFF) == static_cast<unsigned>(SpillTier::Sd))
+                state = spill_->availability(slot.reserved[1], slot.reserved[2]);
+            else if (!slot.payloadBytes)
+                state = SpillAvailability::Lost;
+            if (state != SpillAvailability::Available) { probe.blocked = state; break; }
+            probe.through = index;
+        }
+        return probe;
     }
 
     PoseReadLease acquire(PoseFrameKey key) const {
@@ -636,7 +699,11 @@ private:
                     bool available = false;
                     if (!decoded.busy.compare_exchange_strong(available, true, std::memory_order_acquire)) continue;
                     decoded.frame.header = slot->header;
-                    if (slot->payloadBytes && decodePoseChain(payload_, slot->firstBlock, slot->payloadBytes, decoded, slot->header))
+                    const bool onSd = spill_ && (slot->reserved[0] & 0xFF) == static_cast<unsigned>(SpillTier::Sd);
+                    if (onSd ? spill_->decode(slot->reserved[1], slot->reserved[2], slot->reserved[0] >> 8,
+                                              decoded, slot->header)
+                             : slot->payloadBytes &&
+                                   decodePoseChain(payload_, slot->firstBlock, slot->payloadBytes, decoded, slot->header))
                         return PoseReadLease(slot, &decoded);
                     decoded.busy.store(false, std::memory_order_release);
                     break;
@@ -663,6 +730,86 @@ private:
         for (unsigned i = 0; i < capacity_; ++i) reclaim(i);
     }
 
+    unsigned spillNodeBytes(const SpillGroup& group, unsigned node, std::span<std::byte> out) const {
+        const auto& slot = slots_[(group.firstSlot + node) % capacity_];
+        if (slot.header.key.serial != group.firstSerial + node || slot.header.key.generation != generation() ||
+            (slot.reserved[0] & 0xFF) != static_cast<unsigned>(SpillTier::Ram) || !slot.payloadBytes) return 0;
+        if (out.empty()) return slot.payloadBytes;
+        if (out.size() < slot.payloadBytes || !payload_.load(slot.firstBlock, slot.payloadBytes, out)) return 0;
+        return slot.payloadBytes;
+    }
+
+    void closeSpillGroup(std::uint32_t index) {
+        const auto& group = spill_->groups()[index];
+        (void)spill_->enqueue(index, [&](unsigned node, std::span<std::byte> out) {
+            return spillNodeBytes(group, node, out);
+        });
+    }
+
+    bool releaseSpillGroup(std::uint32_t index, SpillGroup& group) {
+        const auto token = static_cast<std::uint32_t>(spillToken(group.state.load(std::memory_order_acquire)));
+        bool complete = true;
+        for (unsigned node = 0; node < group.nodes; ++node) {
+            auto& slot = slots_[(group.firstSlot + node) % capacity_];
+            if (slot.header.key.serial != group.firstSerial + node || slot.header.key.generation != generation() ||
+                (slot.reserved[0] & 0xFF) == static_cast<unsigned>(SpillTier::Sd)) continue;
+            std::uint32_t expected = 0;
+            if (!slot.claims.compare_exchange_strong(expected, kWriter, std::memory_order_acquire)) {
+                complete = false;
+                continue;
+            }
+            payload_.release(slot.firstBlock, slot.payloadBytes);
+            slot.firstBlock = slot.payloadBytes = 0;
+            slot.reserved[0] = static_cast<unsigned>(SpillTier::Sd) | (node << 8);
+            slot.reserved[1] = index;
+            slot.reserved[2] = token;
+            group.hasSd.store(true, std::memory_order_release);
+            slot.claims.store(0, std::memory_order_release);
+        }
+        if (complete) {
+            group.released = true;
+            spill_->stats().released.fetch_add(1, std::memory_order_relaxed);
+        }
+        return complete;
+    }
+
+    void releaseAgedSpill(std::uint64_t newestNanoseconds) {
+        const auto cutoff = newestNanoseconds > ramWindow_ ? newestNanoseconds - ramWindow_ : 0;
+        const auto open = spill_->openIndex();
+        spill_->forEachLiveGroup([&](std::uint32_t index, SpillGroup& group) {
+            if (index == open || group.newestNanoseconds >= cutoff) return false;
+            if (!group.released && spillState(group.state.load(std::memory_order_acquire)) == SpillState::Written)
+                (void)releaseSpillGroup(index, group);
+            return true;
+        });
+    }
+
+    // Written groups leave RAM early under pressure. While writes are queued the frame is
+    // rejected so the card can catch up; otherwise (SD disabled) the oldest frames expire.
+    void makeSpillRoom(unsigned bytes, bool writesQueued) {
+        const auto open = spill_->openIndex();
+        spill_->forEachLiveGroup([&](std::uint32_t index, SpillGroup& group) {
+            if (payload_.canStore(bytes)) return false;
+            if (index != open && !group.released &&
+                spillState(group.state.load(std::memory_order_acquire)) == SpillState::Written)
+                (void)releaseSpillGroup(index, group);
+            return true;
+        });
+        if (!payload_.canStore(bytes) && spill_->enabled() && writesQueued) {
+            spill_->stats().rejectedWhileWriting.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        auto count = count_.load(std::memory_order_relaxed);
+        while (!payload_.canStore(bytes) && count > 1) {
+            const auto oldest = (head_ + capacity_ - count) % capacity_;
+            --count;
+            oldestSerial_.store(nextSerial_ - count, std::memory_order_release);
+            count_.store(count, std::memory_order_release);
+            reclaim(oldest);
+            spill_->stats().trimmedForSpace.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+
     static constexpr std::uint32_t kWriter = 1u << 31;
     static constexpr std::uint32_t kNoSlot = UINT32_MAX;
     PoseHistorySlot* slots_;
@@ -682,6 +829,8 @@ private:
     std::uint8_t previousBodyModelCount_ = 0;
     bool havePrevious_ = false;
     PosePayloadStore payload_;
+    PoseSpill* spill_ = nullptr;
+    std::uint64_t ramWindow_ = 0;
     PoseChainEncoder chain_;
     std::array<std::byte, kPosePayloadMaxBytes> scratch_{};
     mutable std::array<PoseDecodedFrame, kPoseReadBufferCount> decoded_{};

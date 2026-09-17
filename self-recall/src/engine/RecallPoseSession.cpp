@@ -41,8 +41,10 @@ State prepare() {
     for (unsigned i = 0; i < pure::kPosePayloadBlockCount; ++i)
         ::new (static_cast<void*>(blocks + i)) pure::PosePayloadBlock;
     g_history = ::new (static_cast<void*>(g_historyObject))
-        pure::PoseHistory(slots, pure::kHistoryCapacity, {blocks, pure::kPosePayloadBlockCount});
+        pure::PoseHistory(slots, pure::kHistoryCapacity, {blocks, pure::kPosePayloadBlockCount},
+                          sd_history::spill(), std::uint64_t{pure::kSdHistoryRamSeconds} * 1000000000ull);
     g_state.store(State::Ready, std::memory_order_release);
+    sd_history::start();
     Logging.Log("[self-recall] pose storage ready: owner=module_bss bytes=%llu frames=%u bone_limit=%u",
                 static_cast<unsigned long long>(kBytes),
                 static_cast<unsigned>(pure::kHistoryCapacity),
@@ -88,6 +90,9 @@ BeginResult begin(std::uint32_t world, const pure::GameTimeSnapshot& clock) {
         return {false, result};
     }
     pose_render::begin();
+    const auto anchor = g_playback->anchorKey();
+    sd_history::playback(true, anchor.generation, anchor.serial);
+    sd_history::event("recall_begin", g_playback->count(), anchor.serial);
     const auto session = g_sessionSerial.fetch_add(1, std::memory_order_acq_rel) + 1;
     g_haveApplied.store(false, std::memory_order_release);
     const auto key = g_playback->presentation();
@@ -110,7 +115,11 @@ void reset(bool clearHistory) {
     g_haveApplied.store(false, std::memory_order_release);
     g_publishMisses.store(0, std::memory_order_relaxed);
     pose_render::reset();
-    if (g_playback) g_playback->reset();
+    if (g_playback) {
+        if (g_playback->count()) sd_history::event("recall_end", g_playback->index(), g_playback->count());
+        g_playback->reset();
+    }
+    sd_history::playback(false, 0, 0);
     pose_recorder::resume(clearHistory);
 }
 

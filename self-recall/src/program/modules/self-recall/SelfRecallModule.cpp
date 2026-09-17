@@ -54,10 +54,16 @@ std::uint64_t historyDurationNanoseconds() {
     auto newest = poses->newest();
     const auto count = poses->count();
     if (!newest || !count) return 0;
-    auto oldest = poses->before(newest.get()->header.key, count - 1);
-    if (!oldest || newest.get()->header.elapsedNanoseconds < oldest.get()->header.elapsedNanoseconds)
-        return 0;
-    return newest.get()->header.elapsedNanoseconds - oldest.get()->header.elapsedNanoseconds;
+    pure::PoseFrameHeader oldest;
+    if (pure::kSdHistory) {
+        if (!poses->copyHeaderBefore(newest.get()->header.key, count - 1, oldest)) return 0;
+    } else {
+        auto lease = poses->before(newest.get()->header.key, count - 1);
+        if (!lease) return 0;
+        oldest = lease.get()->header;
+    }
+    if (newest.get()->header.elapsedNanoseconds < oldest.elapsedNanoseconds) return 0;
+    return newest.get()->header.elapsedNanoseconds - oldest.elapsedNanoseconds;
 }
 
 void publishRouteLine() {

@@ -132,9 +132,16 @@ public:
         const auto& newest = latest.get()->header;
         if (!world || newest.worldGeneration != world) return PosePlaybackStatus::WrongWorld;
         if (!(newest.route.flags & SampleAdmissible)) return PosePlaybackStatus::UnsafeSample;
-        auto oldest = history.before(newest.key, count - 1);
-        if (!oldest) return PosePlaybackStatus::UnavailableFrame;
-        const auto firstTime = oldest.get()->header.elapsedNanoseconds;
+        PoseFrameHeader oldest;
+        if (kSdHistory) {
+            // Old payloads may still be on the SD card; the header is enough here.
+            if (!history.copyHeaderBefore(newest.key, count - 1, oldest)) return PosePlaybackStatus::UnavailableFrame;
+        } else {
+            auto lease = history.before(newest.key, count - 1);
+            if (!lease) return PosePlaybackStatus::UnavailableFrame;
+            oldest = lease.get()->header;
+        }
+        const auto firstTime = oldest.elapsedNanoseconds;
         if (newest.elapsedNanoseconds < firstTime ||
             newest.elapsedNanoseconds > clock.elapsedNanoseconds)
             return PosePlaybackStatus::InvalidClock;

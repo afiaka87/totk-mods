@@ -81,12 +81,58 @@ bool verifyAppliedPose(RecallRuntime& runtime, pure::PosePlayback* cursor,
     return true;
 }
 
+// SD builds: older pose data may still be loading from the card. Playback waits at the
+// last loaded frame without consuming history time; a lost frame or a 10 s wait ends Recall.
+struct SdHold {
+    std::uint64_t startedNanoseconds = 0;
+    std::uint64_t episodes = 0;
+    std::uint32_t index = 0;
+};
+SdHold g_sdHold;
+
+bool sdAllowedThrough(RecallRuntime& runtime, pure::PosePlayback* cursor, const pure::GameTimeSnapshot& clock,
+                      std::uint32_t& allowedThrough) {
+    const auto* history = pose_storage::history();
+    if (!history || !cursor->count()) return true;
+    const auto last = cursor->count() - 1;
+    const auto limit = std::min(last, cursor->index() + 120u);
+    const auto probe = history->spillAvailableThrough(cursor->anchorKey(), cursor->index(), limit);
+    const bool blocked = probe.through < limit;
+    if (blocked && probe.through == cursor->index() && probe.blocked == pure::SpillAvailability::Lost) {
+        sd_history::event("sd_lost", cursor->index(), cursor->selectedKey().serial);
+        SRLOG("SD_HISTORY_LOST index=%u count=%u", cursor->index(), cursor->count());
+        finish(runtime, pure::PlaybackStop::PoseUnavailable, true);
+        return false;
+    }
+    if (blocked && probe.through == cursor->index()) {
+        const auto now = clock.elapsedNanoseconds;
+        if (!g_sdHold.startedNanoseconds || g_sdHold.index != cursor->index()) {
+            g_sdHold = {now ? now : 1, g_sdHold.episodes + 1, cursor->index()};
+            sd_history::event("sd_hold_begin", cursor->index(), g_sdHold.episodes);
+        } else if (now - g_sdHold.startedNanoseconds > 10ull * 1000000000ull) {
+            sd_history::event("sd_hold_timeout", cursor->index(), now - g_sdHold.startedNanoseconds);
+            SRLOG("SD_HISTORY_HOLD_TIMEOUT index=%u count=%u", cursor->index(), cursor->count());
+            g_sdHold.startedNanoseconds = 0;
+            finish(runtime, pure::PlaybackStop::PoseUnavailable, true);
+            return false;
+        }
+    } else if (g_sdHold.startedNanoseconds) {
+        sd_history::event("sd_hold_end", g_sdHold.index,
+                          (clock.elapsedNanoseconds - g_sdHold.startedNanoseconds) / 1000000ull);
+        g_sdHold.startedNanoseconds = 0;
+    }
+    if (blocked) allowedThrough = std::min(allowedThrough, probe.through);
+    return true;
+}
+
 void selectAndApplyFrame(RecallRuntime& runtime, pure::PosePlayback* cursor,
                          const pure::GameTimeSnapshot& clock) {
     auto& playback = runtime.playback;
     if (!playback.selectionPending) {
+        auto allowedThrough = runtime.safety.probe.evaluatedThrough;
+        if (pure::kSdHistory && !sdAllowedThrough(runtime, cursor, clock, allowedThrough)) return;
         const auto selected = cursor->step(clock, runtime.session.worldGeneration,
-                                           runtime.safety.probe.evaluatedThrough, runtime.session.speed.rate());
+                                           allowedThrough, runtime.session.speed.rate());
         if (selected != pure::PosePlaybackStatus::Ready &&
             selected != pure::PosePlaybackStatus::Held &&
             selected != pure::PosePlaybackStatus::AtEnd) {
@@ -134,6 +180,7 @@ void selectAndApplyFrame(RecallRuntime& runtime, pure::PosePlayback* cursor,
         return;
     }
     playback.rewindRemaining = static_cast<std::uint16_t>(cursor->count() - cursor->index() - 1);
+    if (pure::kSdHistory) sd_history::playback(true, cursor->anchorKey().generation, cursor->selectedKey().serial);
     safety::armProbe(runtime);
 }
 

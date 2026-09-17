@@ -3,6 +3,9 @@
 #ifndef SELF_RECALL_STORAGE_PROFILE
 #define SELF_RECALL_STORAGE_PROFILE 8
 #endif
+#ifndef SELF_RECALL_SD_HISTORY
+#define SELF_RECALL_SD_HISTORY 0
+#endif
 
 namespace self_recall::pure {
 
@@ -10,7 +13,9 @@ inline constexpr unsigned kMiB = 1024u * 1024u;
 
 #if SELF_RECALL_STORAGE_PROFILE == 7
 inline constexpr const char* kStorageProfileName = "switch-compressed";
-inline constexpr unsigned kPosePayloadArenaBytes = 13u * kMiB / 2;
+// SD alpha pools: measured 10 s and 30 s corpus minimums plus 768 KiB of write backlog.
+inline constexpr unsigned kPosePayloadArenaBytes = SELF_RECALL_SD_HISTORY == 30 ? 7424u * 1024u
+    : SELF_RECALL_SD_HISTORY == 10 ? 3072u * 1024u : 13u * kMiB / 2;
 inline constexpr unsigned kPoseReadBufferCount = 4u;
 inline constexpr unsigned kAppearancePoolBytes = 5u * kMiB / 4u;
 inline constexpr unsigned kArchiveHeapBytes = 2u * kMiB;
@@ -26,14 +31,18 @@ inline constexpr unsigned kArchiveHeapBytes = 16u * kMiB;
 
 inline constexpr bool kReducedHistory = SELF_RECALL_STORAGE_PROFILE == 7;
 inline constexpr bool kHistoricalEquipment = SELF_RECALL_STORAGE_PROFILE == 8;
-inline constexpr unsigned kHistoryFrameCapacity = kReducedHistory ? 902u : 3840u;
-inline constexpr unsigned kHistorySeconds = kReducedHistory ? 30u : 64u;
+inline constexpr unsigned kSdHistoryRamSeconds = SELF_RECALL_SD_HISTORY;
+inline constexpr bool kSdHistory = kSdHistoryRamSeconds != 0;
+inline constexpr unsigned kHistoryFrameCapacity = kSdHistory ? 1922u : kReducedHistory ? 902u : 3840u;
+inline constexpr unsigned kHistorySeconds = kReducedHistory && !kSdHistory ? 30u : 64u;
 
 inline constexpr unsigned kAppearanceBlockBytes = 256u;
 inline constexpr unsigned kAppearanceBlockCount = kAppearancePoolBytes / kAppearanceBlockBytes;
 inline constexpr unsigned kAppearanceStateCapacity = kAppearanceBlockCount;
 
 static_assert(kPosePayloadArenaBytes % 1024u == 0);
+static_assert(!kSdHistory || (kReducedHistory && (kSdHistoryRamSeconds == 10u || kSdHistoryRamSeconds == 30u)),
+              "SD history requires the Switch profile and 10 or 30 seconds of RAM history");
 static_assert(kPoseReadBufferCount >= 4u);
 static_assert(kAppearancePoolBytes % kAppearanceBlockBytes == 0);
 static_assert(kArchiveHeapBytes % 4096u == 0);

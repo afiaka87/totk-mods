@@ -1143,6 +1143,23 @@ pure::PoseHistory* history();
 
 }
 
+namespace self_recall::sd_history {
+
+#if SELF_RECALL_SD_HISTORY
+std::uint64_t nowNanoseconds();
+pure::PoseSpill* spill();
+void start();
+void event(const char* name, std::uint64_t a = 0, std::uint64_t b = 0);
+void playback(bool active, std::uint32_t generation, std::uint64_t serial);
+#else
+inline pure::PoseSpill* spill() { return nullptr; }
+inline void start() {}
+inline void event(const char*, std::uint64_t = 0, std::uint64_t = 0) {}
+inline void playback(bool, std::uint32_t, std::uint64_t) {}
+#endif
+
+}
+
 #include "totk/engine/Raycast.hpp"
 
 namespace self_recall::probe {

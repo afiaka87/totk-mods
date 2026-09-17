@@ -135,18 +135,39 @@ void compare(const RecordedPoseFrame& expected, const RecordedPoseFrame& actual)
     require(std::memcmp(actual.bones, expected.bones, expected.header.boneCount * sizeof(RecordedBoneMatrix)) == 0, "bone mismatch");
     require(std::memcmp(&actual.visible, &expected.visible, sizeof(actual.visible)) == 0, "visibility mismatch");
 }
+
+#if SELF_RECALL_SD_HISTORY
+// In-memory stand-in for the SD card file; the worker thread is replaced by explicit pumping.
+class MemoryFile final : public SpillFile {
+public:
+    std::vector<std::byte> bytes = std::vector<std::byte>(kSpillFileBytes);
+    std::uint64_t clock = 0;
+    bool write(std::uint64_t offset, std::span<const std::byte> data) override {
+        if (offset + data.size() > bytes.size()) return false;
+        std::memcpy(bytes.data() + offset, data.data(), data.size());
+        return true;
+    }
+    bool read(std::uint64_t offset, std::span<std::byte> data) override {
+        if (offset + data.size() > bytes.size()) return false;
+        std::memcpy(data.data(), bytes.data() + offset, data.size());
+        return true;
+    }
+    std::uint64_t nanoseconds() override { return clock += 1000; }
+};
+#endif
 }
 int main(int argc, char** argv) {
     try {
         require(argc >= 2 && argc <= 5,
-                "usage: recall_corpus_replay corpus.bin [--body-only|--equipment-bones] [--capacity-only] [--pose-mib=N|--pose-kib=N]");
-        bool bodyOnly = false, capacityOnly = false, equipmentBones = false;
+                "usage: recall_corpus_replay corpus.bin [--body-only|--equipment-bones] [--capacity-only] [--sd-stalls] [--pose-mib=N|--pose-kib=N]");
+        bool bodyOnly = false, capacityOnly = false, equipmentBones = false, sdStalls = false;
         unsigned poseKiB = kPosePayloadArenaBytes / 1024u;
         for (int i = 2; i < argc; ++i) {
             const std::string_view argument{argv[i]};
             if (argument == "--body-only") bodyOnly = true;
             else if (argument == "--equipment-bones") equipmentBones = true;
             else if (argument == "--capacity-only") capacityOnly = true;
+            else if (argument == "--sd-stalls") sdStalls = true;
             else if (argument.starts_with("--pose-mib=")) {
                 char* end = nullptr;
                 const auto value = std::strtoul(argv[i] + 11, &end, 10);
@@ -165,8 +186,22 @@ int main(int argc, char** argv) {
         auto slots = std::make_unique<PoseHistorySlot[]>(kHistoryCapacity);
         const auto blockCount = poseKiB * 1024u / sizeof(PosePayloadBlock);
         auto blocks = std::make_unique<PosePayloadBlock[]>(blockCount);
+#if SELF_RECALL_SD_HISTORY
+        auto cacheBlocks = std::make_unique<PosePayloadBlock[]>(kSpillCacheBlockCount);
+        auto groups = std::make_unique<SpillGroup[]>(kHistoryCapacity);
+        std::vector<std::byte> ring(kSpillWriteRingBytes), io(kSpillMaxGroupBytes);
+        auto spill = std::make_unique<PoseSpill>(std::span{cacheBlocks.get(), kSpillCacheBlockCount},
+            std::span{groups.get(), kHistoryCapacity}, ring, io);
+        spill->setEnabled(true);
+        auto file = std::make_unique<MemoryFile>();
+        auto history = std::make_unique<PoseHistory>(slots.get(), kHistoryCapacity,
+            std::span{blocks.get(), blockCount}, spill.get(), std::uint64_t{kSdHistoryRamSeconds} * 1000000000ull);
+        std::uint64_t recalls = 0, recallFrames = 0, rejected = 0, maxLoadPumps = 0, minRecallFrames = UINT64_MAX;
+#else
+        require(!sdStalls, "--sd-stalls needs an SD history build");
         auto history = std::make_unique<PoseHistory>(slots.get(), kHistoryCapacity,
             std::span{blocks.get(), blockCount});
+#endif
         auto appearance = std::make_unique<CompressedAppearanceBlobs<kAppearanceBlockCount,kAppearanceStateCapacity>>();
         appearance->initialize();
         std::deque<RecordedPoseFrame> expected;
@@ -180,6 +215,32 @@ int main(int argc, char** argv) {
             decodeNs += ns; maxDecodeNs = std::max(maxDecodeNs,ns);
             compare(frame, *lease.get()); ++checks;
         };
+#if SELF_RECALL_SD_HISTORY
+        // Recall walks newest to oldest, loading SD groups on demand, and compares every frame.
+        const auto recallWalk = [&] {
+            if (expected.empty()) return;
+            const auto anchor = expected.back().header.key;
+            require(history->count() == expected.size(), "history count differs from expected window");
+            spill->setPlayback(true, anchor.generation, anchor.serial);
+            for (std::uint32_t index = 0; index < expected.size(); ++index) {
+                std::uint64_t pumps = 0;
+                for (;;) {
+                    const auto probe = history->spillAvailableThrough(anchor, index, index);
+                    require(probe.blocked != SpillAvailability::Lost, "SD frame lost during recall");
+                    if (probe.through == index && probe.blocked == SpillAvailability::Available) break;
+                    require(++pumps < 4096 && bool(spill->pump(*file)), "SD load made no progress");
+                }
+                maxLoadPumps = std::max(maxLoadPumps, pumps);
+                const auto& frame = expected[expected.size() - 1 - index];
+                auto lease = history->before(anchor, index); require(bool(lease), "recall acquire failed");
+                compare(frame, *lease.get()); ++checks;
+                spill->setPlayback(true, anchor.generation, frame.header.key.serial);
+            }
+            spill->setPlayback(false, 0, 0);
+            while (spill->pump(*file)) {}
+            ++recalls; recallFrames += expected.size(); minRecallFrames = std::min<std::uint64_t>(minRecallFrames, expected.size());
+        };
+#endif
         while (stream) {
             CorpusRecordHeader record;
             stream.read(reinterpret_cast<char*>(&record), sizeof(record));
@@ -221,7 +282,11 @@ int main(int argc, char** argv) {
             if (equipmentBones) keepEquipmentBoneStress(frame);
             else if (bodyOnly) keepBodyOnly(frame);
             if (sourceGeneration != frame.header.key.generation) {
+#if SELF_RECALL_SD_HISTORY
+                recallWalk();
+#else
                 for (auto i=expected.rbegin();i!=expected.rend();++i) readPose(*i);
+#endif
                 history->clear();expected.clear();sourceGeneration=frame.header.key.generation;
             }
             PoseFrameInput input{frame.header,frame.models,frame.bones,frame.visible};
@@ -229,6 +294,12 @@ int main(int argc, char** argv) {
             const auto result = history->record(input);
             const auto ns=static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-start).count());
             encodeNs+=ns;maxEncodeNs=std::max(maxEncodeNs,ns);
+#if SELF_RECALL_SD_HISTORY
+            // Stall model: the card makes no progress for 3 s out of every 20 s of frames.
+            const bool stalled = sdStalls && (poses % 600) >= 510;
+            if (!stalled) while (spill->pump(*file)) {}
+            if (result.status == PoseRecordStatus::StorageFull && sdStalls) { ++rejected; ++poses; continue; }
+#endif
             if (result.status != PoseRecordStatus::Recorded) {
                 std::cerr << "record refused: status=" << unsigned(result.status) << " poses=" << poses
                     << " models=" << frame.header.modelCount << " bones=" << frame.header.boneCount << '\n';
@@ -238,11 +309,21 @@ int main(int argc, char** argv) {
             expected.push_back(frame);
             while (!expected.empty() && !history->contains(expected.front().header.key)) expected.pop_front();
             require(!expected.empty(), "empty recorded window");
+#if SELF_RECALL_SD_HISTORY
+            readPose(expected.back());
+            if (!capacityOnly && poses % 900 == 899) recallWalk();
+#else
             readPose(expected.back());readPose(expected.front());
             readPose(expected[(poses*137)%expected.size()]);
+#endif
             ++poses;
         }
+#if SELF_RECALL_SD_HISTORY
+        while (spill->pump(*file)) {}
+        if (!capacityOnly) recallWalk();
+#else
         for (auto i=expected.rbegin();i!=expected.rend();++i) readPose(*i);
+#endif
         history->clear();
         std::cout << "{\"poses\":"<<poses<<",\"exact_pose_reads\":"<<checks<<",\"appearance_round_trips\":"<<appearances
             <<",\"history_object_bytes\":"<<sizeof(PoseHistory)
@@ -251,6 +332,17 @@ int main(int argc, char** argv) {
             <<",\"pose_pool_bytes\":"<<blockCount*sizeof(PosePayloadBlock)
             <<",\"desktop_encode_mean_ns\":"<<encodeNs/poses
             <<",\"desktop_encode_max_ns\":"<<maxEncodeNs;
+#if SELF_RECALL_SD_HISTORY
+        const auto& stats = spill->stats();
+        std::cout << ",\"sd_ram_seconds\":"<<kSdHistoryRamSeconds<<",\"sd_stalls\":"<<(sdStalls ? "true" : "false")
+            <<",\"sd_recalls\":"<<recalls<<",\"sd_recall_frames\":"<<recallFrames
+            <<",\"sd_min_recall_frames\":"<<(recalls ? minRecallFrames : 0)
+            <<",\"sd_writes\":"<<stats.writes.load()<<",\"sd_write_bytes\":"<<stats.writeBytes.load()
+            <<",\"sd_reads\":"<<stats.reads.load()<<",\"sd_released\":"<<stats.released.load()
+            <<",\"sd_ram_only\":"<<stats.ramOnly.load()<<",\"sd_lost\":"<<stats.lost.load()<<",\"sd_overwritten\":"<<stats.overwritten.load()
+            <<",\"sd_trimmed\":"<<stats.trimmedForSpace.load()<<",\"sd_rejected\":"<<rejected
+            <<",\"sd_failures\":"<<stats.failures.load()<<",\"sd_max_load_pumps\":"<<maxLoadPumps;
+#endif
         if (!capacityOnly)
             std::cout << ",\"desktop_decode_mean_ns\":"<<decodeNs/checks
                       <<",\"desktop_decode_max_ns\":"<<maxDecodeNs;
