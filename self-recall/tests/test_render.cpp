@@ -642,6 +642,22 @@ TEST_CASE("emitter bindings reject recycled native sets and survive finite capac
     frames.clear();
     CHECK_FALSE(frames.get(0x1000, 43).owner);
     CHECK(frames.put(first));
+    WristEmitterFrame gear{0x4000, 9, {3, 8}, {}, 0x5000, 12};
+    frames.clear();
+    REQUIRE(frames.put(gear));
+    CHECK(frames.get(0x4000, 9).anchorUnit == 0x5000);
+    CHECK(frames.get(0x4000, 9).anchorBone == 12);
+}
+
+TEST_CASE("equipment emitters bind only to the current Recall session") {
+    WristEffectOwners owners;
+    CHECK_FALSE(owners.session());
+    const auto serial = owners.publish(7, {});
+    REQUIRE(serial);
+    CHECK(owners.session().serial == serial);
+    CHECK(owners.session().historyGeneration == 7);
+    owners.clear();
+    CHECK_FALSE(owners.session());
 }
 
 TEST_CASE("only the native frame publisher can advance controller body and wrist presentation") {

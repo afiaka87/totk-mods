@@ -259,7 +259,9 @@ constexpr std::uintptr_t kELinkSystemIndirect = 0x0462F2A8;
 std::uintptr_t g_mainBase = 0;
 pure::WristEffectOwners g_owners;
 std::atomic<std::uint64_t> g_missingFrames{0};
-pure::WristEmitterFrames<> g_emitters;
+std::array<std::atomic<std::uint64_t>, 4> g_equipmentMatrices{};
+std::atomic<std::uint64_t> g_equipmentRefreshes{0};
+pure::WristEmitterFrames<32> g_emitters;
 std::atomic<bool> g_haveEmitterBinding{false};
 std::atomic<std::uint64_t> g_emitterRefusals{0};
 
@@ -277,11 +279,13 @@ void emitterRefused(unsigned reason) {
 }
 
 void bindEmitter(const void* executor, pure::WristEffectOwner owner,
-                 const float wrist[12], const float effect[12]) {
+                 const float wrist[12], const float effect[12],
+                 const void* anchorUnit = nullptr, unsigned anchorBone = 0) {
     const auto* set = read<const void*>(executor, 0xB8);
     const auto instance = read<std::uint32_t>(executor, 0xC0);
     if (!set || read<std::uint32_t>(set, 0x234) != instance) return;
-    pure::WristEmitterFrame frame{reinterpret_cast<std::uintptr_t>(set), instance, owner, {}};
+    pure::WristEmitterFrame frame{reinterpret_cast<std::uintptr_t>(set), instance, owner, {},
+                                  reinterpret_cast<std::uintptr_t>(anchorUnit), anchorBone};
     if (!pure::relativeEffectMatrix(wrist, effect, frame.local)) { emitterRefused(1); return; }
     if (!g_owners.current(owner.serial)) return;
     if (!g_emitters.put(frame)) { emitterRefused(2); return; }
@@ -294,21 +298,29 @@ void refreshEmitter(void* emitter) {
     const auto binding = set ? g_emitters.get(reinterpret_cast<std::uintptr_t>(set),
         read<std::uint32_t>(set, 0x234)) : pure::WristEmitterFrame{};
     if (!binding.owner || !g_owners.current(binding.owner.serial)) return;
-    pure::RenderWristFrame wrist;
     const auto* holder = read<const void*>(reinterpret_cast<const void*>(g_mainBase), kELinkSystemIndirect);
     const auto* system = holder ? read<const void*>(holder, 0) : nullptr;
-    if (!system || !pose_render::copyWrist(binding.owner.historyGeneration, wrist)) {
-        emitterRefused(3); return;
+    if (!system) { emitterRefused(3); return; }
+    float anchor[12];
+    if (binding.anchorUnit) {
+        if (!pose_render::copyBone(reinterpret_cast<const void*>(binding.anchorUnit), binding.anchorBone, anchor)) {
+            emitterRefused(5); return;
+        }
+    } else {
+        pure::RenderWristFrame wrist;
+        if (!pose_render::copyWrist(binding.owner.historyGeneration, wrist)) { emitterRefused(3); return; }
+        std::memcpy(anchor, wrist.matrix, sizeof(anchor));
     }
     float origin[3];
     std::memcpy(origin, static_cast<const std::byte*>(system) + 0x64E74, sizeof(origin));
     alignas(16) float matrix[16];
-    if (!pure::emitterMatrix(wrist.matrix, binding.local, origin, matrix)) {
+    if (!pure::emitterMatrix(anchor, binding.local, origin, matrix)) {
         emitterRefused(4); return;
     }
     if (!g_owners.current(binding.owner.serial)) return;
     using SetMatrix = void (*)(void*, const float*);
     reinterpret_cast<SetMatrix>(g_mainBase + kSetEmitterMatrix)(set, matrix);
+    if (binding.anchorUnit) g_equipmentRefreshes.fetch_add(1, std::memory_order_relaxed);
 }
 
 HOOK_DEFINE_TRAMPOLINE(UpdateEmitterMatrixHook) {
@@ -339,13 +351,28 @@ HOOK_DEFINE_TRAMPOLINE(CalculateEffectMatrixHook) {
                                  : pure::WristEffectOwner{};
         if (!owner) {
             float matrix[12];
-            if (!equipment_effects::copyMatrix(descriptor, matrix))
+            const void* anchorUnit = nullptr;
+            unsigned anchorBone = 0;
+            const auto source = equipment_effects::copyMatrix(executor, descriptor, matrix,
+                                                              &anchorUnit, &anchorBone);
+            if (source != equipment_effects::EffectMatrix::Foreign)
+                g_equipmentMatrices[unsigned(source)].fetch_add(1, std::memory_order_relaxed);
+            if (source != equipment_effects::EffectMatrix::Bone &&
+                source != equipment_effects::EffectMatrix::ModelRoot)
                 return Orig(executor, output, resource, user, argument4, descriptor, flags);
             pure::WristEffectOwners scope;
             const auto serial = scope.publish(1, {});
             pure::WristMatrixProvider provider(scope, serial, matrix);
             const auto historical = provider.descriptor();
-            return Orig(executor, output, resource, user, argument4, &historical, flags);
+            const auto result = Orig(executor, output, resource, user, argument4, &historical, flags);
+            // Switch gear effects are re-anchored when particles consume them, like the wrist cue.
+            if (!pure::kHistoricalEquipment && provider.copied() && anchorUnit) {
+                if (const auto session = g_owners.session())
+                    bindEmitter(executor, session, matrix, static_cast<const float*>(output), anchorUnit, anchorBone);
+                else
+                    emitterRefused(6);
+            }
+            return result;
         }
         pure::RenderWristFrame frame;
         if (!pose_render::copyWrist(owner.historyGeneration, frame)) {
@@ -395,6 +422,15 @@ void begin(std::uint32_t historyGeneration, std::span<const pure::CompactEffectH
 }
 
 void end() {
+    const auto bone = g_equipmentMatrices[1].exchange(0, std::memory_order_relaxed);
+    const auto root = g_equipmentMatrices[2].exchange(0, std::memory_order_relaxed);
+    const auto missing = g_equipmentMatrices[3].exchange(0, std::memory_order_relaxed);
+    const auto refreshed = g_equipmentRefreshes.exchange(0, std::memory_order_relaxed);
+    if (bone || root || missing || refreshed)
+        Logging.Log("[self-recall] EQUIPMENT_EFFECT_MATRICES bone=%llu model_root=%llu missing=%llu "
+                    "emitter_refreshes=%llu",
+            static_cast<unsigned long long>(bone), static_cast<unsigned long long>(root),
+            static_cast<unsigned long long>(missing), static_cast<unsigned long long>(refreshed));
     g_owners.clear();
     g_emitters.clear();
     g_haveEmitterBinding.store(false, std::memory_order_relaxed);

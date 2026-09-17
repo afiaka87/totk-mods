@@ -479,19 +479,98 @@ bool applyValues(unsigned asset, const Values& values) {
     return true;
 }
 
-bool copyMatrix(const void* descriptor, float out[12]) {
-    if (!descriptor || !pose_session::active()) return false;
+EffectMatrix copyMatrix(const void*, const void* descriptor, float out[12], const void**, unsigned*) {
+    if (!descriptor || !pose_session::active()) return EffectMatrix::Foreign;
     const auto* root = read<const void*>(descriptor, 0);
     const auto indices = read<std::uint64_t>(descriptor, 8);
     const auto m = static_cast<std::uint16_t>(indices), bone = static_cast<std::uint16_t>(indices >> 16);
     for (const auto& a : g_assets) {
         if (!a.ready.load(std::memory_order_acquire) || root != a.root) continue;
-        if (m >= read<unsigned>(root, 0x20)) return false;
+        if (m >= read<unsigned>(root, 0x20)) return EffectMatrix::Foreign;
         const auto* entries = read<const void* const*>(root, 0x28);
         const auto* unit = entries && entries[m] ? read<const void*>(entries[m], 0) : nullptr;
-        return unit && pose_render::copyBone(unit, bone, out);
+        return unit && pose_render::copyBone(unit, bone, out) ? EffectMatrix::Bone : EffectMatrix::Foreign;
     }
-    return false;
+    return EffectMatrix::Foreign;
+}
+}
+
+#else
+
+namespace self_recall::equipment_effects {
+using namespace offsets121::equipment_effects;
+namespace {
+std::uintptr_t g_main = 0;
+template<class T> T read(const void* p, std::size_t offset) {
+    T v; std::memcpy(&v, static_cast<const std::byte*>(p) + offset, sizeof(v)); return v;
+}
+// Current gear keeps its native effects on Switch. Each entry maps an actor's effect
+// user to the model roots its bone descriptors can name and the model used for unboned cues.
+struct LiveGear {
+    std::atomic<const void*> user{nullptr}, root{nullptr}, nativeRoot{nullptr}, unit{nullptr};
+};
+std::array<LiveGear, model::kOwnedActorLimit> g_gear;
+
+const void* firstUnit(const void* root) {
+    if (!root || read<std::int32_t>(root, 0x20) <= 0) return nullptr;
+    const auto* entries = read<const void* const*>(root, 0x28);
+    return entries && entries[0] ? read<const void*>(entries[0], 0) : nullptr;
+}
+}
+
+void install(std::uintptr_t mainBase) { g_main = mainBase; }
+
+void publishLive(std::span<const void* const> actors) {
+    if (!g_main) return;
+    for (unsigned i = 0; i < g_gear.size(); ++i) {
+        const auto* actor = i < actors.size() ? actors[i] : nullptr;
+        const auto* component = actor
+            ? reinterpret_cast<const void* (*)(const void*)>(g_main + kGetXLinkComponent)(actor) : nullptr;
+        const auto* user = component ? read<const void*>(component, 0x70) : nullptr;
+        const auto* root = user ? actor_model::actorModel(actor) : nullptr;
+        const auto* nativeRoot = user
+            ? reinterpret_cast<const void* (*)(const void*)>(g_main + kActorGetModel)(actor) : nullptr;
+        auto& gear = g_gear[i];
+        gear.user.store(nullptr, std::memory_order_release);
+        gear.root.store(root, std::memory_order_release);
+        gear.nativeRoot.store(nativeRoot, std::memory_order_release);
+        gear.unit.store(firstUnit(root), std::memory_order_release);
+        gear.user.store(user, std::memory_order_release);
+    }
+}
+
+EffectMatrix copyMatrix(const void* executor, const void* descriptor, float out[12],
+                        const void** anchorUnit, unsigned* anchorBone) {
+    if (!executor || !descriptor || !pose_session::active()) return EffectMatrix::Foreign;
+    const auto* user = read<const void*>(executor, 0x20);
+    if (!user) return EffectMatrix::Foreign;
+    const LiveGear* owner = nullptr;
+    for (const auto& gear : g_gear)
+        if (gear.user.load(std::memory_order_acquire) == user) { owner = &gear; break; }
+    if (!owner) return EffectMatrix::Foreign;
+    const auto* root = read<const void*>(descriptor, 0);
+    for (const auto& gear : g_gear) {
+        if (!root || !gear.user.load(std::memory_order_acquire) ||
+            (root != gear.root.load(std::memory_order_acquire) &&
+             root != gear.nativeRoot.load(std::memory_order_acquire))) continue;
+        const auto indices = read<std::uint64_t>(descriptor, 8);
+        const auto m = static_cast<std::uint16_t>(indices);
+        const auto bone = static_cast<std::uint16_t>(indices >> 16);
+        const auto count = read<std::int32_t>(root, 0x20);
+        const auto* entries = read<const void* const*>(root, 0x28);
+        const auto* unit = entries && m < count && entries[m] ? read<const void*>(entries[m], 0) : nullptr;
+        if (!unit || !pose_render::copyBone(unit, bone, out)) return EffectMatrix::Missing;
+        *anchorUnit = unit;
+        *anchorBone = bone;
+        return EffectMatrix::Bone;
+    }
+    // Unboned cues, such as the Master Sword glow, follow the owner's first model root bone,
+    // matching the emulator profile's archived effect user.
+    const auto* unit = owner->unit.load(std::memory_order_acquire);
+    if (!unit || !pose_render::copyBone(unit, 0, out)) return EffectMatrix::Missing;
+    *anchorUnit = unit;
+    *anchorBone = 0;
+    return EffectMatrix::ModelRoot;
 }
 }
 

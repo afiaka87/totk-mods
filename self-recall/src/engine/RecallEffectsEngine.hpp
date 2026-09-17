@@ -73,16 +73,18 @@ struct Values {
     float scale[3]{1, 1, 1};
     std::uint32_t properties[128]{};
 };
+enum class EffectMatrix : std::uint8_t { Foreign, Bone, ModelRoot, Missing };
 #if SELF_RECALL_STORAGE_PROFILE == 7
 inline void captureValues(unsigned, Values&) {}
 inline bool applyValues(unsigned, const Values&) { return false; }
-inline void install(std::uintptr_t) {}
+void install(std::uintptr_t mainBase);
 inline bool retain(unsigned, const void*, const void*) { return false; }
 inline void retire(unsigned) {}
 inline void record(unsigned, pure::PoseFrameHeader&) {}
 inline void selectFrame(const pure::RecordedPoseFrame*) {}
-inline void publishLive(std::span<const void* const>) {}
-inline bool copyMatrix(const void*, float[12]) { return false; }
+void publishLive(std::span<const void* const> actors);
+EffectMatrix copyMatrix(const void* executor, const void* descriptor, float out[12],
+                        const void** unit, unsigned* bone);
 #else
 void captureValues(unsigned asset, Values& out);
 bool applyValues(unsigned asset, const Values& values);
@@ -92,7 +94,8 @@ void retire(unsigned asset);
 void record(unsigned asset, pure::PoseFrameHeader& header);
 void selectFrame(const pure::RecordedPoseFrame* frame);
 void publishLive(std::span<const void* const> actors);
-bool copyMatrix(const void* descriptor, float out[12]);
+EffectMatrix copyMatrix(const void* executor, const void* descriptor, float out[12],
+                        const void** unit, unsigned* bone);
 #endif
 }
 

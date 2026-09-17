@@ -357,6 +357,7 @@ bool presentationPose(void* actor, pure::Pose& out) {
 void install(std::uintptr_t mainBase) {
     g_mainBase = mainBase;
     equipment::install(mainBase);
+    if constexpr (!pure::kHistoricalEquipment) equipment_effects::install(mainBase);
     PlayerMatrixHook::InstallAtOffset(kActorUpdateMatrix);
     ControllerMatrixHook::InstallAtOffset(kControllerMatrixAndVelocity);
 }

@@ -21,6 +21,7 @@ inline constexpr std::uintptr_t kDestroyModelDependencies = 0x01020560;
 
 namespace equipment_effects {
 inline constexpr std::uintptr_t kGetXLinkComponent = 0x01066DA0;
+inline constexpr std::uintptr_t kActorGetModel = 0x00BADE58;
 inline constexpr std::uintptr_t kIsEventHandleValid = 0x00D17C80;
 inline constexpr std::uintptr_t kEventPoolBasesSlot = 0x0462F290;
 inline constexpr std::uintptr_t kEventPoolStridesSlot = 0x0462F298;

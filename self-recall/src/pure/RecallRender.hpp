@@ -574,6 +574,11 @@ public:
     }
     void clear() { serial_.store(0); }
     bool current(std::uint64_t serial) const { return serial && serial_.load() == serial; }
+    WristEffectOwner session() const {
+        const auto serial = serial_.load();
+        const auto history = history_.load();
+        return current(serial) ? WristEffectOwner{serial, history} : WristEffectOwner{};
+    }
     WristEffectOwner match(std::uintptr_t event, std::uint32_t eventId) const {
         const auto serial = serial_.load();
         if (!serial || !event) return {};
@@ -680,6 +685,8 @@ struct WristEmitterFrame {
     std::uint32_t instance = 0;
     WristEffectOwner owner{};
     float local[12]{};
+    std::uintptr_t anchorUnit = 0;
+    std::uint32_t anchorBone = 0;
 };
 
 template<std::size_t Capacity = 16>

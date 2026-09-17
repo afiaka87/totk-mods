@@ -1,4 +1,4 @@
-# Self Recall v1.0.10
+# Self Recall v1.0.11
 
 Recall Link through his recent movement and animation history. The regular build
 retains 64 seconds for emulators. The Switch build retains 30 seconds within the
@@ -45,8 +45,6 @@ still depends on the particular mods.
 
 ## Known issues
 
-- On Switch, the Master Sword glow and other weapon effects can be out of sync
-  with the weapon during Recall. This does not affect the regular emulator build.
 - On Switch, Link skips along his path at 4x speed and during fast movement at 2x.
   The rest of the game stays smooth. Zero or one Glide piece gives the tested
   smooth 1.25x/1.5x rates.
@@ -57,8 +55,17 @@ still depends on the particular mods.
 - Historical pose markers along the ribbon are not included.
 
 The regular and Switch builds passed their v1.0.10 boot sessions. The Switch build
-also passed with a verified eight-mod RomFS stress overlay. Every possible history
-and mod combination has not been tested.
+also passed with a verified eight-mod RomFS stress overlay. The v1.0.11 weapon-effect
+fix passed on physical Switch hardware with that overlay installed and in Eden
+running the Switch build. Every possible history and mod combination has not been
+tested.
+
+## Changes in v1.0.11
+
+- Fixes Switch weapon effects, such as the Master Sword glow and a Topaz-fused
+  weapon's lightning orb, staying behind or apart from the weapon during Recall.
+  Effects of the currently equipped gear now follow its rewinding pose exactly.
+- The regular emulator build keeps its existing historical effect behavior.
 
 ## Changes in v1.0.10
 
