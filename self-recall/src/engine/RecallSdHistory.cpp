@@ -23,6 +23,8 @@ constexpr const char* kMount = "srsd";
 constexpr const char* kDirectory = "srsd:/self-recall-alpha";
 constexpr const char* kHistoryPath = "srsd:/self-recall-alpha/history.bin";
 constexpr std::uint64_t kLogCapacity = 8ull * 1024 * 1024;
+// Logs from earlier sessions are kept newest first up to this total, then deleted.
+constexpr std::uint64_t kLogBudget = 16ull * 1024 * 1024;
 constexpr std::uint64_t kSecond = 1000000000ull;
 constexpr std::size_t kStackBytes = 0x10000;
 
@@ -130,11 +132,94 @@ void line(const char* format, ...) {
 
 std::uint64_t milliseconds(std::uint64_t nanoseconds) { return nanoseconds / 1000000ull; }
 
+// Log names carry a sequence number because the system tick restarts when the console
+// reboots, so a tick cannot order logs written by different sessions.
+bool logSequence(const char* name, unsigned long long& out) {
+    const auto length = std::strlen(name);
+    if (length < 8 || std::strncmp(name, "log-", 4) != 0 ||
+        std::strcmp(name + length - 4, ".txt") != 0) return false;
+    unsigned long long value = 0;
+    for (const char* c = name + 4; c < name + length - 4; ++c) {
+        if (*c < '0' || *c > '9') {
+            out = 0;  // a name from an older build sorts as the oldest
+            return true;
+        }
+        value = value * 10 + static_cast<unsigned>(*c - '0');
+    }
+    out = value;
+    return true;
+}
+
+struct LogTrim {
+    unsigned long long sequence = 1;
+    std::uint64_t keptBytes = 0;
+    unsigned deleted = 0, failed = 0;
+};
+
+// Deletes the oldest session logs until the ones left fit the budget. Only a bounded number
+// of files is considered per launch; anything beyond that is trimmed by the next launch.
+LogTrim trimLogs() {
+    struct Entry {
+        unsigned long long sequence = 0;
+        std::uint64_t bytes = 0;
+        char name[32]{};
+    };
+    std::array<Entry, 16> oldest{};
+    unsigned count = 0;
+    LogTrim trim;
+
+    nn::fs::DirectoryHandle handle{};
+    if (nn::fs::OpenDirectory(&handle, kDirectory, nn::fs::OpenDirectoryMode_File).IsFailure()) return trim;
+    std::array<nn::fs::DirectoryEntry, 4> entries{};
+    for (;;) {
+        s64 read = 0;
+        if (nn::fs::ReadDirectory(&read, entries.data(), handle,
+                                  static_cast<s64>(entries.size())).IsFailure() || read <= 0) break;
+        for (s64 i = 0; i < read; ++i) {
+            unsigned long long sequence = 0;
+            if (std::strlen(entries[i].mName) >= sizeof(Entry::name)) continue;
+            if (!logSequence(entries[i].mName, sequence)) continue;
+            const auto bytes = static_cast<std::uint64_t>(entries[i].mFileSize);
+            trim.keptBytes += bytes;
+            if (sequence >= trim.sequence) trim.sequence = sequence + 1;
+            unsigned at = 0;
+            if (count == oldest.size()) {
+                for (unsigned j = 1; j < count; ++j)
+                    if (oldest[j].sequence > oldest[at].sequence) at = j;
+                if (oldest[at].sequence <= sequence) continue;  // already holding older files
+            } else {
+                at = count++;
+            }
+            oldest[at] = {sequence, bytes, {}};
+            std::strcpy(oldest[at].name, entries[i].mName);
+        }
+    }
+    nn::fs::CloseDirectory(handle);
+
+    for (unsigned i = 1; i < count; ++i) {
+        const auto value = oldest[i];
+        unsigned j = i;
+        for (; j && oldest[j - 1].sequence > value.sequence; --j) oldest[j] = oldest[j - 1];
+        oldest[j] = value;
+    }
+    for (unsigned i = 0; i < count && trim.keptBytes > kLogBudget; ++i) {
+        char path[96];
+        nn::util::SNPrintf(path, sizeof(path), "%s/%s", kDirectory, oldest[i].name);
+        if (nn::fs::DeleteFile(path).IsFailure()) {
+            ++trim.failed;
+            continue;
+        }
+        trim.keptBytes -= oldest[i].bytes;
+        ++trim.deleted;
+    }
+    return trim;
+}
+
 bool openLog() {
     auto& w = g_worker;
+    const auto trim = trimLogs();
     char path[96];
-    const auto nonce = static_cast<unsigned long long>(svcGetSystemTick());
-    nn::util::SNPrintf(path, sizeof(path), "%s/log-%016llx.txt", kDirectory, nonce);
+    nn::util::SNPrintf(path, sizeof(path), "%s/log-%010llu.txt", kDirectory, trim.sequence);
     auto result = nn::fs::CreateFile(path, 0);
     if (result.IsSuccess())
         result = nn::fs::OpenFile(&w.log, path, nn::fs::OpenMode_Write | nn::fs::OpenMode_Append);
@@ -144,7 +229,11 @@ bool openLog() {
     }
     w.logOpen = true;
     w.logOffset = 0;
-    Logging.Log("[self-recall] SD_LOG path=%s", path);
+    line("log_retention budget_bytes=%llu kept_bytes=%llu deleted=%u delete_failed=%u\n",
+         static_cast<unsigned long long>(kLogBudget),
+         static_cast<unsigned long long>(trim.keptBytes), trim.deleted, trim.failed);
+    Logging.Log("[self-recall] SD_LOG path=%s kept_bytes=%llu deleted=%u", path,
+                static_cast<unsigned long long>(trim.keptBytes), trim.deleted);
     return true;
 }
 
@@ -215,9 +304,9 @@ void drainEvents() {
 
 void logIo(const pure::SpillIoReport& report) {
     constexpr const char* kinds[]{"none", "W", "R", "X", "W_FAIL", "R_FAIL", "INVALID"};
-    line("%s t_ms=%llu grp=%u serial=%llu bytes=%u off=%llu us=%llu\n", kinds[unsigned(report.kind)],
+    line("%s t_ms=%llu grp=%u serial=%llu bytes=%u groups=%u off=%llu us=%llu\n", kinds[unsigned(report.kind)],
          static_cast<unsigned long long>(milliseconds(nowNanoseconds())), report.group,
-         static_cast<unsigned long long>(report.serial), report.bytes,
+         static_cast<unsigned long long>(report.serial), report.bytes, report.groups,
          static_cast<unsigned long long>(report.offset),
          static_cast<unsigned long long>(report.nanoseconds / 1000ull));
 }

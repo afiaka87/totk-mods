@@ -1,4 +1,4 @@
-# Self Recall v1.0.12
+# Self Recall v1.0.13
 
 Recall Link through his recent movement and animation history. Both builds now
 retain 64 seconds. The regular build keeps the whole history in memory for
@@ -52,13 +52,21 @@ the SD card containing:
 
 - `history.bin`, a reused history file of up to 16 MiB;
 - one timing log per game session, `log-<number>.txt`, of up to 8 MiB each. These
-  logs help diagnose slow cards. They are not removed automatically; delete old
-  logs whenever you like while the game is closed.
+  logs help diagnose slow cards. Each launch deletes the oldest logs until the
+  folder's logs total 16 MiB or less, so they no longer pile up. You can still
+  delete them yourself while the game is closed.
 
 This feature has been tested on one Switch with one SD card. Slower or nearly full
 cards have not been tested. If older history cannot be read back in time, Recall
 ends early at that point. If the card fails repeatedly, the build stops using it
 and Recall falls back to the newest history held in memory.
+
+**Do not install the Switch build if your SD card is off-brand or counterfeit.**
+Recording rewrites the same 16 MiB file continuously, roughly 350 MB per hour of
+play. A genuine card from a known brand spreads those writes across its flash and
+should last thousands of hours of play; a counterfeit card may not, and can wear
+out or fail. This is an estimate from how the feature writes, not a measurement of
+any particular card. The logs are small by comparison and are not a concern.
 
 ## Known issues
 
@@ -76,9 +84,21 @@ also passed with a verified eight-mod RomFS stress overlay. The v1.0.11 weapon-e
 fix passed on physical Switch hardware with that overlay installed and in Eden
 running the Switch build. The v1.0.12 Switch SD-card history passed one
 physical-Switch session with the same overlay: full 64-second Recall at 1.25x and
-4x, and Recall after sleep and resume. The regular build's v1.0.12 changes have not
-had a separate boot session. Every possible history, SD card and mod combination
+4x, and Recall after sleep and resume. The v1.0.13 SD-card changes passed a further
+physical-Switch session with the same overlay: normal play plus full-length Recall,
+with no failed or fallback writes. The regular build's changes since v1.0.11 have
+not had a separate boot session. Every possible history, SD card and mod combination
 has not been tested.
+
+## Changes in v1.0.13
+
+- Switch: old timing logs are deleted at launch so they stop filling the SD card.
+  The newest logs are kept, up to 16 MiB in total.
+- Switch: history is written to the card in larger, less frequent writes. About
+  three times fewer writes for the same amount of history. Recall behavior is
+  unchanged.
+- Adds an SD-card wear note and a warning against using off-brand cards, above.
+- The regular emulator build is unchanged.
 
 ## Changes in v1.0.12
 

@@ -38,6 +38,11 @@ static_assert(sizeof(SpillJobHeader) == 72);
 inline constexpr unsigned kSpillMaxGroupBytes =
     sizeof(SpillJobHeader) + kPoseChainFrames * (kPosePayloadMaxBytes + 8u);
 
+// A write costs fixed time regardless of size, so closed groups are held until this much is
+// queued, then written together. They keep their RAM blocks and stay readable while waiting.
+inline constexpr unsigned kSpillWriteBatchBytes = 128u * 1024u;
+inline constexpr unsigned kSpillWriteBatchJobs = 8;
+
 // Group fields other than the atomics are written by the recorder before the state
 // leaves Free/Open, or by the worker while it holds the claim writer bit.
 struct SpillGroup {
@@ -76,6 +81,7 @@ struct SpillIoReport {
     std::uint64_t serial = 0;
     std::uint64_t offset = 0;
     std::uint64_t nanoseconds = 0;
+    std::uint32_t groups = 0;  // how many spill groups this one file write carried
     explicit operator bool() const { return kind != SpillIoKind::None; }
 };
 
@@ -290,51 +296,94 @@ private:
         while (value > current && !target.compare_exchange_weak(current, value, std::memory_order_relaxed)) {}
     }
 
-    SpillIoReport writeOne(SpillFile& file) {
+    // True when the oldest queued job was left behind by a replaced history.
+    bool queueIsStale() const {
         const auto read = readPos_.load(std::memory_order_acquire);
-        if (writePos_.load(std::memory_order_acquire) == read) return {};
+        if (writePos_.load(std::memory_order_acquire) == read) return false;
         SpillJobHeader header;
         ringCopyOut(read, std::as_writable_bytes(std::span{&header, 1}));
-        const auto total = sizeof(header) + header.dataBytes;
-        SpillIoReport report{SpillIoKind::Write, header.group, static_cast<std::uint32_t>(total), header.firstSerial};
-        if (header.magic != kSpillJobMagic || total > io_.size() || header.group >= groups_.size()) {
-            // A corrupt job cannot be skipped safely; discard everything queued.
-            readPos_.store(writePos_.load(std::memory_order_acquire), std::memory_order_release);
-            stats_.failures.fetch_add(1, std::memory_order_relaxed);
-            report.kind = SpillIoKind::WriteFailed;
-            return report;
+        return header.magic != kSpillJobMagic || header.generation != generation();
+    }
+
+    // Consecutive queued groups are copied into one file write. Each group keeps its own
+    // offset and length inside that write, so readers cannot tell how groups were combined.
+    SpillIoReport writeOne(SpillFile& file) {
+        struct Batched {
+            std::uint32_t group = 0, offset = 0, bytes = 0;
+            std::uint64_t state = 0;
+        };
+        // Waiting is only safe while the card works and the queue is current: a failing card
+        // must be found quickly, and jobs left by a replaced history must be discarded now.
+        if (pendingBytes() < kSpillWriteBatchBytes && !playbackActive() && !lastWriteFailed_ &&
+            !queueIsStale()) return {};
+
+        std::array<Batched, kSpillWriteBatchJobs> batched{};
+        unsigned count = 0;
+        std::uint32_t total = 0;
+        std::uint64_t firstSerial = 0;
+        auto read = readPos_.load(std::memory_order_acquire);
+
+        while (count < batched.size()) {
+            if (writePos_.load(std::memory_order_acquire) == read) break;
+            SpillJobHeader header;
+            ringCopyOut(read, std::as_writable_bytes(std::span{&header, 1}));
+            const auto bytes = static_cast<std::uint32_t>(sizeof(header) + header.dataBytes);
+            if (header.magic != kSpillJobMagic || bytes > io_.size() || header.group >= groups_.size()) {
+                if (count) break;  // write what is already batched; this job is handled next
+                // A corrupt job cannot be skipped safely; discard everything queued.
+                readPos_.store(writePos_.load(std::memory_order_acquire), std::memory_order_release);
+                stats_.failures.fetch_add(1, std::memory_order_relaxed);
+                return {SpillIoKind::WriteFailed, header.group, bytes, header.firstSerial, 0, 0, 1};
+            }
+            if (count && total + bytes > io_.size()) break;
+            const auto& group = groups_[header.group];
+            if (header.generation != generation() ||
+                group.state.load(std::memory_order_acquire) != header.state) {
+                if (count) break;  // superseded by a history reset; reported on its own
+                read += bytes;
+                readPos_.store(read, std::memory_order_release);
+                return {SpillIoKind::Invalidated, header.group, bytes, header.firstSerial, 0, 0, 1};
+            }
+            ringCopyOut(read, io_.subspan(total, bytes));
+            read += bytes;
+            readPos_.store(read, std::memory_order_release);
+            if (!count) firstSerial = header.firstSerial;
+            batched[count++] = {header.group, total, bytes, header.state};
+            total += bytes;
         }
-        ringCopyOut(read, io_.first(total));
-        readPos_.store(read + total, std::memory_order_release);
-        auto& group = groups_[header.group];
-        if (header.generation != generation() || group.state.load(std::memory_order_acquire) != header.state) {
-            report.kind = SpillIoKind::Invalidated;  // superseded by a history reset
-            return report;
-        }
+        if (!count) return {};
+
         if (filePos_ + total > kSpillFileBytes) filePos_ = 0;
         invalidateOverlaps(filePos_, total);
         const auto start = file.nanoseconds();
         const bool ok = file.write(filePos_, io_.first(total));
-        report.nanoseconds = file.nanoseconds() - start;
-        report.offset = filePos_;
-        auto expected = header.state;
-        if (!ok) {
-            group.state.compare_exchange_strong(expected, spillStateValue(spillToken(header.state), SpillState::RamOnly),
+        SpillIoReport report{ok ? SpillIoKind::Write : SpillIoKind::WriteFailed, batched[0].group,
+                             total, firstSerial, filePos_, file.nanoseconds() - start, count};
+        for (unsigned i = 0; i < count; ++i) {
+            auto& group = groups_[batched[i].group];
+            const auto token = spillToken(batched[i].state);
+            auto expected = batched[i].state;
+            if (!ok) {
+                group.state.compare_exchange_strong(expected, spillStateValue(token, SpillState::RamOnly),
+                                                    std::memory_order_acq_rel);
+                continue;
+            }
+            // Pending groups are never cached, so only a brief reader probe can hold the claim.
+            for (;;) {
+                std::uint32_t claims = 0;
+                if (group.claims.compare_exchange_weak(claims, kWriter, std::memory_order_acquire)) break;
+            }
+            group.fileOffset = filePos_ + batched[i].offset;
+            group.fileBytes = batched[i].bytes;
+            group.claims.store(0, std::memory_order_release);
+            group.state.compare_exchange_strong(expected, spillStateValue(token, SpillState::Written),
                                                 std::memory_order_acq_rel);
+        }
+        lastWriteFailed_ = !ok;
+        if (!ok) {
             stats_.failures.fetch_add(1, std::memory_order_relaxed);
-            report.kind = SpillIoKind::WriteFailed;
             return report;
         }
-        // Pending groups are never cached, so only a brief reader probe can hold the claim.
-        for (;;) {
-            std::uint32_t claims = 0;
-            if (group.claims.compare_exchange_weak(claims, kWriter, std::memory_order_acquire)) break;
-        }
-        group.fileOffset = filePos_;
-        group.fileBytes = static_cast<std::uint32_t>(total);
-        group.claims.store(0, std::memory_order_release);
-        group.state.compare_exchange_strong(expected, spillStateValue(spillToken(header.state), SpillState::Written),
-                                            std::memory_order_acq_rel);
         filePos_ += total;
         stats_.writes.fetch_add(1, std::memory_order_relaxed);
         stats_.writeBytes.fetch_add(total, std::memory_order_relaxed);
@@ -469,6 +518,7 @@ private:
     std::uint64_t nextToken_ = 0;
     std::array<std::byte, kPosePayloadMaxBytes + 8> scratch_{};
     std::uint64_t filePos_ = 0;
+    bool lastWriteFailed_ = false;
     std::uint32_t head_ = 0, tail_ = 0, open_ = kNone;
 };
 

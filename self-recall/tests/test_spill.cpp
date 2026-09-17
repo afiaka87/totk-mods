@@ -218,6 +218,33 @@ TEST_CASE("a stalled card rejects new frames instead of discarding SD history, t
     CHECK(rig.recallWalk() == rig.history->count());
 }
 
+TEST_CASE("closed groups wait for one large file write and still decode exactly") {
+    Rig rig(700, 512, 10ull * 1'000'000'000ull);
+    unsigned epoch = 1;
+    for (; epoch <= 12 * kFps; ++epoch) {
+        REQUIRE(rig.record(epoch).status == PoseRecordStatus::Recorded);
+        rig.pumpAll();
+    }
+    unsigned writes = 0, singles = 0;
+    for (; epoch <= 40 * kFps; ++epoch) {
+        REQUIRE(rig.record(epoch).status == PoseRecordStatus::Recorded);
+        for (;;) {
+            const auto report = rig.spill->pump(rig.file);
+            if (!report) break;
+            if (report.kind != SpillIoKind::Write) continue;
+            ++writes;
+            singles += report.groups == 1;
+            // Every write is full: either the byte limit or the group limit stopped it.
+            CHECK((report.groups == kSpillWriteBatchJobs || report.bytes >= kSpillWriteBatchBytes));
+        }
+    }
+    CHECK(writes > 0);
+    CHECK(singles == 0);
+    // Far fewer writes than the groups they carry.
+    CHECK(writes * 4 <= 40 * kFps / kPoseChainFrames);
+    CHECK(rig.recallWalk() == rig.history->count());
+}
+
 TEST_CASE("clearing history discards queued writes and invalidates SD frames") {
     Rig rig(700, 512, 10ull * 1'000'000'000ull);
     for (unsigned epoch = 1; epoch <= 20 * kFps; ++epoch) {
