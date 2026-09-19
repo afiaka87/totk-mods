@@ -1,0 +1,10 @@
+Bivouac's original source is MIT licensed, copyright Clay Mullis.
+
+The compiled module includes exlaunch, licensed under GPL-2.0.
+Upstream source: https://github.com/shadowninja108/exlaunch
+Mod source: https://github.com/afiaka87/totk-mods/tree/main/bivouac
+
+The romfs files in the release archives are edited copies of Tears of the Kingdom 1.2.1 data files
+(UI layout archive, save-data schema, English text archive, two actor tables, one actor pack and the
+resource-size table). They only work with a legally owned copy of the game. Native builds use
+devkitPro/devkitA64.

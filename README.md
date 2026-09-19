@@ -16,6 +16,7 @@ Exlaunch authors are owed attribution here.
 | Phantom Foothold | `phantom-foothold/` | Climb every surface with collision, ceilings included; no game files replaced. |
 | Self Recall | `self-recall/` | Recall Link through his own movement and animation history. |
 | Glideshot | `glideshot/` | A hookshot: chain to any climbable wall, zip along it, land in the native climb. |
+| Bivouac | `bivouac/` | Eat a truffle or radish while climbing to build a persistent cliff or water camp you can travel back to. |
 
 All code here is MIT-licensed (see `LICENSE`). The mods are exlaunch modules; exlaunch itself is not
 included - see `NOTICE`.
