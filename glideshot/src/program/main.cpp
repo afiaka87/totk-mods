@@ -52,7 +52,7 @@ extern "C" void exl_main(void*, void*) {
     RayCastWorkerHook::InstallAtOffset(kRayCastWorker);
     NpadCalcHook::InstallAtOffset(kNpadCalc);
     zonai_hookshot::hooks::installUnique(mainBase);
-    Logging.Log("[glideshot] zonai-hookshot 0.8.0 loaded");
+    Logging.Log("[glideshot] zonai-hookshot 0.8.1 loaded");
 }
 
 extern "C" NORETURN void exl_exception_entry() { EXL_ABORT("unreachable"); }

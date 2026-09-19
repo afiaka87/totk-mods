@@ -18,11 +18,10 @@ void note(const char* text) { ZHLOG("NOTE %s", text); }
 
 void resetSession(const char* reason) {
     const bool wasActive = g_runtime.machine.phase != pure::Phase::Idle;
-    // The stick-click quarantine is input state: it survives every reset and clears only on a
-    // physical release.
-    const bool latch = g_runtime.machine.stickClickLatched;
+    // The L-button quarantine survives every reset and clears only on a physical release.
+    const bool latch = g_runtime.machine.lButtonLatched;
     g_runtime.machine = {};
-    g_runtime.machine.stickClickLatched = latch;
+    g_runtime.machine.lButtonLatched = latch;
     g_runtime.launch = {};
     g_runtime.positionDrive = {};
     g_runtime.capture = {};
@@ -30,6 +29,7 @@ void resetSession(const char* reason) {
     g_runtime.aim.confirmFloorSeq = 0;
     g_runtime.aim.starved = 0;
     g_runtime.aim.latchFeedbackTicks = 0;
+    g_runtime.abilityMenuCancelFrames = 0;
     transport::stopDrive(g_runtime, "reset");
     // Fail-closed on world loss: the native-ownership trackers may be stale.
     auto& drive = g_runtime.drive;

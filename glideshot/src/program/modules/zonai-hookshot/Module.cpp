@@ -137,7 +137,7 @@ void handleEvent(HookshotRuntime& rt, Event event) {
             resetSession("world");
             break;
         case Event::CooldownDone:
-            note("hold ZL + left-stick click to aim");
+            note("hold ZL + L to aim");
             break;
         default:
             break;
@@ -185,11 +185,19 @@ void runtimeTick(void* device) {
     MachineInputs in{};
     in.worldReady = ready;
     in.freshInput = fresh;
-    in.chordHeld = (buttons & (input::kButtonZL | input::kButtonLStick)) ==
-                   (input::kButtonZL | input::kButtonLStick);
-    in.stickClickHeld = (buttons & input::kButtonLStick) != 0;
+    in.chordHeld = (buttons & input::kAimChord) == input::kAimChord;
+    in.lButtonHeld = (buttons & input::kButtonL) != 0;
 
-    // ZL and L3 have no release-triggered action, so both may be hidden from the first tick.
+    if (fresh && abilityMenuCancelNeeded(
+                     rt.haveButtons,
+                     (rt.prevButtons & input::kButtonZL) != 0,
+                     (rt.prevButtons & input::kButtonL) != 0,
+                     in.chordHeld)) {
+        rt.abilityMenuCancelFrames = 2;
+        ZHLOG("ABILITY_MENU_CANCEL armed order=L,ZL");
+    }
+
+    // Neither ZL nor L has a release-triggered action, so both can be hidden immediately.
     const bool ownAim = in.chordHeld || rt.machine.phase == Phase::Targeting ||
                         rt.machine.phase == Phase::Confirming;
     if (fresh && rt.haveButtons) {
@@ -274,8 +282,8 @@ void runtimeTick(void* device) {
     std::uint64_t mask =
         (out.consumed.a ? input::kButtonA : 0ull) |
         (out.consumed.b ? input::kButtonB : 0ull) |
-        (out.consumed.stickClick ? input::kButtonLStick : 0ull);
-    if (ownAim) mask |= input::kButtonZL | input::kButtonLStick;
+        (out.consumed.lButton ? input::kButtonL : 0ull);
+    if (ownAim) mask |= input::kAimChord;
     if (mask) frame.maskOwnedButtons(mask);
 }
 
@@ -292,12 +300,13 @@ void moduleInit(std::uintptr_t base) {
 void moduleEnter() {
     HookshotRuntime& rt = runtime();
     silenceAudio();
-    const bool latch = rt.machine.stickClickLatched;  // quarantine survives re-entry
+    const bool latch = rt.machine.lButtonLatched;  // quarantine survives re-entry
     rt.machine = {};
-    rt.machine.stickClickLatched = latch;
+    rt.machine.lButtonLatched = latch;
     rt.prevButtons = 0;
     rt.lastButtons = 0;
     rt.haveButtons = false;
+    rt.abilityMenuCancelFrames = 0;
     rt.walk.targetNpadValid.store(0, std::memory_order_release);
 }
 
@@ -320,7 +329,7 @@ void moduleRaycast(wwpg::RaycastFn original, const void* from,
 
 const wwpg::Module kModule{
     "ZONAI HOOKSHOT",
-    "Hold ZL+D-right to aim; release, then A fires and zips",
+    "Hold ZL+L to aim; release, then A fires and zips",
     "B cancels; green diamond means the surface is valid",
     "Complete: target, fire, zip, and enter native Climb.",
     moduleInit,
@@ -345,7 +354,7 @@ bool beginTargeting() {
 
     rt.machine.phase = pure::Phase::Targeting;
     rt.machine.armTicks = 0;
-    rt.machine.stickClickLatched = false;
+    rt.machine.lButtonLatched = false;
     // The first post-wheel sample establishes the edge baseline so a held face button cannot fire.
     rt.prevButtons = 0;
     rt.lastButtons = 0;
@@ -357,7 +366,7 @@ bool beginTargeting() {
 
 bool movementEngaged() {
     const HookshotRuntime& rt = runtime();
-    return rt.machine.phase != pure::Phase::Idle || rt.machine.stickClickLatched;
+    return rt.machine.phase != pure::Phase::Idle || rt.machine.lButtonLatched;
 }
 
 bool worldReady() { return world::ready(); }

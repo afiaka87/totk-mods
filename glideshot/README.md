@@ -1,4 +1,4 @@
-# Glideshot v0.8.0
+# Glideshot v0.8.1
 
 A hookshot for Tears of the Kingdom. Aim at a climbable wall from the ground, from a climb or from
 the air, fire a visible chain, zip along it at 60 m/s, and land in the game's own climbing state.
@@ -6,13 +6,13 @@ The paraglider opens by itself for the last stretch so the game decides the grab
 
 ## Controls
 
-- Hold **ZL + left-stick click (L3)** for about a quarter of a second to raise the aim. A green
+- Hold **ZL + L** for about a quarter of a second to raise the aim. A green
   diamond marks a wall the chain can take; a red diamond marks a surface it refuses.
 - Press **A** to fire. The chain draws to the anchor at once and Link follows one tick later.
 - Press **B** at any point to let go. Losing the world (a shrine door, a warp, a load) also ends
   the trip.
 
-While the aim is up, ZL and L3 are hidden from the game so the guard, lock-on and crouch actions
+While the aim is up, ZL and L are hidden from the game so guard, lock-on and the ability wheel
 stay quiet. Nothing else is remapped.
 
 ## What counts as a target
@@ -58,6 +58,15 @@ not been run on physical hardware yet.
   position until it does.
 - The Ultrahand travel and arrival sounds depend on the game having its expression sound user
   loaded at that moment. When it is not, the interface fallbacks play instead.
+
+## Changes in v0.8.1
+
+- Activation is now ZL + L. This avoids UltraCam's ZL + ZR + L3 menu chord and Self Recall's
+  ZL + R3 activation chord.
+- Either button order works. If L opens the vanilla ability menu first, completing the chord closes
+  that menu and activates Glideshot.
+- The combined Eden test passed both activation orders, Self Recall activation and UltraCam's
+  default-binding isolation.
 
 ## Changes in v0.8.0
 

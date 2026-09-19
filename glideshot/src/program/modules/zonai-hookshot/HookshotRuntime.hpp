@@ -170,6 +170,10 @@ struct HookshotRuntime {
     DriveMailbox drive{};
     WalkMailbox walk{};
 
+    // B is injected after this module has read input, so it closes only the ability menu that an
+    // L-first activation opened. It cannot become this module's own cancel edge on the same tick.
+    int abilityMenuCancelFrames = 0;
+
     pure::YawTiming yawTiming = pure::YawTiming::OnParasail;
 
     std::uint64_t lastButtons = 0;

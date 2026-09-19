@@ -86,7 +86,7 @@ void onTargetingEntered(HookshotRuntime&) {
 }
 
 void onArmingAbandoned(HookshotRuntime&) {
-    note("hold ZL + left-stick click a moment longer to aim");
+    note("hold ZL + L a moment longer to aim");
 }
 
 void onConfirmStarted(HookshotRuntime& runtime) {

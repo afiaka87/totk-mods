@@ -471,11 +471,21 @@ void onFallUpdateHook(void* actionObject) {
     drive.applied.fetch_add(1, std::memory_order_relaxed);
 }
 
-// The live slot has the highest positive sampling number; the pulse decrements only when a fresh
-// sample was mutated, and a held physical X waits for its release.
+// Post-Npad injections run after this module has consumed its input. The menu cancel therefore
+// reaches vanilla without becoming our B edge; launch X retains its fresh-sample rule.
 void applyLaunchInjection(void* device) {
     HookshotRuntime& rt = runtime();
     if (!device) return;
+
+    if (rt.abilityMenuCancelFrames > 0) {
+        const input::LiveSlot cancelSlot = input::newestLiveSlot(device);
+        if (cancelSlot.valid()) {
+            --rt.abilityMenuCancelFrames;
+            input::pressInSlot(cancelSlot, input::kButtonB);
+            ZHLOG("ABILITY_MENU_CANCEL injected left=%d slot=%d",
+                  rt.abilityMenuCancelFrames, cancelSlot.index);
+        }
+    }
 
     if (rt.launchStage.pulse.pulseFramesLeft <= 0) return;
     const input::LiveSlot slot = input::newestLiveSlot(device);

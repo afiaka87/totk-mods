@@ -13,11 +13,9 @@ namespace zonai_hookshot::input {
 constexpr std::uint64_t kButtonA = 1ull << 0;
 constexpr std::uint64_t kButtonB = 1ull << 1;
 constexpr std::uint64_t kButtonX = 1ull << 2;  // the synthetic launch press
+constexpr std::uint64_t kButtonL = 1ull << 6;
 constexpr std::uint64_t kButtonZL = 1ull << 8;
-
-// Standard controller bit order. L3 is crouch and ZL is guard/lock-on; neither has a release-
-// triggered action, so both may be suppressed immediately.
-constexpr std::uint64_t kButtonLStick = 1ull << 4;  // left stick pressed in
+constexpr std::uint64_t kAimChord = kButtonZL | kButtonL;
 
 totk::engine::NpadFrame readFrame(void* device);
 
