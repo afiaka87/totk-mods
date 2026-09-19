@@ -1,4 +1,4 @@
-# Self Recall v1.0.13
+# Self Recall v1.0.14
 
 Recall Link through his recent movement and animation history. Both builds now
 retain 64 seconds. The regular build keeps the whole history in memory for
@@ -89,6 +89,17 @@ physical-Switch session with the same overlay: normal play plus full-length Reca
 with no failed or fallback writes. The regular build's changes since v1.0.11 have
 not had a separate boot session. Every possible history, SD card and mod combination
 has not been tested.
+
+The v1.0.14 Switch-profile module passed an Eden compatibility session beside UltraCam and
+Glideshot: Self Recall activated, both Glideshot input orders worked, and no UltraCam binding
+triggered. The regular build uses the same corrected gameplay-time conversion but was not
+separately booted for v1.0.14.
+
+## Changes in v1.0.14
+
+- Accepts variable fractional gameplay-frame timing, restoring history recording and activation
+  when UltraCam's frame-rate controls are active.
+- Exact 30, 60 and 120 FPS timing, pause exclusion and the 64-second window are unchanged.
 
 ## Changes in v1.0.13
 

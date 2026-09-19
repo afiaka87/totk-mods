@@ -104,8 +104,8 @@ void keepBodyOnly(RecordedPoseFrame& frame) {
     trimVisibility(frame.visible.bones, header.boneCount);
     trimVisibility(frame.visible.materials, header.materialCount);
 }
-// Storage-only stress: retain all body bones and non-body skeletons through the measured
-// 31-bone parasail; runtime uses native binding components rather than skeleton size.
+// Storage-only stress: retain body bones and non-body skeletons through the measured 31-bone
+// parasail; runtime selection uses unavailable binding-component labels rather than size.
 void keepEquipmentBoneStress(RecordedPoseFrame& frame) {
     const auto original = frame;
     frame.visible = {};

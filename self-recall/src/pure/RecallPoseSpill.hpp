@@ -38,8 +38,8 @@ static_assert(sizeof(SpillJobHeader) == 72);
 inline constexpr unsigned kSpillMaxGroupBytes =
     sizeof(SpillJobHeader) + kPoseChainFrames * (kPosePayloadMaxBytes + 8u);
 
-// A write costs fixed time regardless of size, so closed groups are held until this much is
-// queued, then written together. They keep their RAM blocks and stay readable while waiting.
+// Closed groups are batched into one card write while retaining readable RAM blocks. The ring
+// is three times this threshold, so queued groups remain safe while waiting for the batch.
 inline constexpr unsigned kSpillWriteBatchBytes = 128u * 1024u;
 inline constexpr unsigned kSpillWriteBatchJobs = 8;
 
@@ -312,8 +312,8 @@ private:
             std::uint32_t group = 0, offset = 0, bytes = 0;
             std::uint64_t state = 0;
         };
-        // Waiting is only safe while the card works and the queue is current: a failing card
-        // must be found quickly, and jobs left by a replaced history must be discarded now.
+        // Wait only while the card works and the queue is current; failures and stale jobs must
+        // be handled promptly. Recall reads from RAM, so waiting only delays the card write.
         if (pendingBytes() < kSpillWriteBatchBytes && !playbackActive() && !lastWriteFailed_ &&
             !queueIsStale()) return {};
 

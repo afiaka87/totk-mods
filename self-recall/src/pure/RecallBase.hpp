@@ -449,7 +449,7 @@ enum class GameTimeStatus : std::uint8_t {
 struct GameTimeSnapshot {
     std::uint64_t serial = 0;
     std::uint64_t elapsedNanoseconds = 0;
-    std::uint32_t frameQuanta = 0;
+    float frameScale = 0;
     GameTimeStatus status = GameTimeStatus::Unavailable;
 };
 
@@ -461,37 +461,41 @@ public:
             return snapshot_;
         }
         ++snapshot_.serial;
-        snapshot_.frameQuanta = 0;
+        snapshot_.frameScale = 0;
         if (!available) {
             snapshot_.status = GameTimeStatus::Unavailable;
             return snapshot_;
         }
-        const double quanta = static_cast<double>(frameScale) * 2.0;
-        if (!std::isfinite(quanta) || quanta < 0 || quanta > INT32_MAX ||
-            quanta != std::floor(quanta)) {
+        const double scale = static_cast<double>(frameScale);
+        if (!std::isfinite(scale) || scale < 0 || scale > INT32_MAX / 2.0) {
             snapshot_.status = GameTimeStatus::InvalidDelta;
             return snapshot_;
         }
-        snapshot_.frameQuanta = static_cast<std::uint32_t>(quanta);
-        if (paused || !snapshot_.frameQuanta) {
+        snapshot_.frameScale = frameScale;
+        if (paused || scale == 0) {
             snapshot_.status = paused ? GameTimeStatus::Paused : GameTimeStatus::NoAdvance;
             return snapshot_;
         }
-        const auto numerator = static_cast<std::uint64_t>(snapshot_.frameQuanta) *
-                               1000000000ull + remainder_;
-        const auto delta = numerator / 60;
+
+        // Native 0.5 remains exactly 1/60 s and 1.0 remains exactly 1/30 s. UltraCam may publish
+        // fractional scales between those values, so carry their sub-nanosecond remainder too.
+        const double exactDelta = scale * (1000000000.0 / 30.0) + remainderNanoseconds_;
+        // Snap only sub-millionth-nanosecond binary rounding at an integer boundary. This keeps
+        // exact 30/60/120 Hz sums without rounding every fractional frame upward.
+        const auto delta = static_cast<std::uint64_t>(exactDelta + 0.000001);
         if (snapshot_.elapsedNanoseconds > UINT64_MAX - delta) {
             snapshot_.status = GameTimeStatus::Exhausted;
             return snapshot_;
         }
         snapshot_.elapsedNanoseconds += delta;
-        remainder_ = static_cast<std::uint8_t>(numerator % 60);
+        remainderNanoseconds_ = exactDelta - static_cast<double>(delta);
+        if (remainderNanoseconds_ < 0) remainderNanoseconds_ = 0;
         snapshot_.status = GameTimeStatus::Running;
         return snapshot_;
     }
 private:
     GameTimeSnapshot snapshot_{};
-    std::uint8_t remainder_ = 0;
+    double remainderNanoseconds_ = 0;
 };
 
 inline constexpr std::uint64_t kRecallWindowNanoseconds = kHistorySeconds * 1000000000ull;

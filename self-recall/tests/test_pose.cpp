@@ -593,7 +593,7 @@ TEST_CASE("paused model frames cannot advance gameplay time") {
 TEST_CASE("invalid or unavailable clock updates preserve accumulated time") {
     GameTime clock;
     const auto start = clock.update(1.0f, false);
-    for (const auto value : {-1.0f, 0.25f, std::numeric_limits<float>::quiet_NaN(),
+    for (const auto value : {-1.0f, std::numeric_limits<float>::quiet_NaN(),
                               std::numeric_limits<float>::infinity()}) {
         const auto invalid = clock.update(value, false);
         CHECK(invalid.status == GameTimeStatus::InvalidDelta);
@@ -606,6 +606,23 @@ TEST_CASE("invalid or unavailable clock updates preserve accumulated time") {
     CHECK(zero.status == GameTimeStatus::NoAdvance);
     CHECK(zero.elapsedNanoseconds == start.elapsedNanoseconds);
     CHECK(clock.update(1.0f, false).elapsedNanoseconds == 66666666ull);
+}
+
+TEST_CASE("fractional native frame scales remain valid gameplay time") {
+    GameTime clock;
+    GameTimeSnapshot sample{};
+    for (unsigned frame = 0; frame < 120; ++frame) {
+        sample = clock.update(0.25f, false);
+        REQUIRE(sample.status == GameTimeStatus::Running);
+        CHECK(sample.frameScale == 0.25f);
+    }
+    CHECK(sample.elapsedNanoseconds == 1000000000ull);
+
+    for (const float scale : {1.166667f, 1.052312f, 0.945054f, 0.589857f}) {
+        sample = clock.update(scale, false);
+        CHECK(sample.status == GameTimeStatus::Running);
+    }
+    CHECK(sample.elapsedNanoseconds > 1000000000ull);
 }
 
 TEST_CASE("history expires by elapsed duration and preserves existing readers") {
