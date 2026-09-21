@@ -10,13 +10,14 @@ This is also to prevent any external GPL licensed code (shockingly common in the
 Exlaunch authors are owed attribution here. 
 
 
-| Mod | Folder | What it does |
+| Project | Folder | What it does |
 |---|---|---|
 | Infinite Ascend | `infinite-ascend/` | Ascend reach extended from ~20 m to 10,000 m; native checks kept. |
 | Phantom Foothold | `phantom-foothold/` | Climb every surface with collision, ceilings included; no game files replaced. |
 | Self Recall | `self-recall/` | Recall Link through his own movement and animation history. |
-| Glideshot | `glideshot/` | A hookshot: chain to any climbable wall, zip along it, land in the native climb. |
+| Glideshot | `glideshot/` | A hookshot: chain to any climbable wall, zip along it, land in the native climb. Contains arrowbound as well. |
 | Bivouac | `bivouac/` | Eat a truffle or radish while climbing to build a persistent cliff or water camp you can travel back to. |
+| Arrowbound | `arrowbound/` | Shoot an arrow and Link glides along its path. |
 
-All code here is MIT-licensed (see `LICENSE`). The mods are exlaunch modules; exlaunch itself is not
-included - see `NOTICE`.
+
+All code here is MIT-licensed (see `LICENSE`). The feature mods use exlaunch. It is not included. See `NOTICE`.
