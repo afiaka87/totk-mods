@@ -2,6 +2,8 @@
 // Copyright (c) Clay Mullis
 
 #include "HookshotAudio.hpp"
+#include "HookshotCues.hpp"
+#include "SoundHandle.hpp"
 
 #include <lib.hpp>
 
@@ -13,8 +15,10 @@ namespace off {
 constexpr std::ptrdiff_t kSearchAndEmit = 0x00B026E0;
 // The slot holding the sound system whose list carries every registered user.
 constexpr std::ptrdiff_t kSystemSlot = 0x00462F2B0;
-// Is a returned handle still pointing at a live sound?
 constexpr std::ptrdiff_t kHandleIsValid = 0x00D17C80;
+constexpr std::ptrdiff_t kHandleAliveAssets = 0x01A00080;
+constexpr std::ptrdiff_t kSetPosition = 0x00829F60;
+constexpr std::ptrdiff_t kKill = 0x00BBCCAC;
 }  // namespace off
 
 using SearchAndEmitFn = void (*)(void* user, const char* name, void* outHandle);
@@ -24,6 +28,15 @@ constexpr const char* kInterfaceUser = "UI_GlobalSound";
 
 std::uintptr_t g_mainBase = 0;
 void* g_speaker = nullptr;
+
+struct AbilityCue {
+    engine::SoundHandle handle{};
+    pure::AbilityCueGate gate{};
+    const char* kind = nullptr;
+    const char* fallback = nullptr;
+    bool active = false;
+};
+AbilityCue g_abilityCues[2]{};
 
 inline bool okPtr(u64 p) {
     return p >= 0x1000000 && p < 0x8000000000ull && (p & 0x3) == 0;
@@ -87,15 +100,53 @@ void* speaker() {
     return found;
 }
 
-bool emit(void* instance, const char* cueName) {
+bool emit(void* instance, const char* cueName, engine::SoundHandle* retained = nullptr) {
     if (instance == nullptr || cueName == nullptr || g_mainBase == 0) return false;
     // Bytes 2-3 are the sound index; -1 means "no sound" and must be the
     // starting state, since index 0 is someone else's real sound.
-    std::uint8_t handle[16] = {0, 0, 0xFF, 0xFF};
+    engine::SoundHandle handle{};
     auto searchAndEmit = (SearchAndEmitFn)(g_mainBase + off::kSearchAndEmit);
-    searchAndEmit(instance, cueName, handle);
+    searchAndEmit(instance, cueName, &handle);
+    if (retained) *retained = handle;
     auto isValid = (HandleIsValidFn)(g_mainBase + off::kHandleIsValid);
-    return isValid(handle);
+    return isValid(&handle);
+}
+
+bool validHandle(const engine::SoundHandle& handle) {
+    return g_mainBase && handle.system == 1 && handle.index >= 0 &&
+        reinterpret_cast<HandleIsValidFn>(g_mainBase + off::kHandleIsValid)(&handle);
+}
+
+void stop(AbilityCue& cue) {
+    if (cue.active && validHandle(cue.handle))
+        reinterpret_cast<void (*)(engine::SoundHandle*)>(g_mainBase + off::kKill)(&cue.handle);
+    cue = {};
+}
+
+void update(AbilityCue& cue, pure::Vec3 position) {
+    if (!cue.active) return;
+    const bool event = validHandle(cue.handle);
+    unsigned assets = 0;
+    if (event) {
+        if (pure::finite3(position))
+            reinterpret_cast<void (*)(engine::SoundHandle*, const pure::Vec3*)>(
+                g_mainBase + off::kSetPosition)(&cue.handle, &position);
+        assets = reinterpret_cast<unsigned (*)(const engine::SoundHandle*)>(
+            g_mainBase + off::kHandleAliveAssets)(&cue.handle);
+    }
+    const bool wasResolved = cue.gate.resolved;
+    if (cue.gate.needsFallback(event, assets)) {
+        const char* fallback = cue.fallback;
+        const char* kind = cue.kind;
+        stop(cue); // Empty pending events cannot play late on top of the fallback.
+        const bool emitted = emit(speaker(), fallback);
+        Logging.Log("[zonai-hookshot] AUDIO_FALLBACK kind=%s cue=%s result=%u reason=no_live_asset",
+                    kind, fallback, (unsigned)emitted);
+    } else if (!wasResolved && cue.gate.resolved) {
+        Logging.Log("[zonai-hookshot] AUDIO_ASSET kind=%s live=%u follows_player=1", cue.kind, assets);
+    } else if (!event) {
+        cue = {};
+    }
 }
 
 }  // namespace
@@ -110,6 +161,27 @@ bool playCue(const char* cueName) { return emit(speaker(), cueName); }
 
 bool playCue(const char* userName, const char* cueName) {
     return emit(firstInstance(findUser(userName)), cueName);
+}
+
+void playAbilityCue(bool arrival, pure::Vec3 position) {
+    using namespace pure;
+    auto& cue = g_abilityCues[arrival ? 1 : 0];
+    stop(cue);
+    cue.kind = arrival ? "arrive" : "travel";
+    cue.fallback = arrival ? kCueArriveFallback : kCueTravelFallback;
+    const char* name = arrival ? kCueArrive : kCueTravel;
+    const bool allocated = emit(firstInstance(findUser(kCueAbilityUser)), name, &cue.handle);
+    cue.active = true;
+    Logging.Log("[zonai-hookshot] AUDIO_REQUEST kind=%s cue=%s event=%u", cue.kind, name, (unsigned)allocated);
+    update(cue, position);
+}
+
+void updateAbilityCues(pure::Vec3 position) {
+    for (auto& cue : g_abilityCues) update(cue, position);
+}
+
+void resetAbilityCues() {
+    for (auto& cue : g_abilityCues) stop(cue);
 }
 
 bool describeUser(const char* userName, int& instances) {

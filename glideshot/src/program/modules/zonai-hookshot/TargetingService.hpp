@@ -9,7 +9,7 @@
 
 namespace zonai_hookshot::targeting {
 // Cast past maxRange so TooFar and Miss stay distinct.
-constexpr float kCastLength = 350.0f;
+constexpr float kCastLength = pure::kTargetCastLength;
 
 // Aim ray tangents right and up so the marker clears Link's head; the marker still sits where the
 // ray hits (about 154 px right, 97 px up at 1600x900).

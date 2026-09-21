@@ -6,6 +6,7 @@
 #pragma once
 
 #include <cstdint>
+#include "Vec3.hpp"
 
 namespace zonai_hookshot::audio {
 
@@ -22,6 +23,11 @@ bool playCue(const char* cueName);
 // One-shot through a named sound user. False when that user is not registered,
 // has no live instance, or refused the cue.
 bool playCue(const char* userName, const char* cueName);
+
+// Shared travel/arrival audio verifies asset start and retains no scene-owned pointers.
+void playAbilityCue(bool arrival, pure::Vec3 position);
+void updateAbilityCues(pure::Vec3 position);
+void resetAbilityCues();
 
 // Whether a named user is registered right now and how many instances it has.
 bool describeUser(const char* userName, int& instances);

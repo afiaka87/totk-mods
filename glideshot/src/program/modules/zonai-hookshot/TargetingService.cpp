@@ -86,7 +86,7 @@ void onTargetingEntered(HookshotRuntime&) {
 }
 
 void onArmingAbandoned(HookshotRuntime&) {
-    note("hold ZL + L a moment longer to aim");
+    note("hold ZL + right-stick click a moment longer to aim");
 }
 
 void onConfirmStarted(HookshotRuntime& runtime) {
@@ -114,10 +114,9 @@ void onCommitted(HookshotRuntime& runtime) {
 }
 
 void onRefused(HookshotRuntime& runtime) {
-    const SampleContext context{
-        runtime.session.worldGen, runtime.aim.sample.sequence,
-        (int)(runtime.session.tick - runtime.aim.sampleTick)};
-    const Verdict reason = confirmRefusalReason(runtime.aim.sample, context,
+    const Verdict reason = confirmRefusalReason(runtime.aim.sample,
+        sampleContext(runtime.aim.sample, runtime.aim.sampleTick,
+                      runtime.session.worldGen, runtime.session.tick),
                                                 runtime.aim.confirmFloorSeq);
     note(refusalText(reason));
     ZHLOG("TARGET_REFUSED reason=%s", verdictName(reason));

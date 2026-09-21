@@ -53,11 +53,12 @@ bool startPositionZip(HookshotRuntime& runtime) {
     drive.admissionWanted.store(1, std::memory_order_release);
 
     const Vec3 start = world::havePlayer() ? world::playerPosition() : Vec3{};
+    runtime.positionDrive.config = kPositionZipConfig;
     const bool rotationOk = facing::captureBasis(runtime);
     const bool pathOk =
         rotationOk && beginPositionZip(runtime.positionDrive.path, start,
                                        runtime.launch.anchor,
-                                       kPositionZipConfig);
+                                       runtime.positionDrive.config);
     const Vec3 desiredFacing = wallFacingDirection(
         runtime.aim.committedNormal, runtime.positionDrive.path.direction);
     const bool yawOk =
@@ -122,7 +123,7 @@ void positionDriveTick(HookshotRuntime& runtime) {
 
     Vec3 next{};
     const PositionZipResult result =
-        stepPositionZip(drive.path, next, kPositionZipConfig);
+        stepPositionZip(drive.path, next, drive.config);
     if (result == PositionZipResult::Invalid ||
         result == PositionZipResult::Timeout) {
         drive.failed = true;
@@ -325,9 +326,9 @@ void serviceFallCruise(HookshotRuntime& runtime, MachineInputs& inputs) {
         endTrip(runtime, "the fall ended (landed or caught)");
     }
     // Any hit on the shortened Link-to-anchor segment consumed this tick is an obstacle.
-    if (runtime.aim.sampleTick == runtime.session.tick && runtime.aim.sample.hit &&
-        runtime.aim.sample.generation == runtime.session.worldGen &&
-        runtime.aim.sample.sequence == runtime.aim.requestSeq) {
+    if (sampleArrived(runtime.aim.sample, runtime.aim.sampleTick,
+                      runtime.aim.requestSeq, runtime.session.tick) &&
+        runtime.aim.sample.hit && runtime.aim.sample.generation == runtime.session.worldGen) {
         endTrip(runtime, "obstacle ahead - stopped early");
     }
     const float remaining =
@@ -471,21 +472,9 @@ void onFallUpdateHook(void* actionObject) {
     drive.applied.fetch_add(1, std::memory_order_relaxed);
 }
 
-// Post-Npad injections run after this module has consumed its input. The menu cancel therefore
-// reaches vanilla without becoming our B edge; launch X retains its fresh-sample rule.
 void applyLaunchInjection(void* device) {
     HookshotRuntime& rt = runtime();
     if (!device) return;
-
-    if (rt.abilityMenuCancelFrames > 0) {
-        const input::LiveSlot cancelSlot = input::newestLiveSlot(device);
-        if (cancelSlot.valid()) {
-            --rt.abilityMenuCancelFrames;
-            input::pressInSlot(cancelSlot, input::kButtonB);
-            ZHLOG("ABILITY_MENU_CANCEL injected left=%d slot=%d",
-                  rt.abilityMenuCancelFrames, cancelSlot.index);
-        }
-    }
 
     if (rt.launchStage.pulse.pulseFramesLeft <= 0) return;
     const input::LiveSlot slot = input::newestLiveSlot(device);

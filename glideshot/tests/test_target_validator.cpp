@@ -44,6 +44,18 @@ TEST_CASE("validator accepts the reference wall sample") {
     CHECK(validate(validSample(), freshContext()) == Verdict::Valid);
 }
 
+TEST_CASE("shared sample timing helpers preserve request identity and freshness") {
+    const auto sample = validSample();
+    const auto context = sampleContext(sample, 100, 7, 104);
+    CHECK(context.currentGeneration == 7);
+    CHECK(context.latestResultSequence == 42);
+    CHECK(context.sampleAgeTicks == 4);
+    CHECK(sampleArrived(sample, 104, 42, 104));
+    CHECK_FALSE(sampleArrived(sample, 103, 42, 104));
+    CHECK_FALSE(sampleArrived(sample, 104, 41, 104));
+    CHECK_FALSE(sampleArrived(sample, 104, 0, 104));
+}
+
 TEST_CASE("validator pending states") {
     auto ctx = freshContext();
     auto s = validSample();

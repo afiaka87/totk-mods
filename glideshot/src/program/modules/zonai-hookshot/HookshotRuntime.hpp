@@ -120,6 +120,7 @@ struct TransportState {
 // The exact position carrier: the activation basis is immutable and only its world-up yaw is
 // eased.
 struct PositionDriveState {
+    pure::PositionZipConfig config{};
     pure::PositionZipState path{};
     float baseRotation[9]{};
     pure::YawState yaw{};
@@ -169,10 +170,6 @@ struct HookshotRuntime {
     LaunchStage launchStage{};
     DriveMailbox drive{};
     WalkMailbox walk{};
-
-    // B is injected after this module has read input, so it closes only the ability menu that an
-    // L-first activation opened. It cannot become this module's own cancel edge on the same tick.
-    int abilityMenuCancelFrames = 0;
 
     pure::YawTiming yawTiming = pure::YawTiming::OnParasail;
 

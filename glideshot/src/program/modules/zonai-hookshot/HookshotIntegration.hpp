@@ -9,4 +9,9 @@ bool beginTargeting();
 bool movementEngaged();
 bool worldReady();
 
+// Combined host control; legacy hosts keep unrestricted activation by default.
+bool ownsMovement();
+void yieldMovement();
+void allowActivation(bool allowed);
+
 }  // namespace zonai_hookshot::integration

@@ -21,6 +21,8 @@ void publishChain(HookshotRuntime& runtime) {
         return;
     }
     ChainSnapshot snap{};
+    const TargetSample* previewSample = &runtime.aim.sample;
+    const float maxSpan = kMaximumSpan;
     Vec3 origin = targeting::chainOrigin();
     // The game draws Link one step behind the requested position during the zip, so the chain
     // starts from the position exposed at tick start.
@@ -35,7 +37,7 @@ void publishChain(HookshotRuntime& runtime) {
             snap = preview(origin, runtime.aim.sample, runtime.aim.verdict);
             break;
         case Phase::ChainLaunch:
-            snap = launchSnapshot(origin, runtime.launch);
+            snap = launchSnapshot(origin, runtime.launch, maxSpan);
             break;
         case Phase::Latched:
         case Phase::PositionCruise:
@@ -44,10 +46,9 @@ void publishChain(HookshotRuntime& runtime) {
         case Phase::FallCruise:
         case Phase::GlideHandoff:
         case Phase::GlideTerminal:
-            snap = latched(origin, runtime.launch.anchor);
+            snap = latched(origin, runtime.launch.anchor, maxSpan);
             break;
-        default:
-            break;
+        default: break;
     }
 
     render::Snapshot out{};
@@ -67,10 +68,10 @@ void publishChain(HookshotRuntime& runtime) {
         }
     } else if (snap.visible && (snap.style == ChainStyle::PreviewValid ||
                                 snap.style == ChainStyle::PreviewInvalid)) {
-        const float normalLength = length(runtime.aim.sample.normal);
+        const float normalLength = length(previewSample->normal);
         if (normalLength > 0.5f) {
             reticlePoint = add(reticlePoint,
-                               mul(runtime.aim.sample.normal,
+                               mul(previewSample->normal,
                                    kAnchorVisualLift / normalLength));
         }
     }

@@ -89,8 +89,8 @@ struct MachineConfig {
 struct MachineInputs {
     bool worldReady = false;     // player+camera resolved and stable
     bool freshInput = false;     // a controller sample arrived this tick
-    bool chordHeld = false;   // ZL + L (last fresh sample)
-    bool lButtonHeld = false;  // physical L button (last fresh sample)
+    bool chordHeld = false;       // ZL + right-stick click (last fresh sample)
+    bool stickClickHeld = false;  // physical right-stick click (last fresh sample)
     bool aEdge = false;          // must be false when freshInput is false
     bool bEdge = false;          // must be false when freshInput is false
     ConfirmDecision confirm = ConfirmDecision::Waiting;  // only read in Confirming
@@ -106,20 +106,13 @@ struct MachineInputs {
     bool climbEntered = false;      // native Climb update observed after capture arm
 };
 
-// L opens the ability selector before a later ZL sample can complete the chord. Once the complete
-// chord arrives, the post-Npad injector may cancel that already-open menu without affecting ZL-first.
-constexpr bool abilityMenuCancelNeeded(bool havePrevious, bool previousZl,
-                                       bool previousL, bool chordHeld) {
-    return havePrevious && !previousZl && previousL && chordHeld;
-}
-
 struct Machine {
     Phase phase = Phase::Idle;
     int armTicks = 0;
     int confirmTicks = 0;
     int cooldownLeft = 0;
     int transportTicks = 0;    // P2 acquisition counter (detach + handoff windows)
-    bool lButtonLatched = false;  // mask L until physical release
+    bool stickClickLatched = false;  // mask the stick click until physical release
     // Latched lasts one tick so B can still cancel and the renderer shows the latch beat before
     // Link moves.
     bool autoZipPending = false;
@@ -127,7 +120,7 @@ struct Machine {
 
 // Steady-state ownership by phase; the authoritative per-tick mask is StepOutput::consumed.
 struct OwnedButtons {
-    bool lButton = false;
+    bool stickClick = false;
     bool a = false;
     bool b = false;
 };
@@ -157,15 +150,14 @@ struct StepOutput {
 inline StepOutput step(Machine& m, const MachineInputs& in, const MachineConfig& c = {}) {
     const Phase before = m.phase;
 
-    // The L-button latch survives phase changes and clears only on an observed physical release.
-    if (in.freshInput && !in.lButtonHeld) m.lButtonLatched = false;
+    if (in.freshInput && !in.stickClickHeld) m.stickClickLatched = false;
 
     Event ev = Event::None;
     if (!in.worldReady) {
         const bool wasActive = m.phase != Phase::Idle;
-        const bool latch = m.lButtonLatched;
+        const bool latch = m.stickClickLatched;
         m = {};
-        m.lButtonLatched = latch;
+        m.stickClickLatched = latch;
         ev = wasActive ? Event::Reset : Event::None;
     } else {
         switch (m.phase) {
@@ -173,15 +165,15 @@ inline StepOutput step(Machine& m, const MachineInputs& in, const MachineConfig&
                 if (in.freshInput && in.chordHeld) {
                     m.phase = Phase::Arming;
                     m.armTicks = 0;
-                    m.lButtonLatched = true;
+                    m.stickClickLatched = true;
                 }
                 break;
             case Phase::Arming:
                 if (in.freshInput) {
                     if (!in.chordHeld) {
-                        const bool latch = m.lButtonLatched;
+                        const bool latch = m.stickClickLatched;
                         m = {};
-                        m.lButtonLatched = latch;
+                        m.stickClickLatched = latch;
                         ev = Event::ArmingAbandoned;
                     } else if (++m.armTicks >= c.armHoldTicks) {
                         m.phase = Phase::Targeting;
@@ -331,9 +323,9 @@ inline StepOutput step(Machine& m, const MachineInputs& in, const MachineConfig&
                 break;
             case Phase::Cooldown:
                 if (--m.cooldownLeft <= 0) {
-                    const bool latch = m.lButtonLatched;
+                    const bool latch = m.stickClickLatched;
                     m = {};
-                    m.lButtonLatched = latch;
+                    m.stickClickLatched = latch;
                     ev = Event::CooldownDone;
                 }
                 break;
@@ -344,8 +336,8 @@ inline StepOutput step(Machine& m, const MachineInputs& in, const MachineConfig&
     out.event = ev;
     const OwnedButtons pre = ownedButtons(before);
     const OwnedButtons post = ownedButtons(m.phase);
-    out.consumed.lButton = pre.lButton || post.lButton ||
-                           (m.lButtonLatched && in.lButtonHeld);
+    out.consumed.stickClick = pre.stickClick || post.stickClick ||
+                             (m.stickClickLatched && in.stickClickHeld);
     out.consumed.a = pre.a || post.a;
     out.consumed.b = pre.b || post.b;
     return out;

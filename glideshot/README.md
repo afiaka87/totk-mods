@@ -1,19 +1,42 @@
-# Glideshot v0.8.1
+# Glideshot
 
 A hookshot for Tears of the Kingdom. Aim at a climbable wall from the ground, from a climb or from
 the air, fire a visible chain, zip along it at 60 m/s, and land in the game's own climbing state.
 The paraglider opens by itself for the last stretch so the game decides the grab, not the mod.
 
+Glideshot also includes Arrowbound: activate the Arrowbound Emblem in Key Items, shoot an arrow,
+and follow its normal flight with the paraglider open. Both features have been tested together
+on Eden and physical Nintendo Switch with Tears of the Kingdom 1.2.1.
+
 ## Controls
 
-- Hold **ZL + L** for about a quarter of a second to raise the aim. A green
+- Hold **ZL + R3** (click the right stick) briefly to raise the aim. A green
   diamond marks a wall the chain can take; a red diamond marks a surface it refuses.
 - Press **A** to fire. The chain draws to the anchor at once and Link follows one tick later.
 - Press **B** at any point to let go. Losing the world (a shrine door, a warp, a load) also ends
   the trip.
 
-While the aim is up, ZL and L are hidden from the game so guard, lock-on and the ability wheel
-stay quiet. Nothing else is remapped.
+While the aim is up, its activation buttons are hidden from the game. Drawing the bow releases
+manual traversal; ZL + R3 releases an Arrowbound trip before manual targeting begins.
+
+## Arrowbound
+
+- Activate or deactivate the Arrowbound Emblem from Key Items. Both states use the arrow icon.
+- Fire a bow from the ground or in midair. Arrow speed, gravity, arc and range stay vanilla.
+- Airborne aiming retains slow motion; releasing the arrow ends it for the trip.
+- The paraglider stays open during following. B lets go into ordinary paragliding; drawing the
+  bow again retires the old arrow before a new trip can begin.
+- Climbable-wall impacts turn Link toward the wall and hand off to normal climbing. Other
+  impacts finish in the glider.
+
+Activation is stored in `sd:/arrowbound/settings.bin`, or the emulator's emulated SD card.
+It starts off when no valid setting exists and is shared with standalone Arrowbound across all
+saves/profiles on that SD card. Loading an older save does not rewind it. If writing fails, the
+choice still works for that session. The code-only mod ships no replacement game assets.
+
+The emblem is available while the mod runs. New saves exclude an unearned All's Well carrier;
+an emblem earned through the vanilla well quest stays in the save. Older saves are not rewritten
+until the game saves them again. This does not reset quest progress.
 
 ## What counts as a target
 
@@ -41,15 +64,20 @@ compatible with Atmosphere's contents layout.
 2. Choose the emulator archive for Eden or another emulator, or the Switch archive for physical
    hardware. Both archives carry the same module; they are packaged separately so each download
    page can describe its own testing state.
-3. Extract the archive and copy its `0100F2C0115B6000` folder into the loader's contents
-   directory.
+3. On Switch, copy `0100F2C0115B6000` into `atmosphere/contents/` on the SD card. On Eden, use
+   Open Mod Data Location and place the add-on folder containing `exefs` there, then enable it.
 4. Confirm that the installed files are `exefs/subsdk9` and `exefs/main.npdm`.
+
+Do not enable standalone Arrowbound beside this combined build. Remove older Glideshot/Arrowbound
+ROMFS overrides when upgrading; this build needs only the two `exefs` files. Back up an existing
+installation before replacing it. Do not overwrite a shared ROMFS tree belonging to other mods.
 
 Glideshot cannot be combined with another executable mod that supplies `subsdk9`. Other subsdk
 slots can load beside it, but hook and memory compatibility still depends on the particular mods.
 
-The emulator build was developed and tested on Eden. The Switch build is the same module and has
-not been run on physical hardware yet.
+The same module passed the combined gameplay and activation-persistence checks on Eden and Switch.
+The current ZL + R3 binding overlaps Self Recall's default activation; compatibility with that
+combination has not been established for this update.
 
 ## Known issues
 
@@ -59,7 +87,15 @@ not been run on physical hardware yet.
 - The Ultrahand travel and arrival sounds depend on the game having its expression sound user
   loaded at that moment. When it is not, the interface fallbacks play instead.
 
-## Changes in v0.8.1
+## Current update
+
+- Restores ZL + R3 manual activation and imports Arrowbound from its independently buildable source.
+- Adds native-arc arrow following, steady glider presentation, airborne slow-motion cleanup,
+  cancellation, re-aiming and climbable-wall handoff.
+- Uses a code-only emblem and a persistent SD setting instead of replacement game-data files.
+- Gives manual travel and Arrowbound exclusive movement ownership during control transfers.
+
+## Changes in v0.8.1 (historical)
 
 - Activation is now ZL + L. This avoids UltraCam's ZL + ZR + L3 menu chord and Self Recall's
   ZL + R3 activation chord.
@@ -93,6 +129,11 @@ guarantee that it builds or works as-is; you set up the toolchain and framework 
 - Layout: place `src/program/main.cpp`, `src/program/modules/`, `src/engine/`, `src/pure/` and
   `src/support/` in an exlaunch project with `src/program`, `src/pure`, `src/engine` and
   `src/support` on the include path.
+- Keep the sibling `../arrowbound/` folder. Compile its `src/engine` and
+  `src/program/modules/arrowbound` sources, but not its standalone `src/program/main.cpp`.
+  `../arrowbound/cmake/ImportArrowbound.cmake` shows the object-target integration with isolated
+  private include paths. Expose its `src/include` to this host and use this host's exlaunch
+  configuration so there is only one entry point and one hook pool. The native source uses C++26.
 - Shaders: `shaders/chain.frag`, `shaders/chain.vert` and `shaders/chain_math.inl` are compiled
   to NVN binaries by `tools/compile_shaders.py` (see `cmake/ChainShader.cmake`), which expects an
   external NVN GLSL compiler pinned by hash. The generated `ChainShaders.hpp` is not checked in.
@@ -104,8 +145,9 @@ guarantee that it builds or works as-is; you set up the toolchain and framework 
 
 ## Tests
 
-- `tests/run_host_tests.ps1` builds and runs the doctest suite for `src/pure/` (needs CMake, a
-  C++23 compiler, and network access to fetch doctest when it is not vendored).
+- `tests/run_host_tests.ps1` runs both suites: 82 manual/composition cases and 53 Arrowbound
+  cases. Keep the sibling Arrowbound folder. Tests need CMake, Ninja, a C++23 compiler and network
+  access to fetch doctest 2.4.11 when it is not vendored. No game files are needed for the default run.
 
 ## A note on the code
 

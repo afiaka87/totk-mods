@@ -28,6 +28,7 @@ add_executable(zonai_hookshot_pure_tests
     test_chain_presentation.cpp
     test_chain_projection.cpp
     test_hookshot_cues.cpp
+    test_traversal_ownership.cpp
 )
 target_include_directories(zonai_hookshot_pure_tests PRIVATE
     "${DOCTEST_INCLUDE_DIR}"
@@ -43,3 +44,7 @@ endif()
 enable_testing()
 include("${DOCTEST_CMAKE}")
 doctest_discover_tests(zonai_hookshot_pure_tests)
+
+# The combined product validates its imported feature with that feature's own suite.
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../arrowbound/tests"
+                 "${CMAKE_CURRENT_BINARY_DIR}/arrowbound")

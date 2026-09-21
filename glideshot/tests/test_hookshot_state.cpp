@@ -18,7 +18,7 @@ MachineInputs idleInputs() {
 MachineInputs chordInputs() {
     auto in = idleInputs();
     in.chordHeld = true;
-    in.lButtonHeld = true;
+    in.stickClickHeld = true;
     return in;
 }
 
@@ -46,59 +46,51 @@ TEST_CASE("arming requires the deliberate hold and enters targeting") {
     CHECK(m.phase == Phase::Targeting);
 }
 
-TEST_CASE("only an L-first chord completion requests the ability-menu cancel") {
-    CHECK(abilityMenuCancelNeeded(true, false, true, true));
-    CHECK_FALSE(abilityMenuCancelNeeded(true, true, false, true));
-    CHECK_FALSE(abilityMenuCancelNeeded(true, false, false, true));
-    CHECK_FALSE(abilityMenuCancelNeeded(false, false, true, true));
-    CHECK_FALSE(abilityMenuCancelNeeded(true, false, true, false));
-}
-
-TEST_CASE("the final arming tick still consumes L") {
+TEST_CASE("the final arming tick still consumes the right-stick click") {
     Machine m{};
     MachineConfig c{};
     StepOutput out{};
     for (int i = 0; i <= c.armHoldTicks; ++i) out = step(m, chordInputs(), c);
     CHECK(m.phase == Phase::Targeting);
     CHECK(out.event == Event::TargetingEntered);
-    CHECK(out.consumed.lButton);
+    CHECK(out.consumed.stickClick);
 }
 
-TEST_CASE("L stays masked until physical release") {
+TEST_CASE("right-stick click stays masked until physical release") {
     Machine m{};
     MachineConfig c{};
     for (int i = 0; i <= c.armHoldTicks; ++i) step(m, chordInputs(), c);
     CHECK(m.phase == Phase::Targeting);
 
     auto in = idleInputs();
-    in.lButtonHeld = true;
+    in.stickClickHeld = true;
     auto out = step(m, in, c);
-    CHECK(out.consumed.lButton);
+    CHECK(out.consumed.stickClick);
 
     out = step(m, idleInputs(), c);
-    CHECK_FALSE(out.consumed.lButton);
+    CHECK_FALSE(out.consumed.stickClick);
 
     in = idleInputs();
-    in.lButtonHeld = true;
+    in.stickClickHeld = true;
     out = step(m, in, c);
-    CHECK_FALSE(out.consumed.lButton);
+    CHECK_FALSE(out.consumed.stickClick);
 }
 
-TEST_CASE("arming abandoned keeps masking held L") {
+TEST_CASE("arming abandoned keeps masking the held stick click") {
     Machine m{};
     MachineConfig c{};
     step(m, chordInputs(), c);
     CHECK(m.phase == Phase::Arming);
 
     auto in = idleInputs();
-    in.lButtonHeld = true;
+    in.stickClickHeld = true;
     auto out = step(m, in, c);
     CHECK(out.event == Event::ArmingAbandoned);
     CHECK(m.phase == Phase::Idle);
-    CHECK(out.consumed.lButton);
+    CHECK(out.consumed.stickClick);
 
     out = step(m, idleInputs(), c);
-    CHECK_FALSE(out.consumed.lButton);
+    CHECK_FALSE(out.consumed.stickClick);
 }
 
 TEST_CASE("stale controller frames advance nothing") {
@@ -112,7 +104,7 @@ TEST_CASE("stale controller frames advance nothing") {
     stale.worldReady = true;
     stale.freshInput = false;
     stale.chordHeld = true;       // last known state
-    stale.lButtonHeld = true;
+    stale.stickClickHeld = true;
     for (int i = 0; i < 50; ++i) step(m, stale, c);
     CHECK(m.phase == Phase::Arming);
     CHECK(m.armTicks == held);
@@ -271,30 +263,30 @@ TEST_CASE("world loss resets fail-closed from every active phase") {
     SUBCASE("from arming - latch survives while the button stays held") {
         Machine m{};
         step(m, chordInputs(), c);
-        CHECK(m.lButtonLatched);
+        CHECK(m.stickClickLatched);
         auto lostHeld = lost;
-        lostHeld.lButtonHeld = true;
+        lostHeld.stickClickHeld = true;
         auto out = step(m, lostHeld, c);
         CHECK(out.event == Event::Reset);
         CHECK(m.phase == Phase::Idle);
-        CHECK(m.lButtonLatched);
-        CHECK(out.consumed.lButton);
+        CHECK(m.stickClickLatched);
+        CHECK(out.consumed.stickClick);
         out = step(m, lostHeld, c);
-        CHECK(out.consumed.lButton);
+        CHECK(out.consumed.stickClick);
         out = step(m, lost, c);
-        CHECK_FALSE(m.lButtonLatched);
-        CHECK_FALSE(out.consumed.lButton);
+        CHECK_FALSE(m.stickClickLatched);
+        CHECK_FALSE(out.consumed.stickClick);
     }
     SUBCASE("from arming - stale samples during world loss keep the latch") {
         Machine m{};
         step(m, chordInputs(), c);
         auto lostStale = lost;
         lostStale.freshInput = false;
-        lostStale.lButtonHeld = true;  // last known state
+        lostStale.stickClickHeld = true;  // last known state
         step(m, lostStale, c);
         auto out = step(m, lostStale, c);
-        CHECK(m.lButtonLatched);
-        CHECK(out.consumed.lButton);
+        CHECK(m.stickClickLatched);
+        CHECK(out.consumed.stickClick);
     }
     SUBCASE("from targeting") {
         auto m = targetingMachine(c);
@@ -336,16 +328,16 @@ TEST_CASE("world loss resets fail-closed from every active phase") {
 }
 
 TEST_CASE("no buttons are owned outside active states") {
-    CHECK_FALSE(ownedButtons(Phase::Idle).lButton);
+    CHECK_FALSE(ownedButtons(Phase::Idle).stickClick);
     CHECK_FALSE(ownedButtons(Phase::Idle).a);
     CHECK_FALSE(ownedButtons(Phase::Idle).b);
-    CHECK_FALSE(ownedButtons(Phase::Cooldown).lButton);
+    CHECK_FALSE(ownedButtons(Phase::Cooldown).stickClick);
     CHECK_FALSE(ownedButtons(Phase::Cooldown).a);
     CHECK_FALSE(ownedButtons(Phase::Cooldown).b);
 
     Machine m{};
     auto out = step(m, idleInputs());
-    CHECK_FALSE(out.consumed.lButton);
+    CHECK_FALSE(out.consumed.stickClick);
     CHECK_FALSE(out.consumed.a);
     CHECK_FALSE(out.consumed.b);
 }
@@ -356,7 +348,7 @@ TEST_CASE("targeting owns A and B every tick") {
     auto out = step(m, idleInputs(), c);
     CHECK(out.consumed.a);
     CHECK(out.consumed.b);
-    CHECK_FALSE(out.consumed.lButton);
+    CHECK_FALSE(out.consumed.stickClick);
 }
 
 namespace {

@@ -13,9 +13,10 @@ namespace zonai_hookshot::input {
 constexpr std::uint64_t kButtonA = 1ull << 0;
 constexpr std::uint64_t kButtonB = 1ull << 1;
 constexpr std::uint64_t kButtonX = 1ull << 2;  // the synthetic launch press
-constexpr std::uint64_t kButtonL = 1ull << 6;
+constexpr std::uint64_t kButtonLStick = 1ull << 4;
+constexpr std::uint64_t kButtonRStick = 1ull << 5;
 constexpr std::uint64_t kButtonZL = 1ull << 8;
-constexpr std::uint64_t kAimChord = kButtonZL | kButtonL;
+constexpr std::uint64_t kAimChord = kButtonZL | kButtonRStick;
 
 totk::engine::NpadFrame readFrame(void* device);
 

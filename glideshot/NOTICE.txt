@@ -3,6 +3,7 @@ Glideshot's original source is MIT licensed, copyright Clay Mullis.
 The compiled module includes exlaunch, licensed under GPL-2.0.
 Upstream source: https://github.com/shadowninja108/exlaunch
 Mod source: https://github.com/afiaka87/totk-mods/tree/main/glideshot
+Imported Arrowbound source: https://github.com/afiaka87/totk-mods/tree/main/arrowbound
 
 Host tests use doctest 2.4.11 (MIT). Native builds use devkitPro/devkitA64.
 No Nintendo game assets are distributed in this package.

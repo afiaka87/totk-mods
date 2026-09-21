@@ -27,33 +27,17 @@ static_assert(MachineConfig{}.confirmTimeoutTicks > aim::kTimeoutTicks);
 
 // Sound state lives beside the tick so the runtime header stays free of engine types.
 struct AudioState {
-    Verdict lastVerdict = Verdict::Pending;
-    CueRateLimit rejectGate{};
+    AimFeedbackState aim{};
+    std::uint32_t generation = 0;
     TravelCueGate travelGate{};
 };
 AudioState g_audio;
+bool g_allowActivation = true;
 
 void silenceAudio() {
+    audio::resetAbilityCues();
     g_audio.travelGate.reset();
-    g_audio.lastVerdict = Verdict::Pending;
-    g_audio.rejectGate = {};
-}
-
-// Prefer Ultrahand's own sound; fall back to the interface speaker so a trip never goes silent.
-void playAbilityCue(const char* kind, const char* cue, const char* fallback,
-                    const HookshotRuntime& rt) {
-    int instances = 0;
-    const bool registered = audio::describeUser(kCueAbilityUser, instances);
-    ZHLOG("AUDIO_USER name=%s registered=%u instances=%d phase=%u",
-          kCueAbilityUser, (unsigned)registered, instances,
-          (unsigned)rt.machine.phase);
-    bool emitted = audio::playCue(kCueAbilityUser, cue);
-    ZHLOG("AUDIO_EMIT kind=%s user=%s cue=%s result=%u phase=%u", kind,
-          kCueAbilityUser, cue, (unsigned)emitted, (unsigned)rt.machine.phase);
-    if (emitted) return;
-    emitted = audio::playCue(fallback);
-    ZHLOG("AUDIO_EMIT kind=%s user=UI_GlobalSound cue=%s result=%u phase=%u",
-          kind, fallback, (unsigned)emitted, (unsigned)rt.machine.phase);
+    g_audio.aim = {};
 }
 
 void serviceAudio(HookshotRuntime& rt) {
@@ -61,28 +45,30 @@ void serviceAudio(HookshotRuntime& rt) {
     if (world::ready() && !audio::ready() && (rt.session.tick % 60) == 0)
         audio::prime();
 
-    const bool aiming = rt.machine.phase == Phase::Targeting ||
-                        rt.machine.phase == Phase::Confirming;
-    const Verdict now = aiming ? rt.aim.verdict : Verdict::Pending;
-    if (const char* cue = cueForVerdictChange(g_audio.lastVerdict, now)) {
-        // Rate-limit the refusal beep; the accept chime is rare enough.
-        if (cue != kCueReject ||
-            g_audio.rejectGate.allow((std::uint32_t)rt.session.tick)) {
+    if (g_audio.generation != rt.session.worldGen) {
+        silenceAudio();
+        g_audio.generation = rt.session.worldGen;
+    }
+    audio::updateAbilityCues(world::playerPosition());
+    const auto feedback = aimFeedbackInput(rt.machine.phase, rt.aim.verdict);
+    const auto cues = g_audio.aim.update(feedback, (std::uint32_t)rt.session.tick);
+    const char* aimCues[]{cues.entry, cues.verdict};
+    for (const char* cue : aimCues) {
+        if (cue) {
             const bool emitted = audio::playCue(cue);
             ZHLOG("AUDIO_EMIT kind=verdict cue=%s result=%u phase=%u", cue,
                   (unsigned)emitted, (unsigned)rt.machine.phase);
         }
     }
-    g_audio.lastVerdict = now;
 
     if (g_audio.travelGate.shouldEmit(travelCueWanted(rt.machine.phase)))
-        playAbilityCue("travel", kCueTravel, kCueTravelFallback, rt);
+        audio::playAbilityCue(false, world::playerPosition());
 }
 
 void handleEvent(HookshotRuntime& rt, Event event) {
-    if (const char* cue = cueForEvent(event)) {
+    if (const char* cue = event == Event::TargetingEntered ? nullptr : cueForEvent(event)) {
         if (cue == kCueArrive) {
-            playAbilityCue("arrive", kCueArrive, kCueArriveFallback, rt);
+            audio::playAbilityCue(true, world::playerPosition());
         } else {
             const bool emitted = audio::playCue(cue);
             ZHLOG("AUDIO_EMIT kind=event cue=%s result=%u event=%u phase=%u",
@@ -137,7 +123,7 @@ void handleEvent(HookshotRuntime& rt, Event event) {
             resetSession("world");
             break;
         case Event::CooldownDone:
-            note("hold ZL + L to aim");
+            note("hold ZL + right-stick click to aim");
             break;
         default:
             break;
@@ -166,8 +152,8 @@ void runtimeTick(void* device) {
         note("aiming paused: the world stopped answering (menu/loading)");
     }
 
-    const SampleContext context{rt.session.worldGen, rt.aim.sample.sequence,
-                                (int)(rt.session.tick - rt.aim.sampleTick)};
+    const SampleContext context = sampleContext(rt.aim.sample, rt.aim.sampleTick,
+                                                rt.session.worldGen, rt.session.tick);
     rt.aim.verdict = validate(rt.aim.sample, context);
 
     // No fresh samples: no edges, no hold advance.
@@ -185,19 +171,9 @@ void runtimeTick(void* device) {
     MachineInputs in{};
     in.worldReady = ready;
     in.freshInput = fresh;
-    in.chordHeld = (buttons & input::kAimChord) == input::kAimChord;
-    in.lButtonHeld = (buttons & input::kButtonL) != 0;
+    in.chordHeld = g_allowActivation && (buttons & input::kAimChord) == input::kAimChord;
+    in.stickClickHeld = (buttons & input::kButtonRStick) != 0;
 
-    if (fresh && abilityMenuCancelNeeded(
-                     rt.haveButtons,
-                     (rt.prevButtons & input::kButtonZL) != 0,
-                     (rt.prevButtons & input::kButtonL) != 0,
-                     in.chordHeld)) {
-        rt.abilityMenuCancelFrames = 2;
-        ZHLOG("ABILITY_MENU_CANCEL armed order=L,ZL");
-    }
-
-    // Neither ZL nor L has a release-triggered action, so both can be hidden immediately.
     const bool ownAim = in.chordHeld || rt.machine.phase == Phase::Targeting ||
                         rt.machine.phase == Phase::Confirming;
     if (fresh && rt.haveButtons) {
@@ -282,7 +258,7 @@ void runtimeTick(void* device) {
     std::uint64_t mask =
         (out.consumed.a ? input::kButtonA : 0ull) |
         (out.consumed.b ? input::kButtonB : 0ull) |
-        (out.consumed.lButton ? input::kButtonL : 0ull);
+        (out.consumed.stickClick ? input::kButtonRStick : 0ull);
     if (ownAim) mask |= input::kAimChord;
     if (mask) frame.maskOwnedButtons(mask);
 }
@@ -300,13 +276,12 @@ void moduleInit(std::uintptr_t base) {
 void moduleEnter() {
     HookshotRuntime& rt = runtime();
     silenceAudio();
-    const bool latch = rt.machine.lButtonLatched;  // quarantine survives re-entry
+    const bool latch = rt.machine.stickClickLatched;  // quarantine survives re-entry
     rt.machine = {};
-    rt.machine.lButtonLatched = latch;
+    rt.machine.stickClickLatched = latch;
     rt.prevButtons = 0;
     rt.lastButtons = 0;
     rt.haveButtons = false;
-    rt.abilityMenuCancelFrames = 0;
     rt.walk.targetNpadValid.store(0, std::memory_order_release);
 }
 
@@ -329,8 +304,8 @@ void moduleRaycast(wwpg::RaycastFn original, const void* from,
 
 const wwpg::Module kModule{
     "ZONAI HOOKSHOT",
-    "Hold ZL+L to aim; release, then A fires and zips",
-    "B cancels; green diamond means the surface is valid",
+    "Hold ZL+R3 to aim; A fires and B cancels",
+    "Green accepts, red refuses; traversal ends in native Climb",
     "Complete: target, fire, zip, and enter native Climb.",
     moduleInit,
     moduleEnter,
@@ -350,11 +325,11 @@ const Module& zonaiHookshot() { return kModule; }
 namespace zonai_hookshot::integration {
 bool beginTargeting() {
     HookshotRuntime& rt = runtime();
-    if (!world::ready() || rt.machine.phase != pure::Phase::Idle) return false;
+    if (!g_allowActivation || !world::ready() || rt.machine.phase != pure::Phase::Idle) return false;
 
     rt.machine.phase = pure::Phase::Targeting;
     rt.machine.armTicks = 0;
-    rt.machine.lButtonLatched = false;
+    rt.machine.stickClickLatched = false;
     // The first post-wheel sample establishes the edge baseline so a held face button cannot fire.
     rt.prevButtons = 0;
     rt.lastButtons = 0;
@@ -366,9 +341,32 @@ bool beginTargeting() {
 
 bool movementEngaged() {
     const HookshotRuntime& rt = runtime();
-    return rt.machine.phase != pure::Phase::Idle || rt.machine.lButtonLatched;
+    return rt.machine.phase != pure::Phase::Idle || rt.machine.stickClickLatched;
 }
 
 bool worldReady() { return world::ready(); }
+
+bool ownsMovement() {
+    const auto phase = runtime().machine.phase;
+    return phase != pure::Phase::Idle && phase != pure::Phase::Cooldown;
+}
+
+void allowActivation(bool allowed) { g_allowActivation = allowed; }
+
+void yieldMovement() {
+    auto& rt = runtime();
+    transport::stopDrive(rt, "bow aim");
+    aim::abandonPending();
+    silenceAudio();
+    const bool latch = rt.machine.stickClickLatched;
+    rt.machine = {};
+    rt.machine.stickClickLatched = latch;
+    rt.launch = {};
+    rt.positionDrive = {};
+    rt.capture = {};
+    rt.aim = {};
+    presentation::publishInvisible();
+    ZHLOG("MANUAL_DETACH reason=bow_aim");
+}
 
 }  // namespace zonai_hookshot::integration

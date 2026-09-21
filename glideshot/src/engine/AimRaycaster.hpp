@@ -12,6 +12,7 @@
 
 #include "TargetValidator.hpp"
 #include "Vec3.hpp"
+#include "RayQueryExclusion.hpp"
 #include "totk/harness/Module.hpp"
 
 namespace zonai_hookshot::aim {
@@ -33,7 +34,7 @@ void initialize(std::uintptr_t mainBase);
 bool request(const pure::Vec3& from, const pure::Vec3& to,
              const pure::Vec3& nearPoint, const pure::Vec3& direction,
              std::uint32_t& issueSequence, std::uint32_t generation,
-             std::uint64_t tick);
+             std::uint64_t tick, const engine::RayGroup* exclude = nullptr);
 
 Poll service(std::uint64_t tick, pure::TargetSample& out);
 

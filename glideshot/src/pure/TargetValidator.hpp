@@ -49,6 +49,8 @@ inline const char* verdictName(Verdict v) {
 // are refused: an anchor the chain cannot follow is worse than a refusal.
 constexpr uint32_t kMotionStatic = 0;
 
+constexpr float kTargetCastLength = 350.0f;
+
 struct TargetSample {
     bool completed = false;
     bool hit = false;
@@ -81,6 +83,16 @@ struct SampleContext {
     uint32_t latestResultSequence = 0;  // sequence of the newest consumed result
     int sampleAgeTicks = 0;             // now - tick the sample was consumed
 };
+
+inline SampleContext sampleContext(const TargetSample& sample, std::uint64_t sampleTick,
+                                   std::uint32_t generation, std::uint64_t tick) {
+    return {generation, sample.sequence, static_cast<int>(tick - sampleTick)};
+}
+
+inline bool sampleArrived(const TargetSample& sample, std::uint64_t sampleTick,
+                          std::uint32_t sequence, std::uint64_t tick) {
+    return sequence && sample.sequence == sequence && sampleTick == tick;
+}
 
 inline Verdict validate(const TargetSample& s, const SampleContext& ctx,
                         const ValidatorConfig& c = {}) {

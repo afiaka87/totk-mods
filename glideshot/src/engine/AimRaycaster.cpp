@@ -6,6 +6,7 @@
 #include <lib.hpp>
 
 #include <atomic>
+#include <cmath>
 
 namespace zonai_hookshot::aim {
 namespace {
@@ -35,12 +36,14 @@ bool okPtr(std::uintptr_t pointer) {
 struct Mailbox {
     std::uintptr_t base = 0;
     std::atomic<std::uint32_t> rayState{static_cast<std::uint32_t>(RayState::Idle)};
-    float from[3]{};
-    float to[3]{};
+    Vec3 from{};
+    Vec3 to{};
     float near[3]{};
     std::uint32_t mask = kSolidMask;
     std::uint64_t result = 0;
     alignas(16) unsigned char object[0x200]{};
+    engine::RayGroup excludedGroup{};
+    bool exclude = false;
     std::uint64_t startedTick = 0;
     RequestId id{};
     Vec3 direction{};
@@ -57,22 +60,29 @@ void initialize(std::uintptr_t mainBase) { g_mailbox.base = mainBase; }
 
 bool request(const Vec3& from, const Vec3& to, const Vec3& nearPoint,
              const Vec3& direction, std::uint32_t& issueSequence,
-             std::uint32_t generation, std::uint64_t tick) {
+             std::uint32_t generation, std::uint64_t tick, const engine::RayGroup* exclude) {
+    (void)direction;
+    const Vec3 delta = sub(to, from);
+    const float span = length(delta);
+    if (!finite3(from) || !finite3(to) || !finite3(nearPoint) ||
+        !std::isfinite(span) || span <= 0) return false;
     std::uint32_t expected = static_cast<std::uint32_t>(RayState::Idle);
     if (!g_mailbox.rayState.compare_exchange_strong(
             expected, static_cast<std::uint32_t>(RayState::Working),
             std::memory_order_acq_rel)) {
         return false;
     }
-    g_mailbox.from[0] = from.x; g_mailbox.from[1] = from.y; g_mailbox.from[2] = from.z;
-    g_mailbox.to[0] = to.x; g_mailbox.to[1] = to.y; g_mailbox.to[2] = to.z;
+    g_mailbox.from = from;
+    g_mailbox.to = to;
     g_mailbox.near[0] = nearPoint.x;
     g_mailbox.near[1] = nearPoint.y;
     g_mailbox.near[2] = nearPoint.z;
     g_mailbox.mask = kSolidMask;
-    g_mailbox.direction = direction;
+    g_mailbox.direction = mul(delta, 1.0f / span);
     g_mailbox.id = RequestId{++issueSequence, generation};
     g_mailbox.startedTick = tick;
+    g_mailbox.exclude = exclude != nullptr;
+    g_mailbox.excludedGroup = exclude ? *exclude : engine::RayGroup{};
     // Publish the request last.
     g_mailbox.rayState.store(static_cast<std::uint32_t>(RayState::Pending),
                              std::memory_order_release);
@@ -146,14 +156,16 @@ void observe(wwpg::RaycastFn original, const void* from, const void* object) {
     }
     for (int i = 0; i < 0x200; ++i)
         g_mailbox.object[i] = static_cast<const unsigned char*>(object)[i];
-    // Clear each result field at exactly its proven width; BodySdkId gets the engine's no-body
-    // sentinel.
     *(unsigned char*)(g_mailbox.object + ray::kHit) = 0;
     *(std::uint32_t*)(g_mailbox.object + ray::kShapeFlags) = 0;
     *(std::uint64_t*)(g_mailbox.object + ray::kBodySdkId) = ~0ull;
     *(std::uint64_t*)(g_mailbox.object + ray::kHitBody) = 0;
-    g_mailbox.result = original(g_mailbox.from, g_mailbox.to, g_mailbox.object,
-                                nullptr, g_mailbox.mask, 0u);
+    if (g_mailbox.exclude && !engine::rebaseRayFilter(g_mailbox.object, object)) {
+        Logging.Log("[zonai-hookshot] RAY_FILTER unavailable; refusing request");
+    } else {
+        g_mailbox.result = original(&g_mailbox.from, &g_mailbox.to, g_mailbox.object,
+            g_mailbox.exclude ? &g_mailbox.excludedGroup : nullptr, g_mailbox.mask, 0u);
+    }
     g_mailbox.bodyKnown = false;
     g_mailbox.motion = 0;
     if (*(const unsigned char*)(g_mailbox.object + ray::kHit) != 0) {

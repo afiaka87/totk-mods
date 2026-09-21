@@ -27,6 +27,25 @@ inline constexpr const char* kCueTravelFallback = "mc_PlusMenuOpen";
 inline constexpr const char* kCueArrive = "UltraHand_End";
 inline constexpr const char* kCueArriveFallback = "MapMarker_1";
 
+// Fall back once when an allocated event never starts a playable asset.
+struct AbilityCueGate {
+    unsigned checks = 0;
+    bool resolved = false;
+
+    bool needsFallback(bool eventValid, unsigned liveAssets) {
+        if (resolved) return false;
+        if (eventValid && liveAssets) {
+            resolved = true;
+            return false;
+        }
+        if (!eventValid || ++checks >= 4) {
+            resolved = true;
+            return true;
+        }
+        return false;
+    }
+};
+
 // The reject beep can be machine-gunned by sweeping a bad wall: one per 250 ms
 // at the ~57 Hz input driver.
 inline constexpr std::uint32_t kCueMinRepeatTicks = 14;
@@ -60,6 +79,38 @@ struct CueRateLimit {
         lastTick = tick;
         started = true;
         return true;
+    }
+};
+
+struct AimFeedbackInput {
+    bool active = false;
+    Verdict verdict = Verdict::Pending;
+};
+
+inline AimFeedbackInput aimFeedbackInput(Phase phase, Verdict manual) {
+    if (phase == Phase::Targeting || phase == Phase::Confirming) return {true, manual};
+    return {};
+}
+
+struct AimFeedbackCues {
+    const char* entry = nullptr;
+    const char* verdict = nullptr;
+};
+
+struct AimFeedbackState {
+    bool active = false;
+    Verdict lastVerdict = Verdict::Pending;
+    CueRateLimit rejectGate{};
+
+    AimFeedbackCues update(AimFeedbackInput input, std::uint32_t tick) {
+        AimFeedbackCues cues{};
+        if (input.active && !active) cues.entry = kCueAim;
+        const auto now = input.active ? input.verdict : Verdict::Pending;
+        const char* change = cueForVerdictChange(lastVerdict, now);
+        if (change && (change != kCueReject || rejectGate.allow(tick))) cues.verdict = change;
+        active = input.active;
+        lastVerdict = now;
+        return cues;
     }
 };
 
