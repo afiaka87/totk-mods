@@ -10,6 +10,10 @@
 #include "totk/engine/Scene.hpp"
 #include "totk/engine/Totk121Offsets.hpp"
 #include "totk/engine/Transform.hpp"
+#if ARROWBOUND_FLIGHT_DIAGNOSTICS
+#include "../program/modules/arrowbound/HookshotLog.hpp"
+#include "FlightDiagnostics.hpp"
+#endif
 
 namespace arrowbound::world {
 namespace {
@@ -112,6 +116,11 @@ void refresh(SessionResetFn reset) {
             if (g_state.havePlayerPos &&
                 pure::distance(position, g_state.lastPlayerPos) >
                     kTeleportResetDistance) {
+#if ARROWBOUND_FLIGHT_DIAGNOSTICS
+                ZHLOG("TRACE_WORLD_RESET reason=teleport step_cm=%d limit_cm=%d",
+                      pure::traceNumber(pure::distance(position, g_state.lastPlayerPos)),
+                      pure::traceNumber(kTeleportResetDistance));
+#endif
                 reset("teleport");
             }
             g_state.lastPlayerPos = position;

@@ -10,7 +10,11 @@
 #include "HookshotAudio.hpp"
 #include "HookshotLog.hpp"
 #include "HookshotWorld.hpp"
+#include "FlightDiagnostics.hpp"
+#include "../../../pure/FlightDiagnostics.hpp"
 #include "WallGripService.hpp"
+#include "../../../engine/FlightClock.hpp"
+#include "../../../engine/RagdollTransport.hpp"
 #include "totk/engine/Pointer.hpp"
 #include "totk/engine/Totk121Offsets.hpp"
 
@@ -139,11 +143,16 @@ void finishBailout(HookshotRuntime& rt, const char* reason) {
 void onArrowRelease(void* equipmentUser) {
     auto& rt = runtime();
     auto& mailbox = rt.arrow;
-    if (!equipmentUser || mailbox.modeEnabled.load(std::memory_order_acquire) == 0 ||
+    if (!equipmentUser) return;
+#if !ARROWBOUND_FLIGHT_DIAGNOSTICS
+    if (mailbox.modeEnabled.load(std::memory_order_acquire) == 0 ||
         mailbox.acceptShots.load(std::memory_order_acquire) == 0) return;
+#endif
     using IsPouchUserFn = std::uint64_t (*)(void*);
     const auto isPouchUser = reinterpret_cast<IsPouchUserFn>(rt.session.base + kEquipmentIsPouchUser);
-    if ((isPouchUser(equipmentUser) & 1u) == 0 ||
+    if ((isPouchUser(equipmentUser) & 1u) == 0) return;
+    diagnostics::release(mailbox.modeEnabled.load(std::memory_order_acquire) != 0);
+    if (mailbox.modeEnabled.load(std::memory_order_acquire) == 0 ||
         !mailbox.acceptShots.exchange(0, std::memory_order_acq_rel)) return;
     mailbox.controllerToken.store(0, std::memory_order_release);
     mailbox.claimOldIgnored.store(0, std::memory_order_relaxed);
@@ -166,6 +175,16 @@ void onArrowRelease(void* equipmentUser) {
 
 void onArrowUpdate(void* controller) {
     auto& mailbox = runtime().arrow;
+#if ARROWBOUND_FLIGHT_DIAGNOSTICS
+    const auto diagnosticController = reinterpret_cast<std::uintptr_t>(controller);
+    if (okPtr(diagnosticController)) {
+        const auto diagnosticState = *reinterpret_cast<const std::uint32_t*>(diagnosticController + kControllerState);
+        if (arrowClaimIsNew(diagnosticState)) {
+            const auto player = mailbox.playerActor.load(std::memory_order_acquire);
+            diagnostics::claim(controller, diagnosticState, okPtr(player) && arrowIdentity(controller).belongsTo(player));
+        }
+    }
+#endif
     if (mailbox.controllerToken.load(std::memory_order_acquire) ||
         !mailbox.pendingShot.load(std::memory_order_acquire)) return;
     const auto candidate = reinterpret_cast<std::uintptr_t>(controller);
@@ -199,8 +218,8 @@ bool isTracked(void* controller) {
            mailbox.impactPublished.load(std::memory_order_acquire) == 0;
 }
 
-void onArrowSample(void* rawController) {
-    if (!isTracked(rawController)) return;
+void onArrowSample(void* rawController, float nativeDelta) {
+    if (!isTracked(rawController) && !diagnostics::observes(rawController)) return;
     const auto controller = reinterpret_cast<std::uintptr_t>(rawController);
     const auto actor = *reinterpret_cast<const std::uintptr_t*>(controller + kControllerActor);
     if (!okPtr(actor)) return;
@@ -214,6 +233,8 @@ void onArrowSample(void* rawController) {
     auto& mailbox = runtime().arrow;
     const Vec3 bodyVelocity = velocity;
     const float actorRate = *reinterpret_cast<const float*>(actor + kActorArrowTimeRate);
+    diagnostics::sample(rawController, position, bodyVelocity, actorRate, nativeDelta);
+    if (!isTracked(rawController)) return;
     if (!arrowFollowVelocity(bodyVelocity, actorRate, velocity)) {
         ZHLOG("ARROW_SAMPLE_CLOCK_INVALID shot=%u rate_bits=%08x",
               mailbox.shotSeq.load(std::memory_order_relaxed), floatToBits(actorRate));
@@ -261,20 +282,22 @@ void onNativeImpact(void* rawController, bool hit, ArrowImpact impact) {
 
 void onArrowImpact(void* rawController, bool classified, int hitType,
                    const float* adjustedHit, const void* motionContext) {
-    if (!isTracked(rawController)) return;
+    if (!isTracked(rawController) && !diagnostics::observes(rawController)) return;
     ArrowImpact impact{};
     impact.sensorType = hitType;
     if (classified) impact = engine::nativeArrowImpact(rawController, ArrowImpactSource::Sensor,
         hitType, false, adjustedHit, motionContext);
+    if (classified) diagnostics::impact(rawController, impact);
     onNativeImpact(rawController, classified, impact);
 }
 
 void onArrowWorldImpact(void* rawController, bool hit, bool water) {
-    if (!isTracked(rawController)) return;
+    if (!isTracked(rawController) && !diagnostics::observes(rawController)) return;
     ArrowImpact impact{};
     impact.source = ArrowImpactSource::WorldSweep;
     impact.water = water;
     if (hit) impact = engine::nativeArrowImpact(rawController, ArrowImpactSource::WorldSweep, 0, water);
+    if (hit) diagnostics::impact(rawController, impact);
     onNativeImpact(rawController, hit, impact);
 }
 
@@ -282,6 +305,8 @@ void service(HookshotRuntime& rt, bool cancel, bool reaim, bool allowShots) {
     auto& trip = rt.arrowTrip;
     auto& mailbox = rt.arrow;
     const bool enabled = arrow_mode::enabled();
+    diagnostics::gameplay(rt);
+    ragdoll_transport::retireIfInactive();
     // A host reservation also retires a release that arrived before its next tick.
     if (!allowShots) {
         mailbox.acceptShots.store(0, std::memory_order_release);
@@ -334,6 +359,7 @@ void service(HookshotRuntime& rt, bool cancel, bool reaim, bool allowShots) {
         std::atomic_thread_fence(std::memory_order_acquire);
         if (mailbox.sampleSeq.load(std::memory_order_acquire) == sampleSeq) {
             freshSample = true;
+            trip.pendingMotionSample = true;
             trip.sampleSeqSeen = sampleSeq;
             trip.arrowPosition = position;
             trip.arrowVelocity = velocity;
@@ -370,6 +396,27 @@ void service(HookshotRuntime& rt, bool cancel, bool reaim, bool allowShots) {
             enterBailout(rt, "arrow ended or stopped updating");
         } else {
             Vec3 target{}, followPosition{}, followVelocity{};
+            pure::FlightTime clock{};
+            float elapsed = 0;
+            // Contention skips a callback, not elapsed time; the next snapshot contains the total.
+            if (!game_clock::snapshot(clock)) return;
+            if (!trip.clock.step(clock, elapsed)) {
+                ZHLOG("ARROW_CLOCK_REJECT status=%u serial=%llu", unsigned(clock.status),
+                      (unsigned long long)clock.serial);
+                enterBailout(rt, "simulation clock unavailable");
+                return;
+            }
+            if (elapsed == 0 && trip.haveRequestedPosition) return;
+            if (!trip.prediction.step(freshSample || trip.pendingMotionSample,
+                                      trip.arrowVelocity, elapsed)) {
+                ZHLOG("ARROW_PREDICTION_LIMIT shot=%u sample_age=%llu stale_us=%d predicted_cm=%d step_us=%d speed_cm_s=%d",
+                      trip.shotSeqSeen, (unsigned long long)(rt.session.tick-trip.lastSampleTick),
+                      traceNumber(trip.prediction.seconds(),1000000),
+                      traceNumber(trip.prediction.distance()), traceNumber(elapsed,1000000),
+                      traceNumber(length(trip.arrowVelocity)));
+                enterBailout(rt, "arrow prediction budget exceeded");
+                return;
+            }
             const float acceptanceError = trip.haveRequestedPosition ?
                 distance(world::playerPosition(), trip.lastRequestedPosition) : 0;
             if (std::isfinite(acceptanceError) && acceptanceError > trip.maxAcceptanceError)
@@ -377,24 +424,31 @@ void service(HookshotRuntime& rt, bool cancel, bool reaim, bool allowShots) {
             if (!trip.rotationValid)
                 enterBailout(rt, "player rotation unavailable");
             else if (!trip.follower.update(rt.session.tick, trip.arrowPosition,
-                                      trip.arrowVelocity, freshSample,
-                                      followPosition, followVelocity))
+                                      trip.arrowVelocity, freshSample || trip.pendingMotionSample,
+                                      followPosition, followVelocity, kConfig, elapsed))
                 enterBailout(rt, "follower sample rejected");
             else if (!arrowTrailPoint(followPosition, followVelocity, target, kConfig))
                 enterBailout(rt, "arrow trail direction unavailable");
             else if (!world::forcePlayerPose(trip.rotation, target))
                 enterBailout(rt, "carrier write refused");
             else {
+                trip.pendingMotionSample = false;
                 const float requestedStep = trip.haveRequestedPosition ?
                     distance(target, trip.lastRequestedPosition) : 0;
                 const auto followTick = rt.session.tick - trip.phaseTick;
-                if (followTick < 8 || followTick % 120 == 0)
+                if (ARROWBOUND_FLIGHT_DIAGNOSTICS && clock.serial % 6 == 0)
+                    ZHLOG("TRACE_FOLLOW_CLOCK shot=%u serial=%llu ns=%llu dt_us=%d scale_milli=%d",
+                          trip.shotSeqSeen, (unsigned long long)clock.serial,
+                          (unsigned long long)clock.nanoseconds, traceNumber(elapsed,1000000),
+                          traceNumber(clock.scale,1000));
+                if (followTick < 8 || followTick % 120 == 0 ||
+                    (ARROWBOUND_FLIGHT_DIAGNOSTICS && clock.serial % 6 == 0))
                     ZHLOG("ARROW_FOLLOW_SAMPLE tick=%llu body_error_cm=%d step_cm=%d correction_cm=%d accept_error_cm=%d sample_age=%llu",
                       (unsigned long long)(rt.session.tick - trip.phaseTick),
-                      (int)(distance(followPosition, trip.arrowPosition) * 100.0f),
-                      (int)(requestedStep * 100.0f),
-                      (int)(trip.follower.correctionDistance() * 100.0f),
-                      std::isfinite(acceptanceError) ? (int)(acceptanceError * 100.0f) : -1,
+                      traceNumber(distance(followPosition, trip.arrowPosition)),
+                      traceNumber(requestedStep),
+                      traceNumber(trip.follower.correctionDistance()),
+                      traceNumber(acceptanceError),
                       (unsigned long long)(rt.session.tick - trip.lastSampleTick));
                 trip.lastRequestedPosition = target;
                 trip.haveRequestedPosition = true;

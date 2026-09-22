@@ -24,6 +24,9 @@ add_executable(arrowbound_pure_tests
     test_wall_grip.cpp
     test_code_only_emblem.cpp
     test_settings_io.cpp
+    test_flight_diagnostics.cpp
+    test_flight_clock.cpp
+    test_ragdoll_transport.cpp
     ../src/program/modules/arrowbound/WallGripService.cpp
     ../src/engine/HookshotInput.cpp
     ../src/engine/ArrowSettings.cpp

@@ -1,4 +1,4 @@
-# Glideshot
+# Glideshot v0.9.2
 
 A hookshot for Tears of the Kingdom. Aim at a climbable wall from the ground, from a climb or from
 the air, fire a visible chain, zip along it at 60 m/s, and land in the game's own climbing state.
@@ -75,12 +75,16 @@ installation before replacing it. Do not overwrite a shared ROMFS tree belonging
 Glideshot cannot be combined with another executable mod that supplies `subsdk9`. Other subsdk
 slots can load beside it, but hook and memory compatibility still depends on the particular mods.
 
-The same module passed the combined gameplay and activation-persistence checks on Eden and Switch.
+Earlier builds passed combined gameplay and activation-persistence checks on Eden and Switch.
+This update's fast-arrow correction was tested on Citron with SRC's Bow of Light;
+it has not been retested on physical Switch. All 153 combined host tests pass.
 The current ZL + R3 binding overlaps Self Recall's default activation; compatibility with that
 combination has not been established for this update.
 
 ## Known issues
 
+- At very high arrow speeds, Link's legs can tuck backward while flight stays visible
+  and smooth. Wing-fused arrows and every modded bow have not been exhaustively tested.
 - The chain's coil can look blurred past the halfway point on long shots.
 - A very short shot can reach its half-metre standoff before the paraglider opens; the mod holds
   position until it does.
@@ -89,6 +93,7 @@ combination has not been established for this update.
 
 ## Current update
 
+- Fixes fast-arrow disappearance and choppy following without changing arrow physics.
 - Restores ZL + R3 manual activation and imports Arrowbound from its independently buildable source.
 - Adds native-arc arrow following, steady glider presentation, airborne slow-motion cleanup,
   cancellation, re-aiming and climbable-wall handoff.
@@ -142,10 +147,11 @@ guarantee that it builds or works as-is; you set up the toolchain and framework 
   `HeapSize 0x10000`, `JitSize 0x4000`, `InlinePoolSize 0x1000`, `LogBufferSize 512`. Leave the
   reloc table in `offsets.hpp` empty.
 - Compile definition: `TOTK_VERSION=121`. Program ID `0100F2C0115B6000`, module `subsdk9`.
+- This release retains `ARROWBOUND_FLIGHT_DIAGNOSTICS=1` to match the tested build.
 
 ## Tests
 
-- `tests/run_host_tests.ps1` runs both suites: 82 manual/composition cases and 53 Arrowbound
+- `tests/run_host_tests.ps1` runs both suites: 82 manual/composition cases and 71 Arrowbound
   cases. Keep the sibling Arrowbound folder. Tests need CMake, Ninja, a C++23 compiler and network
   access to fetch doctest 2.4.11 when it is not vendored. No game files are needed for the default run.
 

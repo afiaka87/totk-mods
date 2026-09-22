@@ -11,7 +11,7 @@ namespace arrowbound::arrow_hookshot {
 
 void onArrowRelease(void* equipmentUser);
 void onArrowUpdate(void* controller);
-void onArrowSample(void* controller);
+void onArrowSample(void* controller, float nativeDelta = 0);
 bool isTracked(void* controller);
 void onArrowImpact(void* controller, bool classified, int hitType,
                    const float* adjustedHit, const void* motionContext);

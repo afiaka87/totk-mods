@@ -7,6 +7,7 @@
 #include "HookshotInput.hpp"
 #include "HookshotLog.hpp"
 #include "HookshotWorld.hpp"
+#include "../../../pure/FlightDiagnostics.hpp"
 
 namespace arrowbound::wall_grip {
 using namespace pure;
@@ -64,6 +65,15 @@ const char* service(HookshotRuntime& rt) {
                                              wall.request, rt.session.tick)) {
             const auto verdict = wallGripSurface(rt.aim.sample, wall.impact, world::playerPosition(),
                 rt.session.worldGen, wall.request, kWall);
+#if ARROWBOUND_FLIGHT_DIAGNOSTICS
+            ZHLOG("TRACE_WALL shot=%u req=%u seq=%u gen=%u expected_gen=%u hit=%u known=%u motion=%u flags=%08x contact_error_cm=%d player_distance_cm=%d outside_cm=%d",
+                  rt.arrowTrip.shotSeqSeen, wall.request, rt.aim.sample.sequence,
+                  rt.aim.sample.generation, rt.session.worldGen, (unsigned)rt.aim.sample.hit,
+                  (unsigned)rt.aim.sample.hitBodyKnown, rt.aim.sample.hitMotionType,
+                  rt.aim.sample.shapeFlags, traceNumber(distance(rt.aim.sample.position, wall.impact)),
+                  traceNumber(distance(world::playerPosition(), rt.aim.sample.position)),
+                  traceNumber(dot(sub(world::playerPosition(), rt.aim.sample.position), rt.aim.sample.normal)));
+#endif
             ZHLOG("WALL_PROBE_RESULT shot=%u verdict=%s normal_milli=(%d,%d,%d)",
                   rt.arrowTrip.shotSeqSeen, verdictName(verdict),
                   finite3(rt.aim.sample.normal) ? (int)(rt.aim.sample.normal.x * 1000) : 0,
@@ -78,8 +88,14 @@ const char* service(HookshotRuntime& rt) {
         if (!grip.npadValid.load(std::memory_order_acquire)) return "wall controller unavailable";
         const Vec3 position = world::playerPosition();
         if (!finite3(position) || distance(position, wall.target) > kWall.maxApproachDistance ||
-            dot(sub(position, wall.target), wall.normal) < kWall.minOutsideDistance)
+            dot(sub(position, wall.target), wall.normal) < kWall.minOutsideDistance) {
+#if ARROWBOUND_FLIGHT_DIAGNOSTICS
+            ZHLOG("TRACE_WALL_ENVELOPE shot=%u distance_cm=%d outside_cm=%d glider=%u",
+                  rt.arrowTrip.shotSeqSeen, traceNumber(distance(position, wall.target)),
+                  traceNumber(dot(sub(position, wall.target), wall.normal)), rt.drive.parasailActive.load());
+#endif
             return "wall approach outside safe envelope";
+        }
         float basis[9]{}, facing[9]{};
         if (!world::readPlayerRotation(basis) ||
             !wallGripBasis(basis, wall.normal, wall.direction, facing) ||

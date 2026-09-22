@@ -269,7 +269,8 @@ TEST_CASE("late positions correct drift gradually without reversing or chasing L
     CHECK(distance(position, {0, 239, 0}) < 0.001f);
     REQUIRE(follower.update(239, {0, 239, 0}, velocity, true, position, direction));
     CHECK(distance(position, previous) == 0);
-    CHECK_FALSE(follower.update(242, {0, 242, 0}, velocity, true, position, direction));
+    REQUIRE(follower.update(242, {0, 242, 0}, velocity, true, position, direction, {}, 3.f/60));
+    CHECK(distance(position, {0,242,0}) < 0.001f);
     ArrowFollower unstarted;
     CHECK_FALSE(unstarted.update(0, {}, velocity, false, position, direction));
     ArrowConfig invalid;

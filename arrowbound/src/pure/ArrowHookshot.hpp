@@ -73,6 +73,24 @@ struct ArrowConfig {
     int bailoutTimeoutTicks = 90;
 };
 
+class ArrowPredictionBudget {
+    float seconds_ = 0;
+    float distance_ = 0;
+public:
+    // Presentation safety limits, not native arrow physics. Permit one observed 237 m/s, 50 ms step.
+    static constexpr float kMaxSeconds = 0.075f;
+    static constexpr float kMaxDistance = 12.0f;
+    float seconds() const { return seconds_; }
+    float distance() const { return distance_; }
+    bool step(bool fresh, Vec3 velocity, float elapsed) {
+        if (!finite3(velocity) || !std::isfinite(elapsed) || elapsed < 0) return false;
+        if (fresh) { seconds_ = distance_ = 0; return true; }
+        seconds_ += elapsed;
+        distance_ += length(velocity) * elapsed;
+        return std::isfinite(distance_) && seconds_ <= kMaxSeconds && distance_ <= kMaxDistance;
+    }
+};
+
 inline bool arrowMotionReady(Vec3 arrowPosition, Vec3 velocity) {
     const float speed = length(velocity);
     return finite3(arrowPosition) && finite3(velocity) &&
@@ -113,9 +131,11 @@ public:
     float correctionDistance() const { return correctionDistance_; }
 
     bool update(std::uint64_t tick, Vec3 position, Vec3 velocity, bool fresh,
-                Vec3& outPosition, Vec3& outVelocity, const ArrowConfig& config = {}) {
+                Vec3& outPosition, Vec3& outVelocity, const ArrowConfig& config = {},
+                float elapsedSeconds = 1.0f / 60.0f) {
         if (!arrowMotionReady(position, velocity) ||
-            !std::isfinite(config.followUpdatesPerSecond) || config.followUpdatesPerSecond <= 0)
+            !std::isfinite(config.followUpdatesPerSecond) || config.followUpdatesPerSecond <= 0 ||
+            !std::isfinite(elapsedSeconds) || elapsedSeconds < 0)
             return false;
         if (!started_) {
             if (!fresh) return false;
@@ -123,9 +143,9 @@ public:
             tick_ = tick;
             started_ = true;
         } else if (tick != tick_) {
-            // The caller advances once per gameplay update, never catch up a missing burst.
-            if (tick < tick_ || tick - tick_ != 1) return false;
-            const float dt = 1.0f / config.followUpdatesPerSecond;
+            // Presentation follows elapsed active simulation time, not input callback count.
+            if (tick < tick_) return false;
+            const float dt = elapsedSeconds;
             const Vec3 step = mul(velocity, dt);
             if (fresh && distance(position, samplePosition_) > 0.0001f) {
                 reference_ = samplePosition_ = position;

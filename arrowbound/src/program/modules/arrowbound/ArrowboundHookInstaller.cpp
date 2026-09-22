@@ -11,6 +11,9 @@
 #include "ParasailHandoff.hpp"
 #include "HookshotLog.hpp"
 #include "WallGripService.hpp"
+#include "../../../engine/FlightClock.hpp"
+#include "../../../engine/ModelVisibility.hpp"
+#include "../../../engine/RagdollTransport.hpp"
 
 namespace {
 namespace parasail = arrowbound::parasail;
@@ -172,7 +175,11 @@ HOOK_DEFINE_TRAMPOLINE(ArrowControllerUpdateHook) {
     static u64 Callback(void* controller, float* deltaTime) {
         arrowbound::arrow_hookshot::onArrowUpdate(controller);
         const u64 result = Orig(controller, deltaTime);
+#if ARROWBOUND_FLIGHT_DIAGNOSTICS
+        arrowbound::arrow_hookshot::onArrowSample(controller, deltaTime ? *deltaTime : 0);
+#else
         arrowbound::arrow_hookshot::onArrowSample(controller);
+#endif
         return result;
     }
 };
@@ -243,6 +250,9 @@ bool hookWordMatches(uintptr_t base, ptrdiff_t offset, u32 expected,
 
 namespace arrowbound::hooks {
 void install(std::uintptr_t mainBase, bool installShared) {
+    game_clock::install(mainBase);
+    model_trace::install(mainBase);
+    ragdoll_transport::install(mainBase);
     if (installShared) {
         ParasailEnterHook::InstallAtOffset(kParasailEnter);
         ParasailUpdateHook::InstallAtOffset(kParasailUpdate);

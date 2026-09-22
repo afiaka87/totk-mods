@@ -5,6 +5,9 @@ function(arrowbound_import host_target)
         "${arrow_root}/src/engine/*.cpp"
         "${arrow_root}/src/program/modules/arrowbound/*.cpp")
     add_library(arrowbound_feature OBJECT ${arrow_sources})
+    option(ARROWBOUND_FLIGHT_DIAGNOSTICS "Read-only arrow, carrier and camera traces" OFF)
+    target_compile_definitions(arrowbound_feature PRIVATE
+        ARROWBOUND_FLIGHT_DIAGNOSTICS=$<BOOL:${ARROWBOUND_FLIGHT_DIAGNOSTICS}>)
     get_target_property(host_includes ${host_target} INCLUDE_DIRECTORIES)
     list(FILTER host_includes EXCLUDE REGEX "${PROJECT_SOURCE_DIR}/src($|/)")
     # Host lib/program settings must define the one linked exlaunch heap/hook pools.

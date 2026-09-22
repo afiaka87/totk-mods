@@ -7,6 +7,9 @@
 #include "ArrowHookshotService.hpp"
 #include "ArrowModeService.hpp"
 #include "HookshotLog.hpp"
+#include "FlightDiagnostics.hpp"
+#include "../../../engine/ModelVisibility.hpp"
+#include "../../../engine/RagdollTransport.hpp"
 
 namespace arrowbound {
 namespace {
@@ -18,6 +21,9 @@ HookshotRuntime& runtime() { return g_runtime; }
 void note(const char* text) { ZHLOG("NOTE %s", text); }
 
 void resetSession(const char* reason) {
+    ragdoll_transport::reset();
+    model_trace::reset();
+    diagnostics::reset(reason);
     const bool wasActive = arrow_hookshot::engaged(g_runtime);
     arrow_hookshot::reset(g_runtime);
     g_runtime.inputOwnership = {};

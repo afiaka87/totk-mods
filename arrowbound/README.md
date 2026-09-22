@@ -1,4 +1,4 @@
-# Arrowbound
+# Arrowbound v0.1.1
 
 Activate the Arrowbound Emblem in Key Items, shoot a bow, and follow the arrow with the paraglider
 open. Arrows keep their vanilla speed, gravity, arc, range and lifetime. Aim in midair with normal
@@ -31,9 +31,11 @@ No game assets, replacement ROMFS files or custom GameData schema are distribute
 ## Requirements and validation
 
 Requires Tears of the Kingdom 1.2.1, build `9B4E43650501A4D4`, and an exefs-compatible loader.
-The feature is accepted on Eden and physical Switch inside combined Glideshot. The independent
-standalone entry point also builds, but the latest code-only standalone package has not received
-a separate observed hardware test. This folder is source, not a standalone binary download.
+Earlier shared gameplay passed on Eden and physical Switch inside combined Glideshot.
+This update's fast-arrow fix passed Citron tests with SRC's Bow of Light; ordinary
+bows remained smooth. Neither standalone boot nor physical Switch was retested for
+this update. At very high speed, Link's legs can still tuck backward. The attempted
+pose correction was reverted. This folder is source, not a binary download.
 
 ## Building from source
 
@@ -51,11 +53,12 @@ the required game-facing headers. The native source uses C++26.
   `EXL_USE_FAKEHEAP`, no `EXL_DEBUG`, `HeapSize 0x10000`, `JitSize 0x4000`,
   `InlinePoolSize 0x1000`, `LogBufferSize 512`, and an empty reloc table.
 - Compile definition `TOTK_VERSION=121`; program ID `0100F2C0115B6000`; module `subsdk9`.
+- This release retains `ARROWBOUND_FLIGHT_DIAGNOSTICS=1` to match the tested build.
 
 ## Host tests
 
 Run `tests/run_host_tests.ps1` with CMake, Ninja and a C++23 compiler installed. It fetches doctest
-2.4.11 if no vendored copy is available. The 53 cases cover following, ownership, wall capture,
+2.4.11 if no vendored copy is available. The 71 cases cover following, ownership, wall capture,
 carrier saving, menu text and persistence failure handling. Engine-facing tests use local stubs;
 the default suite needs no game files. Glideshot's test runner also runs this suite.
 

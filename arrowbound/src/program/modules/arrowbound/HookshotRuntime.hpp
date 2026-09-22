@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "ArrowHookshot.hpp"
+#include "../../../pure/FlightClock.hpp"
 #include "TargetValidator.hpp"
 #include "WallGrip.hpp"
 
@@ -131,6 +132,9 @@ struct ArrowTripState {
     pure::Vec3 arrowPosition{};
     pure::Vec3 arrowVelocity{};
     pure::ArrowFollower follower{};
+    pure::FlightClockCursor clock{};
+    pure::ArrowPredictionBudget prediction{};
+    bool pendingMotionSample = false;
     WallGripState wall{};
     pure::Vec3 lastRequestedPosition{};
     float maxAcceptanceError = 0;
