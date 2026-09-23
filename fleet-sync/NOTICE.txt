@@ -1,0 +1,13 @@
+Fleet Sync's original source is MIT Licensed, copyright Clay Mullis.
+Mod source: https://github.com/afiaka87/totk-mods/tree/main/fleet-sync
+
+The compiled module includes exlaunch (GPL-2.0), which is not relicensed by the
+MIT license on the first-party source. Upstream source:
+https://github.com/shadowninja108/exlaunch
+The native build uses base f698816d6e198afb0029ad5c07d55e7017a620fe with local
+framework adaptations. Framework, SDK and toolchain sources are not included
+in the source-only public folder. Refer to the build notes in README.md.
+
+No lotuskit, TextWriter, shared overlay or shared harness is compiled into Fleet Sync.
+Host tests use doctest 2.4.11 (MIT). Native development uses devkitA64/devkitPro.
+No game assets, fonts, executable dumps or save files are included.
