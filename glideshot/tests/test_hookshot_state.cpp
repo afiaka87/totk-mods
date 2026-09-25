@@ -3,8 +3,19 @@
 #include <doctest.h>
 
 #include "HookshotState.hpp"
+#include "ActivationButtons.hpp"
 
 using namespace zonai_hookshot::pure;
+
+TEST_CASE("manual activation uses ZL and L shoulder, neither stick click") {
+    using namespace zonai_hookshot::input_policy;
+    CHECK(kAimChord==0x140);
+    CHECK(aimHeld((1ull<<8)|(1ull<<6)));
+    CHECK_FALSE(aimHeld(1ull<<8));
+    CHECK_FALSE(aimHeld(1ull<<6));
+    CHECK_FALSE(aimHeld((1ull<<8)|(1ull<<4)));
+    CHECK_FALSE(aimHeld((1ull<<8)|(1ull<<5)));
+}
 
 namespace {
 
@@ -18,7 +29,7 @@ MachineInputs idleInputs() {
 MachineInputs chordInputs() {
     auto in = idleInputs();
     in.chordHeld = true;
-    in.stickClickHeld = true;
+    in.triggerHeld = true;
     return in;
 }
 
@@ -26,7 +37,7 @@ Machine targetingMachine(const MachineConfig& c = {}) {
     Machine m{};
     for (int i = 0; i <= c.armHoldTicks; ++i) step(m, chordInputs(), c);
     REQUIRE(m.phase == Phase::Targeting);
-    auto in = idleInputs();  // chord + stick click released
+    auto in = idleInputs();  // chord + L button released
     step(m, in, c);
     return m;
 }
@@ -46,51 +57,51 @@ TEST_CASE("arming requires the deliberate hold and enters targeting") {
     CHECK(m.phase == Phase::Targeting);
 }
 
-TEST_CASE("the final arming tick still consumes the right-stick click") {
+TEST_CASE("the final arming tick still consumes the L shoulder button") {
     Machine m{};
     MachineConfig c{};
     StepOutput out{};
     for (int i = 0; i <= c.armHoldTicks; ++i) out = step(m, chordInputs(), c);
     CHECK(m.phase == Phase::Targeting);
     CHECK(out.event == Event::TargetingEntered);
-    CHECK(out.consumed.stickClick);
+    CHECK(out.consumed.trigger);
 }
 
-TEST_CASE("right-stick click stays masked until physical release") {
+TEST_CASE("L shoulder button stays masked until physical release") {
     Machine m{};
     MachineConfig c{};
     for (int i = 0; i <= c.armHoldTicks; ++i) step(m, chordInputs(), c);
     CHECK(m.phase == Phase::Targeting);
 
     auto in = idleInputs();
-    in.stickClickHeld = true;
+    in.triggerHeld = true;
     auto out = step(m, in, c);
-    CHECK(out.consumed.stickClick);
+    CHECK(out.consumed.trigger);
 
     out = step(m, idleInputs(), c);
-    CHECK_FALSE(out.consumed.stickClick);
+    CHECK_FALSE(out.consumed.trigger);
 
     in = idleInputs();
-    in.stickClickHeld = true;
+    in.triggerHeld = true;
     out = step(m, in, c);
-    CHECK_FALSE(out.consumed.stickClick);
+    CHECK_FALSE(out.consumed.trigger);
 }
 
-TEST_CASE("arming abandoned keeps masking the held stick click") {
+TEST_CASE("arming abandoned keeps masking the held L button") {
     Machine m{};
     MachineConfig c{};
     step(m, chordInputs(), c);
     CHECK(m.phase == Phase::Arming);
 
     auto in = idleInputs();
-    in.stickClickHeld = true;
+    in.triggerHeld = true;
     auto out = step(m, in, c);
     CHECK(out.event == Event::ArmingAbandoned);
     CHECK(m.phase == Phase::Idle);
-    CHECK(out.consumed.stickClick);
+    CHECK(out.consumed.trigger);
 
     out = step(m, idleInputs(), c);
-    CHECK_FALSE(out.consumed.stickClick);
+    CHECK_FALSE(out.consumed.trigger);
 }
 
 TEST_CASE("stale controller frames advance nothing") {
@@ -104,7 +115,7 @@ TEST_CASE("stale controller frames advance nothing") {
     stale.worldReady = true;
     stale.freshInput = false;
     stale.chordHeld = true;       // last known state
-    stale.stickClickHeld = true;
+    stale.triggerHeld = true;
     for (int i = 0; i < 50; ++i) step(m, stale, c);
     CHECK(m.phase == Phase::Arming);
     CHECK(m.armTicks == held);
@@ -263,30 +274,30 @@ TEST_CASE("world loss resets fail-closed from every active phase") {
     SUBCASE("from arming - latch survives while the button stays held") {
         Machine m{};
         step(m, chordInputs(), c);
-        CHECK(m.stickClickLatched);
+        CHECK(m.triggerLatched);
         auto lostHeld = lost;
-        lostHeld.stickClickHeld = true;
+        lostHeld.triggerHeld = true;
         auto out = step(m, lostHeld, c);
         CHECK(out.event == Event::Reset);
         CHECK(m.phase == Phase::Idle);
-        CHECK(m.stickClickLatched);
-        CHECK(out.consumed.stickClick);
+        CHECK(m.triggerLatched);
+        CHECK(out.consumed.trigger);
         out = step(m, lostHeld, c);
-        CHECK(out.consumed.stickClick);
+        CHECK(out.consumed.trigger);
         out = step(m, lost, c);
-        CHECK_FALSE(m.stickClickLatched);
-        CHECK_FALSE(out.consumed.stickClick);
+        CHECK_FALSE(m.triggerLatched);
+        CHECK_FALSE(out.consumed.trigger);
     }
     SUBCASE("from arming - stale samples during world loss keep the latch") {
         Machine m{};
         step(m, chordInputs(), c);
         auto lostStale = lost;
         lostStale.freshInput = false;
-        lostStale.stickClickHeld = true;  // last known state
+        lostStale.triggerHeld = true;  // last known state
         step(m, lostStale, c);
         auto out = step(m, lostStale, c);
-        CHECK(m.stickClickLatched);
-        CHECK(out.consumed.stickClick);
+        CHECK(m.triggerLatched);
+        CHECK(out.consumed.trigger);
     }
     SUBCASE("from targeting") {
         auto m = targetingMachine(c);
@@ -328,16 +339,16 @@ TEST_CASE("world loss resets fail-closed from every active phase") {
 }
 
 TEST_CASE("no buttons are owned outside active states") {
-    CHECK_FALSE(ownedButtons(Phase::Idle).stickClick);
+    CHECK_FALSE(ownedButtons(Phase::Idle).trigger);
     CHECK_FALSE(ownedButtons(Phase::Idle).a);
     CHECK_FALSE(ownedButtons(Phase::Idle).b);
-    CHECK_FALSE(ownedButtons(Phase::Cooldown).stickClick);
+    CHECK_FALSE(ownedButtons(Phase::Cooldown).trigger);
     CHECK_FALSE(ownedButtons(Phase::Cooldown).a);
     CHECK_FALSE(ownedButtons(Phase::Cooldown).b);
 
     Machine m{};
     auto out = step(m, idleInputs());
-    CHECK_FALSE(out.consumed.stickClick);
+    CHECK_FALSE(out.consumed.trigger);
     CHECK_FALSE(out.consumed.a);
     CHECK_FALSE(out.consumed.b);
 }
@@ -348,7 +359,7 @@ TEST_CASE("targeting owns A and B every tick") {
     auto out = step(m, idleInputs(), c);
     CHECK(out.consumed.a);
     CHECK(out.consumed.b);
-    CHECK_FALSE(out.consumed.stickClick);
+    CHECK_FALSE(out.consumed.trigger);
 }
 
 namespace {

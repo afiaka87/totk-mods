@@ -33,5 +33,5 @@ add_custom_command(OUTPUT "${HOOKSHOT_SHADER_HEADER}"
     COMMENT "Compiling the chain and reticle shaders"
     VERBATIM)
 add_custom_target(chain_shaders DEPENDS "${HOOKSHOT_SHADER_HEADER}")
-add_dependencies(subsdk9 chain_shaders)
-target_include_directories(subsdk9 PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+add_dependencies(${TOTK_MOD_SUBSDK_TARGET} chain_shaders)
+target_include_directories(${TOTK_MOD_SUBSDK_TARGET} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")

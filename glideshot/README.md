@@ -1,4 +1,4 @@
-# Glideshot v0.9.2
+# Glideshot v0.9.4
 
 A hookshot for Tears of the Kingdom. Aim at a climbable wall from the ground, from a climb or from
 the air, fire a visible chain, zip along it at 60 m/s, and land in the game's own climbing state.
@@ -10,14 +10,14 @@ on Eden and physical Nintendo Switch with Tears of the Kingdom 1.2.1.
 
 ## Controls
 
-- Hold **ZL + R3** (click the right stick) briefly to raise the aim. A green
+- Hold **ZL + L** (left shoulder button) briefly to raise the aim. A green
   diamond marks a wall the chain can take; a red diamond marks a surface it refuses.
 - Press **A** to fire. The chain draws to the anchor at once and Link follows one tick later.
 - Press **B** at any point to let go. Losing the world (a shrine door, a warp, a load) also ends
   the trip.
 
 While the aim is up, its activation buttons are hidden from the game. Drawing the bow releases
-manual traversal; ZL + R3 releases an Arrowbound trip before manual targeting begins.
+manual traversal; ZL + L releases an Arrowbound trip before manual targeting begins.
 
 ## Arrowbound
 
@@ -66,20 +66,18 @@ compatible with Atmosphere's contents layout.
    page can describe its own testing state.
 3. On Switch, copy `0100F2C0115B6000` into `atmosphere/contents/` on the SD card. On Eden, use
    Open Mod Data Location and place the add-on folder containing `exefs` there, then enable it.
-4. Confirm that the installed files are `exefs/subsdk9` and `exefs/main.npdm`.
+4. Confirm that the installed files are `exefs/subsdk5` and `exefs/main.npdm`.
 
 Do not enable standalone Arrowbound beside this combined build. Remove older Glideshot/Arrowbound
 ROMFS overrides when upgrading; this build needs only the two `exefs` files. Back up an existing
 installation before replacing it. Do not overwrite a shared ROMFS tree belonging to other mods.
 
-Glideshot cannot be combined with another executable mod that supplies `subsdk9`. Other subsdk
+Glideshot cannot be combined with another executable mod that supplies `subsdk5`. Other subsdk
 slots can load beside it, but hook and memory compatibility still depends on the particular mods.
 
-Earlier builds passed combined gameplay and activation-persistence checks on Eden and Switch.
-This update's fast-arrow correction was tested on Citron with SRC's Bow of Light;
-it has not been retested on physical Switch. All 153 combined host tests pass.
-The current ZL + R3 binding overlaps Self Recall's default activation; compatibility with that
-combination has not been established for this update.
+The drawing, wall-grip and embedded Arrowbound fixes passed a combined-mod smoke
+test on physical Switch with Survey and Self Recall installed. Earlier builds
+passed Eden and Citron checks. This is not exhaustive compatibility testing.
 
 ## Known issues
 
@@ -92,6 +90,12 @@ combination has not been established for this update.
   loaded at that moment. When it is not, the interface fallbacks play instead.
 
 ## Current update
+
+- Uses ZL + L, avoiding Self Recall's ZL + R3 activation.
+- Preserves both renderers when Glideshot and Survey share the drawing callback.
+- Restores destination-wall grip and Arrowbound's flight clock alongside Self Recall.
+
+## Earlier Arrowbound integration
 
 - Fixes fast-arrow disappearance and choppy following without changing arrow physics.
 - Restores ZL + R3 manual activation and imports Arrowbound from its independently buildable source.
@@ -146,12 +150,12 @@ guarantee that it builds or works as-is; you set up the toolchain and framework 
   `EXL_MODULE_NAME "zonai-hookshot"`, keep `EXL_USE_FAKEHEAP`, remove `EXL_DEBUG`, and use
   `HeapSize 0x10000`, `JitSize 0x4000`, `InlinePoolSize 0x1000`, `LogBufferSize 512`. Leave the
   reloc table in `offsets.hpp` empty.
-- Compile definition: `TOTK_VERSION=121`. Program ID `0100F2C0115B6000`, module `subsdk9`.
+- Compile definition: `TOTK_VERSION=121`. Program ID `0100F2C0115B6000`, module `subsdk5`.
 - This release retains `ARROWBOUND_FLIGHT_DIAGNOSTICS=1` to match the tested build.
 
 ## Tests
 
-- `tests/run_host_tests.ps1` runs both suites: 82 manual/composition cases and 71 Arrowbound
+- `tests/run_host_tests.ps1` runs both suites: 83 manual/composition cases and 71 Arrowbound
   cases. Keep the sibling Arrowbound folder. Tests need CMake, Ninja, a C++23 compiler and network
   access to fetch doctest 2.4.11 when it is not vendored. No game files are needed for the default run.
 
@@ -169,3 +173,21 @@ highly permissive (MIT) and I hope this adds to the community.
 ## License
 
 MIT - see `LICENSE` at the repository root. `NOTICE` describes the exlaunch dependency.
+
+## Downloads
+
+Use `glideshot-v0.9.4-emulator-subsdk5.zip` or `glideshot-v0.9.4-switch-subsdk5.zip`.
+The Switch archive wraps the same payload in `0100F2C0115B6000/` for extraction
+under `atmosphere/contents/`. Check the supplied SHA256SUMS.txt before installation.
+Remove only this mod's old subsdk9 when upgrading from a pre-slot-5 installation;
+preserve slot 9 if it belongs to Survey or another mod.
+
+The sibling `runtime-support/include` supplies the MIT hook-coexistence helpers.
+Its `tests` directory checks callback chaining alongside Glideshot and Arrowbound.
+
+## Executable slot
+
+Uses `subsdk5`. When upgrading, remove this mod's old `exefs/subsdk9`
+from its own add-on folder before installing the new package. On Switch, remove
+only the old executable belonging to this mod; preserve another mod's slot 9 file.
+Older downloads still use slot 9; use the slot-migrated version.

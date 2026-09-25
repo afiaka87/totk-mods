@@ -17,6 +17,7 @@
 #include "ChainRenderer.hpp"
 #include "ChainShaders.hpp"
 #include "ChainVisual.hpp"
+#include "totk/render/PfxHook.hpp"
 
 namespace zonai_hookshot::render {
 namespace {
@@ -26,7 +27,6 @@ using pure::Vec3;
 
 // Pinned engine addresses (TotK 1.2.1).
 
-constexpr std::uintptr_t kDrawPfx = 0xc30c48;          // ModelSceneExtension::drawPfx_
 constexpr std::uintptr_t kGetProcSlot = 0x46170f0;     // nvnDeviceGetProcAddress
 constexpr std::uintptr_t kGraphicsSlot = 0x462ef88;    // graphics singleton; device at +0x30
 constexpr std::uintptr_t kUniformAllocatorSlot = 0x46382e0;
@@ -477,9 +477,10 @@ void draw(void* drawContext, void* scene, void* context) {
     native<void (*)(void*, void*)>(kGraphicsContextApply)(state, drawContext);
 }
 
-HOOK_DEFINE_TRAMPOLINE(DrawPfxHook) {
+struct DrawPfxHook {
+    inline static totk::render::PfxCallback previous{};
     static std::uint64_t Callback(void* extension, void* args) {
-        const auto result = Orig(extension, args);
+        const auto result = previous(extension, args);
         // Phase 1, pass 0, view 0: one draw per frame after the opaque scene.
         if (!args || read<unsigned>(args, 0x1c) != 0 || read<unsigned>(args, 0x18) != 1)
             return result;
@@ -494,13 +495,8 @@ HOOK_DEFINE_TRAMPOLINE(DrawPfxHook) {
 
 void installShaderPass(std::uintptr_t mainBase) {
     g_base = mainBase;
-    const auto* code = reinterpret_cast<const unsigned*>(mainBase + kDrawPfx);
-    if (code[0] != 0xd104c3ff || code[1] != 0xa90d7bfd) {
-        Logging.Log("[zonai-hookshot] CHAIN_SHADER unsupported hook bytes=%08x,%08x; pass disabled",
-                    code[0], code[1]);
-        return;
-    }
-    DrawPfxHook::InstallAtOffset(kDrawPfx);
+    if (!totk::render::installPfxHook(mainBase, DrawPfxHook::Callback,
+                                     DrawPfxHook::previous, "glideshot")) return;
     Logging.Log("[zonai-hookshot] CHAIN_SHADER installed pool=%u fragment=%u",
                 static_cast<unsigned>(sizeof(g_codeMemory)),
                 static_cast<unsigned>(sizeof(shaders::fragCode)));

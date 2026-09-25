@@ -9,6 +9,7 @@
 #include "ClimbCapture.hpp"
 #include "ParasailHandoff.hpp"
 #include "TransportController.hpp"
+#include "GripHooks.hpp"
 
 namespace {
 namespace transport = zonai_hookshot::transport;
@@ -16,21 +17,17 @@ namespace parasail = zonai_hookshot::parasail;
 namespace capture = zonai_hookshot::capture;
 zonai_hookshot::hooks::Observers g_observers{};
 
-constexpr ptrdiff_t kNpadControllerCalcImpl = 0x024789BC;
 constexpr ptrdiff_t kParasailEnter = 0x01D6E54C;
 constexpr ptrdiff_t kParasailUpdate = 0x01D6E810;
 constexpr ptrdiff_t kParasailLeave = 0x01D6F2A0;
 constexpr ptrdiff_t kFallEnter = 0x01D61428;
 constexpr ptrdiff_t kFallUpdate = 0x01D61790;
 constexpr ptrdiff_t kFallLeave = 0x01D61988;
-constexpr ptrdiff_t kClimbUpdate = 0x01D56D50;
 constexpr ptrdiff_t kJumpMultiplierSelect = 0x0107EA8C;
 constexpr ptrdiff_t kJumpHeightClampSetup = 0x0107EA94;
 constexpr u32 kJumpMultiplierSelectWord = 0x1E281C21;
 constexpr u32 kJumpHeightClampWord = 0x1E229001;
 constexpr ptrdiff_t kGlideEntryPredicate = 0x01722210;
-constexpr u32 kNpadControllerCalcImplWord = 0x6DB923E9;
-constexpr u32 kClimbUpdateWord = 0xA9BE7BFD;
 
 HOOK_DEFINE_TRAMPOLINE(NpadControllerCalcImplHook) {
     static void Callback(void* controller) {
@@ -94,11 +91,12 @@ HOOK_DEFINE_TRAMPOLINE(FallLeaveHook) {
     }
 };
 
-HOOK_DEFINE_TRAMPOLINE(ClimbUpdateHook) {
-    static u64 Callback(void* a1, void* a2) {
+struct ClimbUpdateHook {
+    inline static zonai_hookshot::hooks::ClimbCallback previous{};
+    static std::uint64_t Callback(void* a1, void* a2, void* a3) {
         capture::onClimbUpdateHook(a1);
         if (g_observers.climbUpdate) g_observers.climbUpdate(a1);
-        return Orig(a1, a2);
+        return previous(a1, a2, a3);
     }
 };
 
@@ -132,13 +130,10 @@ bool hookWordMatches(uintptr_t base, ptrdiff_t offset, u32 expected,
 namespace zonai_hookshot::hooks {
 void installUnique(std::uintptr_t mainBase, const Observers& observers) {
     g_observers = observers;
-    const bool gripReady =
-        hookWordMatches(mainBase, kNpadControllerCalcImpl, kNpadControllerCalcImplWord, "grip input") &&
-        hookWordMatches(mainBase, kClimbUpdate, kClimbUpdateWord, "grip climb release");
-    if (gripReady) {
-        NpadControllerCalcImplHook::InstallAtOffset(kNpadControllerCalcImpl);
-        ClimbUpdateHook::InstallAtOffset(kClimbUpdate);
-    }
+    const bool gripReady = installGripHooks(mainBase, ClimbUpdateHook::Callback,
+        ClimbUpdateHook::previous, [] {
+            NpadControllerCalcImplHook::InstallAtOffset(kGripController);
+        });
     if (g_observers.gripHooksReady) g_observers.gripHooksReady(gripReady);
     ParasailEnterHook::InstallAtOffset(kParasailEnter);
     ParasailUpdateHook::InstallAtOffset(kParasailUpdate);

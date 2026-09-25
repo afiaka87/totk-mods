@@ -123,7 +123,7 @@ void handleEvent(HookshotRuntime& rt, Event event) {
             resetSession("world");
             break;
         case Event::CooldownDone:
-            note("hold ZL + right-stick click to aim");
+            note("hold ZL + L to aim");
             break;
         default:
             break;
@@ -171,8 +171,8 @@ void runtimeTick(void* device) {
     MachineInputs in{};
     in.worldReady = ready;
     in.freshInput = fresh;
-    in.chordHeld = g_allowActivation && (buttons & input::kAimChord) == input::kAimChord;
-    in.stickClickHeld = (buttons & input::kButtonRStick) != 0;
+    in.chordHeld = g_allowActivation && input_policy::aimHeld(buttons);
+    in.triggerHeld = (buttons & input::kButtonL) != 0;
 
     const bool ownAim = in.chordHeld || rt.machine.phase == Phase::Targeting ||
                         rt.machine.phase == Phase::Confirming;
@@ -258,7 +258,7 @@ void runtimeTick(void* device) {
     std::uint64_t mask =
         (out.consumed.a ? input::kButtonA : 0ull) |
         (out.consumed.b ? input::kButtonB : 0ull) |
-        (out.consumed.stickClick ? input::kButtonRStick : 0ull);
+        (out.consumed.trigger ? input::kButtonL : 0ull);
     if (ownAim) mask |= input::kAimChord;
     if (mask) frame.maskOwnedButtons(mask);
 }
@@ -276,9 +276,9 @@ void moduleInit(std::uintptr_t base) {
 void moduleEnter() {
     HookshotRuntime& rt = runtime();
     silenceAudio();
-    const bool latch = rt.machine.stickClickLatched;  // quarantine survives re-entry
+    const bool latch = rt.machine.triggerLatched;  // quarantine survives re-entry
     rt.machine = {};
-    rt.machine.stickClickLatched = latch;
+    rt.machine.triggerLatched = latch;
     rt.prevButtons = 0;
     rt.lastButtons = 0;
     rt.haveButtons = false;
@@ -304,7 +304,7 @@ void moduleRaycast(wwpg::RaycastFn original, const void* from,
 
 const wwpg::Module kModule{
     "ZONAI HOOKSHOT",
-    "Hold ZL+R3 to aim; A fires and B cancels",
+    "Hold ZL+L to aim; A fires and B cancels",
     "Green accepts, red refuses; traversal ends in native Climb",
     "Complete: target, fire, zip, and enter native Climb.",
     moduleInit,
@@ -329,7 +329,7 @@ bool beginTargeting() {
 
     rt.machine.phase = pure::Phase::Targeting;
     rt.machine.armTicks = 0;
-    rt.machine.stickClickLatched = false;
+    rt.machine.triggerLatched = false;
     // The first post-wheel sample establishes the edge baseline so a held face button cannot fire.
     rt.prevButtons = 0;
     rt.lastButtons = 0;
@@ -341,7 +341,7 @@ bool beginTargeting() {
 
 bool movementEngaged() {
     const HookshotRuntime& rt = runtime();
-    return rt.machine.phase != pure::Phase::Idle || rt.machine.stickClickLatched;
+    return rt.machine.phase != pure::Phase::Idle || rt.machine.triggerLatched;
 }
 
 bool worldReady() { return world::ready(); }
@@ -358,9 +358,9 @@ void yieldMovement() {
     transport::stopDrive(rt, "bow aim");
     aim::abandonPending();
     silenceAudio();
-    const bool latch = rt.machine.stickClickLatched;
+    const bool latch = rt.machine.triggerLatched;
     rt.machine = {};
-    rt.machine.stickClickLatched = latch;
+    rt.machine.triggerLatched = latch;
     rt.launch = {};
     rt.positionDrive = {};
     rt.capture = {};
