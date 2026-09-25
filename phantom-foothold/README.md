@@ -15,13 +15,13 @@ Also enables you to climb on ceilings!
    (`load/0100F2C0115B6000/`).
 2. Extract the zip there, producing:
    ```
-   phantom-foothold/exefs/subsdk9
+   phantom-foothold/exefs/subsdk2
    phantom-foothold/exefs/main.npdm
    phantom-foothold/cheats/9B4E43650501A4D4.txt
    ```
 3. Enable **phantom-foothold** in the game's properties / add-ons list.
 
-Developed and tested on the Eden emulator.
+Developed and tested on an emulator.
 
 ## Install (Switch, NOT SUPPORTED)
 
@@ -31,8 +31,7 @@ exlaunch-based mods, but this mod has not been tested on hardware.
 
 ## Compatibility
 
-- Only **one** executable (`subsdk9`) mod can be active at a time. Disable other code mods
-  (ordinary data/texture mods are unaffected). Two enabled subsdk9 mods migght hang the game at boot.
+- Do not enable another mod that supplies `subsdk2`. Other executable slots are separate; this does not guarantee hook or memory compatibility.
 
 ## Building from source
 
@@ -49,7 +48,7 @@ my mods as open source as possible.
   `EXL_MODULE_NAME "phantomfoothold"`, keep `EXL_USE_FAKEHEAP`, remove `EXL_DEBUG`, and use
   `HeapSize 0x10000`, `JitSize 0x5000`, `InlinePoolSize 0x2000`, `LogBufferSize 512`. Leave the
   reloc table in `offsets.hpp` empty.
-- Program ID `0100F2C0115B6000`, module `subsdk9`. The cheat file in `cheats/` is applied by the
+- Program ID `0100F2C0115B6000`, module `subsdk2`. The cheat file in `cheats/` is applied by the
   emulator or Atmosphere, not compiled.
 
 ## A note on the code
@@ -67,3 +66,10 @@ my spare time, and I value my time. And again, the license is highly permissive 
 ## License
 
 MIT - see `LICENSE` at the repository root. `NOTICE` describes the exlaunch dependency.
+
+## Executable slot
+
+Uses `subsdk2`. When upgrading, remove this mod's old `exefs/subsdk9`
+from its own add-on folder before installing the new package. On Switch, remove
+only the old executable belonging to this mod; preserve another mod's slot 9 file.
+Older downloads still use slot 9; use the slot-migrated version.
