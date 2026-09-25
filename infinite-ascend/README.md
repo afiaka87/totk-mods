@@ -24,8 +24,8 @@ Downloads: GameBanana / NexusMods (TODO links). This repository holds source onl
 ## Install
 
 1. Open the game's mod/load directory (`load/0100F2C0115B6000/`).
-2. Extract the release zip so it produces `infinite-ascend/exefs/{main.npdm, subsdk9}`.
-3. Enable `infinite-ascend`. Only one executable (`subsdk9`) mod can be active at a time.
+2. Extract the release zip so it produces `infinite-ascend/exefs/{main.npdm, subsdk4}`.
+3. Enable `infinite-ascend`. Do not enable another mod that supplies `subsdk4`.
 
 ## Building from source
 
@@ -42,7 +42,7 @@ guarantee that it builds or works as-is; you set up the toolchain and framework 
   `EXL_MODULE_NAME "zonai-ascend"`, keep `EXL_USE_FAKEHEAP`, remove `EXL_DEBUG`, and use
   `HeapSize 0x10000`, `JitSize 0x4000`, `InlinePoolSize 0x1000`, `LogBufferSize 512`. Leave the
   reloc table in `offsets.hpp` empty.
-- Compile definition: `TOTK_VERSION=121`. Program ID `0100F2C0115B6000`, module `subsdk9`.
+- Compile definition: `TOTK_VERSION=121`. Program ID `0100F2C0115B6000`, module `subsdk4`.
 
 ## Tests
 
@@ -50,7 +50,7 @@ guarantee that it builds or works as-is; you set up the toolchain and framework 
   (needs CMake, a C++23 compiler, and network access to fetch doctest).
 - `tests/verify_main121.ps1 -Binary <main>` - checks the twelve hooked instruction words against
   your own 1.2.1 executable dump.
-- `tests/verify_runtime_imports.ps1 -Elf <subsdk9.elf>` - checks the linked module for a forbidden
+- `tests/verify_runtime_imports.ps1 -Elf <subsdk4.elf>` - checks the linked module for a forbidden
   runtime import.
 
 ## A note on the code
@@ -67,3 +67,10 @@ highly permissive (MIT) and I hope this adds to the community.
 ## License
 
 MIT - see `LICENSE` at the repository root. `NOTICE` describes the exlaunch dependency.
+
+## Executable slot
+
+Uses `subsdk4`. When upgrading, remove this mod's old `exefs/subsdk9`
+from its own add-on folder before installing the new package. On Switch, remove
+only the old executable belonging to this mod; preserve another mod's slot 9 file.
+Older downloads still use slot 9; use the slot-migrated version.
