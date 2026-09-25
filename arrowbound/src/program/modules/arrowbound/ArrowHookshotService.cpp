@@ -91,6 +91,7 @@ void armParasail(HookshotRuntime& rt) {
 
 bool beginFollow(HookshotRuntime& rt, Vec3 position, Vec3 velocity) {
     if (!world::readPlayerRotation(rt.arrowTrip.rotation)) return false;
+    rt.arrow.followBegins.fetch_add(1,std::memory_order_relaxed);
     rt.arrowTrip.rotationValid = true;
     rt.arrowTrip.arrowPosition = position;
     rt.arrowTrip.arrowVelocity = velocity;
@@ -151,6 +152,7 @@ void onArrowRelease(void* equipmentUser) {
     using IsPouchUserFn = std::uint64_t (*)(void*);
     const auto isPouchUser = reinterpret_cast<IsPouchUserFn>(rt.session.base + kEquipmentIsPouchUser);
     if ((isPouchUser(equipmentUser) & 1u) == 0) return;
+    mailbox.releaseObserved.fetch_add(1,std::memory_order_relaxed);
     diagnostics::release(mailbox.modeEnabled.load(std::memory_order_acquire) != 0);
     if (mailbox.modeEnabled.load(std::memory_order_acquire) == 0 ||
         !mailbox.acceptShots.exchange(0, std::memory_order_acq_rel)) return;
@@ -401,6 +403,7 @@ void service(HookshotRuntime& rt, bool cancel, bool reaim, bool allowShots) {
             // Contention skips a callback, not elapsed time; the next snapshot contains the total.
             if (!game_clock::snapshot(clock)) return;
             if (!trip.clock.step(clock, elapsed)) {
+                mailbox.clockRejects.fetch_add(1,std::memory_order_relaxed);
                 ZHLOG("ARROW_CLOCK_REJECT status=%u serial=%llu", unsigned(clock.status),
                       (unsigned long long)clock.serial);
                 enterBailout(rt, "simulation clock unavailable");
@@ -433,6 +436,7 @@ void service(HookshotRuntime& rt, bool cancel, bool reaim, bool allowShots) {
                 enterBailout(rt, "carrier write refused");
             else {
                 trip.pendingMotionSample = false;
+                mailbox.carrierWrites.fetch_add(1,std::memory_order_relaxed);
                 const float requestedStep = trip.haveRequestedPosition ?
                     distance(target, trip.lastRequestedPosition) : 0;
                 const auto followTick = rt.session.tick - trip.phaseTick;

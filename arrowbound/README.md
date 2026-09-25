@@ -1,4 +1,4 @@
-# Arrowbound v0.1.1
+# Arrowbound v0.1.2
 
 Activate the Arrowbound Emblem in Key Items, shoot a bow, and follow the arrow with the paraglider
 open. Arrows keep their vanilla speed, gravity, arc, range and lifetime. Aim in midair with normal
@@ -13,7 +13,7 @@ slow motion; releasing the shot ends slow motion for the flight.
 - No targeting reticle, chain or arrow refund is added by this feature.
 
 The same feature source is imported by [Glideshot](../glideshot), which also supplies manual
-ZL + R3 wall targeting. Glideshot and Arrowbound must not be enabled as separate code add-ons
+ZL + L wall targeting. Glideshot and Arrowbound must not be enabled as separate code add-ons
 together: the combined Glideshot build already contains Arrowbound.
 
 ## Persistence and the emblem
@@ -32,10 +32,10 @@ No game assets, replacement ROMFS files or custom GameData schema are distribute
 
 Requires Tears of the Kingdom 1.2.1, build `9B4E43650501A4D4`, and an exefs-compatible loader.
 Earlier shared gameplay passed on Eden and physical Switch inside combined Glideshot.
-This update's fast-arrow fix passed Citron tests with SRC's Bow of Light; ordinary
-bows remained smooth. Neither standalone boot nor physical Switch was retested for
-this update. At very high speed, Link's legs can still tuck backward. The attempted
-pose correction was reverted. This folder is source, not a binary download.
+The latest shared flight-clock correction passed inside Glideshot on physical
+Switch alongside Self Recall. Standalone hardware testing has not been repeated.
+Earlier fast-arrow fixes passed Citron tests. At very high speed, Link's legs can
+still tuck backward. This folder is source, not a binary download.
 
 ## Building from source
 
@@ -47,6 +47,7 @@ the required game-facing headers. The native source uses C++26.
   host also requires its documented InlineFloatCtx fix for the manual jump hook.
 - Standalone: compile `src/program/main.cpp`, `src/program/modules/arrowbound` and `src/engine`.
   Include `src/program`, `src/pure`, `src/engine`, `src/support` and `src/include`.
+- Retain the sibling `runtime-support/include` folder for the MIT detour decoder.
 - Combined: `cmake/ImportArrowbound.cmake` imports the feature object target without its standalone
   entry point, using the host's exlaunch configuration and exposing `src/include/arrowbound/Module.hpp`.
 - Use exlaunch's consumer templates, which are not included. Set `EXL_MODULE_NAME "arrowbound"`,

@@ -62,6 +62,7 @@ struct DriveMailbox {
 };
 
 struct ArrowMailbox {
+    std::atomic<std::uint32_t> releaseObserved{0}, followBegins{0}, clockRejects{0}, carrierWrites{0};
     std::atomic<std::uintptr_t> playerActor{0};
     std::atomic<std::uintptr_t> controllerToken{0};
     std::atomic<std::uint32_t> modeEnabled{0};

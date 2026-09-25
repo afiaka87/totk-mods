@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
 #include "FlightClock.hpp"
+#include "FlightClockHook.hpp"
 #include "../program/modules/arrowbound/HookshotLog.hpp"
 #include <lib.hpp>
 #include <cstring>
@@ -16,9 +17,10 @@ template<class T> T read(const void* pointer, std::size_t offset = 0) {
     std::memcpy(&value, static_cast<const char*>(pointer) + offset, sizeof(value));
     return value;
 }
-HOOK_DEFINE_TRAMPOLINE(FlightFrameTimeHook) {
+struct FlightFrameTimeHook {
+    inline static FrameCallback previous{};
     static void Callback(void* module, const void* pauseContext, float scale) {
-        Orig(module, pauseContext, scale);
+        previous(module, pauseContext, scale);
         const auto* holder = read<const void*>(reinterpret_cast<const void*>(base + 0x0462E038));
         const auto* system = holder ? read<const void*>(holder) : nullptr;
         const auto* time = system ? read<const void*>(system, 0xC8) : nullptr;
@@ -35,12 +37,7 @@ HOOK_DEFINE_TRAMPOLINE(FlightFrameTimeHook) {
 void install(std::uintptr_t mainBase) {
     base = mainBase;
     constexpr auto offset = 0x007EDC00;
-    const auto actual = read<std::uint32_t>(reinterpret_cast<const void*>(base + offset));
-    if (actual != 0xF9400828) {
-        ZHLOG("HOOK DISABLED flight clock word=%08x expected=f9400828", actual);
-        return;
-    }
-    FlightFrameTimeHook::InstallAtOffset(offset);
+    installClockHook(base + offset, FlightFrameTimeHook::Callback, FlightFrameTimeHook::previous);
 }
 bool snapshot(pure::FlightTime& out) { return published.snapshot(out); }
 }

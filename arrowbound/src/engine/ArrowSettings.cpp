@@ -15,6 +15,24 @@ constexpr const char* kPath = "arrowbound:/arrowbound/settings.bin";
 
 class Store {
 public:
+    bool writeFlightStatus(const char* data, std::size_t size) {
+        if (!mounted_ || size != 1024) return false;
+        constexpr const char* path="arrowbound:/arrowbound/clock-coexistence-status.txt";
+        (void)nn::fs::CreateDirectory(kDirectory);
+        nn::fs::FileHandle handle{};
+        auto result=nn::fs::OpenFile(&handle,path,nn::fs::OpenMode_ReadWrite);
+        if (result.IsFailure()) {
+            result=nn::fs::CreateFile(path,size);
+            if (result.IsSuccess()) result=nn::fs::OpenFile(&handle,path,nn::fs::OpenMode_ReadWrite);
+        }
+        if (result.IsFailure()) return false;
+        long existing=0;
+        result=nn::fs::GetFileSize(&existing,handle);
+        if (result.IsSuccess() && existing==static_cast<long>(size))
+            result=nn::fs::WriteFile(handle,0,data,size,nn::fs::WriteOption::CreateOption(nn::fs::WriteOptionFlag_Flush));
+        nn::fs::CloseFile(handle);
+        return result.IsSuccess() && existing==static_cast<long>(size);
+    }
     bool load() {
         if (!mount()) return false;
         nn::fs::FileHandle handle{};
@@ -97,4 +115,5 @@ pure::PersistentToggle g_toggle;
 bool enabled() { return g_toggle.enabled(); }
 void request(bool enabled) { g_toggle.request(enabled); }
 void service() { g_toggle.service(g_store); }
+bool writeFlightStatus(const char* data, std::size_t size) { return g_store.writeFlightStatus(data,size); }
 }

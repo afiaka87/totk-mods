@@ -13,10 +13,45 @@
 #include "HookshotLog.hpp"
 #include "HookshotRuntime.hpp"
 #include "HookshotWorld.hpp"
+#include "ArrowSettings.hpp"
+#include "../../../engine/FlightClock.hpp"
+#include <nn/util.h>
+#include <array>
 
 namespace arrowbound {
 namespace {
 void onWorldLost(const char* reason) { resetSession(reason); }
+
+void saveFlightStatus(const HookshotRuntime& rt, bool allowed) {
+    // Bounded idle-only reporting: never do SD I/O while following an arrow.
+    static unsigned attempts{};
+    static std::array<std::uint64_t,8> last{};
+    if (attempts>=32 || rt.session.tick%120 || !world::ready() ||
+        rt.arrowTrip.phase!=pure::ArrowPhase::Idle) return;
+    pure::FlightTime time{};
+    if (!game_clock::snapshot(time)) return;
+    const auto& a=rt.arrow; const auto& d=rt.drive;
+    const std::array<std::uint64_t,8> key{a.releaseObserved.load(),a.shotSeq.load(),
+        a.followBegins.load(),a.clockRejects.load(),a.carrierWrites.load(),
+        a.modeEnabled.load(),unsigned(allowed),time.serial ? unsigned(time.status)+1u : 0u};
+    if (attempts && key==last) return;
+    last=key; ++attempts;
+    char text[1024]{};
+    nn::util::SNPrintf(text,sizeof(text),
+        "Glideshot embedded Arrowbound clock-coexistence\n"
+        "tick=%llu enabled=%u allowed=%u accept=%u phase=%u\n"
+        "clock_serial=%llu clock_status=%u clock_rejects=%u\n"
+        "release_observed=%u accepted_shots=%u follow_begins=%u carrier_writes=%u\n"
+        "samples=%u owner_misses=%u body_misses=%u pending=%u\n"
+        "glider_enters=%u glider_updates=%u forced_predicate=%u present=%u\n",
+        (unsigned long long)rt.session.tick,a.modeEnabled.load(),unsigned(allowed),a.acceptShots.load(),unsigned(rt.arrowTrip.phase),
+        (unsigned long long)time.serial,unsigned(time.status),a.clockRejects.load(),
+        a.releaseObserved.load(),a.shotSeq.load(),a.followBegins.load(),a.carrierWrites.load(),
+        a.sampleSeq.load(),a.claimOwnerMisses.load(),a.sampleBodyMisses.load(),a.pendingShot.load(),
+        d.enters.load(),d.updates.load(),d.predForced.load(),d.presentParaglider.load());
+    if (!settings::writeFlightStatus(text,sizeof(text)))
+        ZHLOG("FLIGHT_STATUS_WRITE_FAILED attempt=%u",attempts);
+}
 
 void serviceAimMailbox(HookshotRuntime& rt) {
     pure::TargetSample sample{};
@@ -90,6 +125,7 @@ void tick(void* device, bool allowShots) {
     if (world::ready() && !audio::ready() && (rt.session.tick % 60) == 0)
         audio::prime();
     audio::updateAbilityCues(world::playerPosition());
+    saveFlightStatus(rt,allowShots);
 }
 
 void onRaycast(RaycastFn original, const void* from, const void* object) {
