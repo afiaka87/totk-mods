@@ -1,4 +1,4 @@
-# Bivouac v0.26.0
+# Bivouac v0.26.1
 
 Build camps on cliff faces and over open water. While Link is climbing, eat one of three
 ingredients and a shelter assembles under him: a stone deck, a wooden roof that keeps the rain
@@ -54,12 +54,12 @@ Enable **Bivouac** in the game's add-on list.
 **Switch (Atmosphere):** extract `bivouac-v0.26.0-switch.zip` and copy its `0100F2C0115B6000`
 folder into `atmosphere/contents/` on the SD card.
 
-Both archives contain the same files: `exefs/subsdk9`, `exefs/main.npdm`, and seven files under
+Both archives contain the same files: `exefs/subsdk7`, `exefs/main.npdm`, and seven files under
 `romfs/`.
 
 ## Compatibility
 
-- Bivouac occupies the `subsdk9` code slot. Do not enable another mod that supplies `subsdk9`;
+- Bivouac occupies the `subsdk7` code slot. Do not enable another mod that supplies `subsdk7`;
   two of them can stop the game from booting.
 - It replaces the Common UI layout archive (for the camp map icon), the save-data schema
   (`GameDataList`), the English text archive, two actor tables and the resource-size table. Mods
@@ -97,7 +97,7 @@ guarantee that it builds or works as-is; you set up the toolchain and framework 
   `loggers.hpp` add `bivouac::log::SdFileLogger` (from `program/sd_logger.hpp`) after
   `exl::log::SvcLogger`. Leave the reloc table in `offsets.hpp` empty.
 - Compile definitions: `TOTK_VERSION=121`, `TOTK_121=1`. Program ID `0100F2C0115B6000`, module
-  `subsdk9`.
+  `subsdk7`.
 - The `romfs/` files are edited game data and are not part of this source folder; they are only
   in the release archives.
 
@@ -123,3 +123,10 @@ highly permissive (MIT) and I hope this adds to the community.
 
 MIT - see `LICENSE` at the repository root. `NOTICE.txt` describes the exlaunch dependency and
 the game files in the release archives.
+
+## Executable slot
+
+Uses `subsdk7`. When upgrading, remove this mod's old `exefs/subsdk9`
+from its own add-on folder before installing the new package. On Switch, remove
+only the old executable belonging to this mod; preserve another mod's slot 9 file.
+Older downloads still use slot 9; use the slot-migrated version.
