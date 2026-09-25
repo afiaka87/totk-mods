@@ -1,0 +1,24 @@
+Zonai Survey
+Copyright (C) Clay Mullis
+
+The first-party source is released under MIT. See LICENSE. The legacy
+LotusKit-derived renderer and symbol helpers are not part of this source release.
+
+The program builds on exlaunch by shadowninja108 and contributors. exlaunch is an
+external GPL-2.0 dependency and is not copied into the public source tree.
+Compiled executables contain exlaunch; its license and source obligations remain.
+
+Source: https://github.com/shadowninja108/exlaunch
+
+The CMake Switch helpers are adapted from switch-cmake by vbe0201, under the MIT
+License. Host tests use doctest v2.4.11 by Viktor Kirilov, also under the MIT License.
+
+Sources:
+https://github.com/vbe0201/switch-cmake
+https://github.com/doctest/doctest
+
+The public source does not contain game-derived fonts, atlas pixels or collectible
+tables. The executable embeds locally generated data, including Rodin regular
+letter artwork and the collectible icons. Those assets are not MIT licensed;
+all rights remain with their respective rights holders. No separate runtime font
+or primitive-renderer files are needed.
