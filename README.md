@@ -18,6 +18,24 @@ Exlaunch authors are owed attribution here.
 | Glideshot | `glideshot/` | A hookshot: chain to any climbable wall, zip along it, land in the native climb. Contains arrowbound as well. |
 | Bivouac | `bivouac/` | Eat a truffle or radish while climbing to build a persistent cliff or water camp you can travel back to. |
 | Arrowbound | `arrowbound/` | Shoot an arrow and Link glides along its path. |
+| Zonai Survey | `zonai-survey/` | Scan the landscape for collectibles with visible names and icons. |
 
 
 All code here is MIT-licensed (see `LICENSE`). The feature mods use exlaunch. It is not included. See `NOTICE`.
+
+## Executable slots
+
+| Mod | Slot |
+|---|---|
+| Phantom Foothold | subsdk2 |
+| Infinite Ascend | subsdk4 |
+| Glideshot (including its Arrowbound feature) | subsdk5 |
+| Fleet Sync | subsdk6 |
+| Bivouac | subsdk7 |
+| Self Recall | subsdk8 |
+| Zonai Survey | subsdk9 |
+| Standalone Arrowbound | subsdk9 (intentional conflict) |
+
+Slots 1 and 3 are left available for TKMM and UltraCam. These assignments apply to
+new slot-migrated packages, not older downloads. Remove each upgraded mod's old
+subsdk9 file; do not remove a different mod's slot 9 executable.
