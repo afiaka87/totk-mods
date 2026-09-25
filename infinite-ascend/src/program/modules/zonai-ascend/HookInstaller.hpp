@@ -14,7 +14,7 @@ struct InstallStatus {
     }
 };
 
-// Installs the passive hooks; the host must call exl::hook::Initialize() first.
+// Initialize exlaunch hooks before calling install.
 InstallStatus install(std::uintptr_t mainBase);
 
-}  // namespace zonai_ascend::hooks
+}

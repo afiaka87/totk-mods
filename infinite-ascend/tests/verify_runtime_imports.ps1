@@ -1,6 +1,5 @@
 param(
     [string]$Elf = (Join-Path $PSScriptRoot '../build/subsdk4.elf'),
-    # devkitA64 nm: the monorepo's vendored copy, else $env:DEVKITPRO, else PATH.
     [string]$Nm = ''
 )
 $ErrorActionPreference = 'Stop'

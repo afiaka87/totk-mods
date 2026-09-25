@@ -1,5 +1,4 @@
 param(
-    # Your own dump of the TotK 1.2.1 main executable, relocated to base 0.
     [string]$Binary = ''
 )
 $ErrorActionPreference = 'Stop'

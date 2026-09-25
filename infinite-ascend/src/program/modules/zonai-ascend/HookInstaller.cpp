@@ -3,52 +3,15 @@
 #include <lib.hpp>
 
 #include "Module.hpp"
-
-static_assert(TOTK_VERSION == 121,
-              "Zonai Ascend supports only TotK 1.2.1");
+#include "../../../pure/GameProfiles.hpp"
 
 namespace zonai_ascend::hooks {
 namespace {
 
-namespace off {
-constexpr ptrdiff_t PrimarySpanSource = 0x0175CA00;
-constexpr ptrdiff_t PrimarySpanHook = 0x0175CA04;
-constexpr ptrdiff_t SurroundSpanSource = 0x0175CC24;
-constexpr ptrdiff_t SurroundSpanHook = 0x0175CC28;
-constexpr ptrdiff_t QueryValid = 0x0175C99C;
-constexpr ptrdiff_t MaxHeight = 0x01C64CE4;
-constexpr ptrdiff_t MaxHeightRet = 0x01C64CE8;
-constexpr ptrdiff_t MarkerSpanSource = 0x00E50444;
-constexpr ptrdiff_t MarkerSpanHook = 0x00E50448;
-constexpr ptrdiff_t CeilingClipperPostCalc = 0x00E501DC;
-constexpr ptrdiff_t ELinkSetPosition = 0x00829FD8;
-constexpr ptrdiff_t ELinkSetPosAndScale = 0x01DAF314;
-}  // namespace off
+using profiles::Site;
 
-namespace word {
-constexpr u32 PrimarySpanSource = 0x52A83388;
-constexpr u32 PrimarySpanHook = 0xBD42B70A;
-constexpr u32 SurroundSpanSource = 0x52A8339B;
-constexpr u32 SurroundSpanHook = 0x5283EEBC;
-constexpr u32 QueryValid = 0xD10483FF;
-constexpr u32 MaxHeight = 0x1E269000;
-constexpr u32 MaxHeightRet = 0xD65F03C0;
-constexpr u32 MarkerSpanSource = 0xBD42A903;
-constexpr u32 MarkerSpanHook = 0xBD42BEE2;
-constexpr u32 CeilingClipperPostCalc = 0xA9BB7BFD;
-constexpr u32 ELinkSetPosition = 0x79800408;
-constexpr u32 ELinkSetPosAndScale = 0xA9BD7BFD;
-}  // namespace word
-
-std::uintptr_t g_mainBase = 0;
-
-bool wordMatches(ptrdiff_t offset, u32 expected, const char* label) {
-    const u32 actual = *reinterpret_cast<const u32*>(g_mainBase + offset);
-    if (actual == expected) return true;
-    Logging.Log(
-        "[zonai-ascend] GUARD FAILED %s main+%p actual=%08x expected=%08x",
-        label, reinterpret_cast<void*>(offset), actual, expected);
-    return false;
+ptrdiff_t offset(const profiles::GameProfile& game, Site site) {
+    return game.at(site).offset;
 }
 
 HOOK_DEFINE_INLINE(PrimarySpanHook) {
@@ -99,62 +62,40 @@ HOOK_DEFINE_TRAMPOLINE(ELinkSetPositionHook) {
     }
 };
 
-}  // namespace
+}
 
 InstallStatus install(std::uintptr_t mainBase) {
-    g_mainBase = mainBase;
-
     InstallStatus status{};
-    status.range =
-        wordMatches(off::PrimarySpanSource, word::PrimarySpanSource,
-                    "primary span source") &&
-        wordMatches(off::PrimarySpanHook, word::PrimarySpanHook,
-                    "primary span hook") &&
-        wordMatches(off::SurroundSpanSource, word::SurroundSpanSource,
-                    "surround span source") &&
-        wordMatches(off::SurroundSpanHook, word::SurroundSpanHook,
-                    "surround span hook") &&
-        wordMatches(off::MaxHeight, word::MaxHeight,
-                    "max-height getter") &&
-        wordMatches(off::MaxHeightRet, word::MaxHeightRet,
-                    "max-height return") &&
-        wordMatches(off::MarkerSpanSource, word::MarkerSpanSource,
-                    "marker span source") &&
-        wordMatches(off::MarkerSpanHook, word::MarkerSpanHook,
-                    "marker span hook");
-
-    if (status.range) {
-        PrimarySpanHook::InstallAtOffset(off::PrimarySpanHook);
-        SurroundingSpanHook::InstallAtOffset(off::SurroundSpanHook);
-        MaxHeightHook::InstallAtOffset(off::MaxHeight);
-        MarkerSpanHook::InstallAtOffset(off::MarkerSpanHook);
+    const auto textSize = exl::util::GetMainModuleInfo().m_Text.m_Size;
+    const auto* game = profiles::select(textSize, [mainBase](ptrdiff_t at) {
+        return *reinterpret_cast<const u32*>(mainBase + at);
+    });
+    if (!game) {
+        Logging.Log("[zonai-ascend] unknown or changed main; all hooks disabled; text=%p",
+                    reinterpret_cast<void*>(textSize));
+        zonai_ascend::init(mainBase, false, false, 0, 0);
+        return status;
     }
 
-    status.leniency =
-        wordMatches(off::QueryValid, word::QueryValid, "queryValid entry");
-    if (status.leniency) {
-        QueryValidHook::InstallAtOffset(off::QueryValid);
-    }
+    PrimarySpanHook::InstallAtOffset(offset(*game, Site::PrimarySpanHook));
+    SurroundingSpanHook::InstallAtOffset(offset(*game, Site::SurroundSpanHook));
+    MaxHeightHook::InstallAtOffset(offset(*game, Site::MaxHeight));
+    MarkerSpanHook::InstallAtOffset(offset(*game, Site::MarkerSpanHook));
+    QueryValidHook::InstallAtOffset(offset(*game, Site::QueryValid));
+    CeilingClipperPostCalcHook::InstallAtOffset(
+        offset(*game, Site::CeilingClipperPostCalc));
+    ELinkSetPositionHook::InstallAtOffset(offset(*game, Site::ELinkSetPosition));
 
-    status.markerScale =
-        wordMatches(off::CeilingClipperPostCalc, word::CeilingClipperPostCalc,
-                    "CeilingClipper postCalc") &&
-        wordMatches(off::ELinkSetPosition, word::ELinkSetPosition,
-                    "ELink setPosition") &&
-        wordMatches(off::ELinkSetPosAndScale, word::ELinkSetPosAndScale,
-                    "ELink setPosAndScale");
-    if (status.markerScale) {
-        CeilingClipperPostCalcHook::InstallAtOffset(
-            off::CeilingClipperPostCalc);
-        ELinkSetPositionHook::InstallAtOffset(off::ELinkSetPosition);
-    }
-
-    zonai_ascend::init(mainBase, status.leniency, status.markerScale);
+    status.range = true;
+    status.leniency = true;
+    status.markerScale = true;
+    zonai_ascend::init(mainBase, true, true,
+                       offset(*game, Site::ELinkSetPosAndScale),
+                       game->actorPositionOffset);
     Logging.Log(
-        "[zonai-ascend] v0.4.0 release installed range10km=%u lenient=%u markerScale=%u controls=0 overlay=0 guide=0 speed=0 diagnostics=0",
-        status.range ? 1u : 0u, status.leniency ? 1u : 0u,
-        status.markerScale ? 1u : 0u);
+        "[zonai-ascend] game=%s range10km=1 lenient=1 markerScale=1 controls=0 overlay=0 guide=0 speed=0 diagnostics=0",
+        game->version);
     return status;
 }
 
-}  // namespace zonai_ascend::hooks
+}

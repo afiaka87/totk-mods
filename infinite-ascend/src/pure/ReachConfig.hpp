@@ -7,14 +7,14 @@ inline constexpr float kReleaseReach = 10000.0f;
 inline constexpr float kValidationStartAbovePlayer = 0.5f;
 inline constexpr float kMarkerStartAbovePlayer = 1.8f;
 
-// Release policy (LENIENT): waive only the two local surface-shape disagreements; all else stays native.
+// Only the two local surface-shape reasons may be relaxed.
 inline constexpr unsigned kAngleReason = 0x0008u;
 inline constexpr unsigned kQueryBaselineReason = 0x0040u;
 inline constexpr unsigned kSurfaceDisagreementReason = 0x0400u;
 inline constexpr unsigned kLenientReasonMask =
     kAngleReason | kSurfaceDisagreementReason;
 
-// Marker growth starts after 40 m, adds 1x per 240 m, and caps at 4x.
+// Marker growth starts after 40 m and caps at 4x.
 inline constexpr float kMarkerNativeDistance = 40.0f;
 inline constexpr float kMarkerGrowthMetresPerScale = 240.0f;
 inline constexpr float kMarkerScaleCap = 4.0f;
@@ -63,4 +63,4 @@ constexpr float markerScale(float distance) {
     return scale;
 }
 
-} // namespace zonai_ascend::pure
+}

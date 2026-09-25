@@ -1,13 +1,14 @@
 #pragma once
 
-#include <lib.hpp>
+#include <cstdint>
 
 namespace zonai_ascend {
 
-void init(uintptr_t mainBase, bool leniencyHookHealthy,
-          bool markerScaleHooksHealthy);
+void init(std::uintptr_t mainBase, bool leniencyHookHealthy,
+          bool markerScaleHooksHealthy, std::ptrdiff_t setPosAndScaleOffset,
+          std::ptrdiff_t actorPositionOffset);
 
-u32 validationSpanBits();
+std::uint32_t validationSpanBits();
 float currentReach();
 float markerSpan();
 
@@ -17,4 +18,4 @@ void beginMarkerPostCalc(void* manager, void* updateContext);
 void endMarkerPostCalc(void* manager);
 void applyMarkerScale(void* handle, const void* position);
 
-} // namespace zonai_ascend
+}

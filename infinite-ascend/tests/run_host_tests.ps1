@@ -6,7 +6,6 @@ $ErrorActionPreference = 'Stop'
 $testsDir = $PSScriptRoot
 $buildDir = Join-Path $testsDir 'build-host'
 
-# Inside the monorepo use its vendored CMake and Ninja; standalone, use whatever is on PATH.
 $vendorTools = [IO.Path]::GetFullPath((Join-Path $testsDir '../../../../vendor/totk-dkp/tools'))
 if (Test-Path -LiteralPath $vendorTools) {
     $env:PATH = "$vendorTools;$(Join-Path $vendorTools 'cmake-3.30.5-windows-x86_64/bin');$env:PATH"
@@ -15,7 +14,6 @@ foreach ($tool in 'cmake', 'ctest') {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw "$tool not found on PATH" }
 }
 
-# On Windows outside a Developer shell, re-enter through vcvars64 so CMake can find MSVC.
 if ($env:OS -eq 'Windows_NT' -and -not $env:VCToolsInstallDir -and -not $env:TOTK_HOST_TESTS_REENTERED) {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
     if (Test-Path -LiteralPath $vswhere) {

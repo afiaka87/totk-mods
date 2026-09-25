@@ -1,11 +1,10 @@
-# Infinite Ascend
+# Infinite Ascend v1.1.0
 
-Extends the Ascend ability's reach in The Legend of Zelda: Tears of the Kingdom (1.2.1) from about
-20 m to 10,000 m. Native target validation, controls, and the red/green marker stay in place; the
-mod only extends how far the upward search reaches, relaxes two local surface-shape checks, and
-scales the marker with distance.
+Extends Ascend in Tears of the Kingdom from about 20 m to 10,000 m. Native target
+validation, controls, and the red/green marker stay in place. Supports 1.0.0, 1.1.0,
+1.1.2, 1.2.0, 1.2.1, and 1.4.0 through 1.4.3 in Eden.
 
-Downloads: GameBanana / NexusMods (TODO links). This repository holds source only.
+Downloads are provided on the mod sites. This repository holds source only.
 
 ## What it changes
 
@@ -17,14 +16,15 @@ Downloads: GameBanana / NexusMods (TODO links). This repository holds source onl
 
 ## Requirements
 
-- Tears of the Kingdom **1.2.1** (build `9B4E43650501A4D4`). On any other version the mod
-  disables itself at load and leaves the game untouched.
+- Tears of the Kingdom **1.0.0, 1.1.0, 1.1.2, 1.2.0, 1.2.1, or 1.4.0 through 1.4.3**.
+  One emulator archive serves all nine versions. If the twelve guarded
+  instructions differ, all hooks remain off.
 - Tested on the Eden emulator. Switch hardware is untested.
 
 ## Install
 
 1. Open the game's mod/load directory (`load/0100F2C0115B6000/`).
-2. Extract the release zip so it produces `infinite-ascend/exefs/{main.npdm, subsdk4}`.
+2. Extract the emulator archive so it produces `infinite-ascend/exefs/{main.npdm, subsdk4}`.
 3. Enable `infinite-ascend`. Do not enable another mod that supplies `subsdk4`.
 
 ## Building from source
@@ -46,8 +46,8 @@ guarantee that it builds or works as-is; you set up the toolchain and framework 
 
 ## Tests
 
-- `tests/run_host_tests.ps1` - builds and runs the doctest suite for `src/pure/ReachConfig.hpp`
-  (needs CMake, a C++23 compiler, and network access to fetch doctest).
+- `tests/run_host_tests.ps1` - builds and runs the doctest suite for reach policy and game profiles
+  (needs CMake, a C++23 compiler, and doctest; a first standalone run may fetch doctest).
 - `tests/verify_main121.ps1 -Binary <main>` - checks the twelve hooked instruction words against
   your own 1.2.1 executable dump.
 - `tests/verify_runtime_imports.ps1 -Elf <subsdk4.elf>` - checks the linked module for a forbidden
@@ -73,4 +73,4 @@ MIT - see `LICENSE` at the repository root. `NOTICE` describes the exlaunch depe
 Uses `subsdk4`. When upgrading, remove this mod's old `exefs/subsdk9`
 from its own add-on folder before installing the new package. On Switch, remove
 only the old executable belonging to this mod; preserve another mod's slot 9 file.
-Older downloads still use slot 9; use the slot-migrated version.
+Older downloads used slot 9; v1.1.0 uses slot 4.

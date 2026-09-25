@@ -19,6 +19,7 @@ endif()
 add_executable(zonai_ascend_pure_tests
     test_main.cpp
     test_reach_config.cpp
+    test_game_profiles.cpp
 )
 target_include_directories(zonai_ascend_pure_tests PRIVATE
     "${DOCTEST_INCLUDE_DIR}"
@@ -34,3 +35,9 @@ endif()
 enable_testing()
 include("${DOCTEST_CMAKE}")
 doctest_discover_tests(zonai_ascend_pure_tests)
+
+add_executable(zonai_ascend_verify_main verify_game_binary.cpp)
+target_include_directories(zonai_ascend_verify_main PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/pure"
+)
+target_compile_features(zonai_ascend_verify_main PRIVATE cxx_std_23)

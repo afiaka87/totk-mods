@@ -1,4 +1,3 @@
-// Standalone exlaunch host for Infinite Ascend.
 #include <lib.hpp>
 
 #include "modules/zonai-ascend/HookInstaller.hpp"
