@@ -504,8 +504,7 @@ std::uintptr_t g_main = 0;
 template<class T> T read(const void* p, std::size_t offset) {
     T v; std::memcpy(&v, static_cast<const std::byte*>(p) + offset, sizeof(v)); return v;
 }
-// Current gear keeps its native effects on Switch. Each entry maps an actor's effect
-// user to the model roots its bone descriptors can name and the model used for unboned cues.
+// Switch keeps native gear effects: maps an effect user to its nameable model roots and unboned-cue model.
 struct LiveGear {
     std::atomic<const void*> user{nullptr}, root{nullptr}, nativeRoot{nullptr}, unit{nullptr};
 };
@@ -564,8 +563,7 @@ EffectMatrix copyMatrix(const void* executor, const void* descriptor, float out[
         *anchorBone = bone;
         return EffectMatrix::Bone;
     }
-    // Unboned cues, such as the Master Sword glow, follow the owner's first model root bone,
-    // matching the emulator profile's archived effect user.
+    // Unboned cues such as the Master Sword glow follow the owner's first model root bone.
     const auto* unit = owner->unit.load(std::memory_order_acquire);
     if (!unit || !pose_render::copyBone(unit, 0, out)) return EffectMatrix::Missing;
     *anchorUnit = unit;

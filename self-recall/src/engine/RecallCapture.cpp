@@ -266,6 +266,24 @@ void reject(Rejection reason, std::uint64_t epoch, std::uint32_t detail = 0) {
                     static_cast<unsigned long long>(count));
 }
 
+std::atomic<std::uint64_t> g_modelLimitLogs{0};
+
+void rejectCollection(const OwnedModelCollection& collection, std::uint64_t epoch) {
+    const auto& hit = collection.limitHit;
+    if (collection.error == Rejection::ModelLimit && hit.site != OwnedModelCollection::LimitSite::None) {
+        const auto count = g_modelLimitLogs.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (count <= 16 || (count % 300) == 0) {
+            Logging.Log("[self-recall] MODEL_LIMIT site=%u actor_models=%d models=%u/%u "
+                        "bones=%u+%u/%u materials=%u+%u/%u epoch=%llu total=%llu",
+                        static_cast<unsigned>(hit.site), hit.actorModels,
+                        hit.models, pure::kPoseModelLimit, hit.bones, hit.addBones, pure::kPoseBoneLimit,
+                        hit.materials, hit.addMaterials, pure::kPoseMaterialLimit,
+                        static_cast<unsigned long long>(epoch), static_cast<unsigned long long>(count));
+        }
+    }
+    reject(collection.error, epoch);
+}
+
 bool pairCompletedActorPose(const Control& control, const void* player,
                             pure::PoseHistory* history, std::uint64_t epoch,
                             pure::ActorFrameTicket& ticket) {
@@ -302,7 +320,7 @@ void recordOwnedFrame(const frame::CompletedModelPhase& phase, const Control& co
     equipment::beginRecord(history->generation());
     equipment::collectExpired(*history, control.worldGeneration);
     if (!collection.archiveEquipment(player, control.worldGeneration)) {
-        reject(collection.error, phase.epoch); return;
+        rejectCollection(collection, phase.epoch); return;
     }
     pure::PoseFrameHeader header{};
     header.frameEpoch = phase.epoch;
@@ -448,7 +466,7 @@ void prepareScene(void* nativeScene, std::uint64_t epoch) {
     collection.actors[0] = player;
     collection.actorCount = 1;
     if (!collection.appendModel(player, true) || !collection.appendOwnedModels(player, true)) {
-        reject(collection.error, epoch);
+        rejectCollection(collection, epoch);
         return;
     }
     auto historical = pose_render::currentFrame(
@@ -459,7 +477,7 @@ void prepareScene(void* nativeScene, std::uint64_t epoch) {
         pose_render::suppressEquipment(epoch, {collection.views.data() + collection.bodyModels,
                                    static_cast<std::size_t>(collection.modelCount - collection.bodyModels)});
     if (!collection.useHistoricalEquipment(player, nativeScene, historical.get()->animation)) {
-        reject(collection.error, epoch);
+        rejectCollection(collection, epoch);
         return;
     }
     Control latest;
@@ -535,12 +553,12 @@ void modelsComplete(const frame::CompletedModelPhase& phase) {
     }
     collection.actors[0] = player;
     collection.actorCount = 1;
-    if (!collection.appendModel(player, true)) { reject(collection.error, phase.epoch); return; }
+    if (!collection.appendModel(player, true)) { rejectCollection(collection, phase.epoch); return; }
     if (!rendering && phase.epoch == g_lastEpoch) { skipped(Gate::Duplicate, phase.epoch); return; }
     pure::ActorFrameTicket ticket{};
     if (!rendering && !pairCompletedActorPose(control, player, history, phase.epoch, ticket)) return;
     if (!collection.appendOwnedModels(player, rendering)) {
-        reject(collection.error, phase.epoch); return;
+        rejectCollection(collection, phase.epoch); return;
     }
     auto historical = rendering ? pose_render::currentFrame(
         reinterpret_cast<const void*>(collection.views[0].identity.unit), phase.epoch)
@@ -548,7 +566,7 @@ void modelsComplete(const frame::CompletedModelPhase& phase) {
     if (rendering) {
         if (!historical) return;
         if (!collection.useHistoricalEquipment(player, phase.scene, historical.get()->animation)) {
-            reject(collection.error, phase.epoch); return;
+            rejectCollection(collection, phase.epoch); return;
         }
     }
     if (!collection.belongsToQueue(phase)) {

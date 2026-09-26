@@ -81,8 +81,7 @@ bool verifyAppliedPose(RecallRuntime& runtime, pure::PosePlayback* cursor,
     return true;
 }
 
-// SD builds: older pose data may still be loading from the card. Playback waits at the
-// last loaded frame without consuming history time; a lost frame or a 10 s wait ends Recall.
+// SD builds wait at the last loaded frame; a lost frame or a 10 s wait ends Recall.
 struct SdHold {
     std::uint64_t startedNanoseconds = 0;
     std::uint64_t episodes = 0;

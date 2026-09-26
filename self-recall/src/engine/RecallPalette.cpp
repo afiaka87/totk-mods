@@ -477,6 +477,38 @@ HOOK_DEFINE_TRAMPOLINE(FilterDrawHook) {
     }
 };
 
+// Best-effort FMAT name for logs: a nearby pointer to a short printable length-prefixed string.
+void materialName(const void* resource, char (&out)[48]) {
+    out[0] = '?'; out[1] = 0;
+    const auto base = reinterpret_cast<std::uintptr_t>(resource);
+    if (!base || read<std::uint32_t>(resource, 0) != 0x54414D46u) return;
+    for (std::size_t offset = 0x8; offset <= 0x30; offset += 8) {
+        const auto pointer = read<std::uintptr_t>(resource, offset);
+        if (pointer < base - 0x1000000 || pointer > base + 0x1000000 || (pointer & 1u)) continue;
+        const auto* text = reinterpret_cast<const char*>(pointer);
+        const auto length = *reinterpret_cast<const std::uint16_t*>(text);
+        if (!length || length >= sizeof(out)) continue;
+        bool printable = true;
+        for (unsigned i = 0; i < length && printable; ++i) printable = text[2 + i] > 0x20 && text[2 + i] < 0x7F;
+        if (!printable) continue;
+        for (unsigned i = 0; i < length; ++i) out[i] = text[2 + i];
+        out[length] = 0;
+        return;
+    }
+}
+
+void logMaterialFailure(const void* model, unsigned materialIndex, const void* resource,
+                        const void* shader, int index, const char* check) {
+    static std::atomic<unsigned> logged{0};
+    if (logged.fetch_add(1, std::memory_order_relaxed) >= 16) return;
+    char name[48];
+    materialName(resource, name);
+    Logging.Log("[self-recall] MONOCHROME_MATERIAL check=%s model=%p materials=%u material=%u "
+                "name=%s parameter=%d parameters=%u",
+                check, model, unsigned(read<std::uint16_t>(model, 0x16A)), materialIndex, name, index,
+                shader ? unsigned(read<std::uint16_t>(shader, 0x4A)) : 0u);
+}
+
 bool protectMaterial(void* model, unsigned materialIndex, unsigned buffer) {
     auto* materials = read<std::byte*>(model, 0x180);
     if (!materials) { fail(Failure::Material, materialIndex); return false; }
@@ -491,11 +523,18 @@ bool protectMaterial(void* model, unsigned materialIndex, unsigned buffer) {
     const auto bufferCount = read<std::uint8_t>(material, 0xA);
     if (!shader || !parameters || !mapping || !source || !buffers || !bufferCount ||
         bufferCount > 3 || buffer >= bufferCount || !(read<std::uint16_t>(material, 8) & 1u)) {
+        logMaterialFailure(model, materialIndex, resource, shader, -1, "material");
         fail(Failure::Material, materialIndex); return false;
     }
     const char* name = "p_object_attribute";
     const int index = native<int (*)(void*, int, const char**)>(kFindMaterialParameter)(model, materialIndex, &name);
-    if (index < 0 || index >= read<std::uint16_t>(shader, 0x4A)) {
+    // A modded material without the attribute (Airbender glider) stays filtered instead of cancelling Recall.
+    if (index < 0) {
+        logMaterialFailure(model, materialIndex, resource, shader, index, "skipped-no-object-attribute");
+        return true;
+    }
+    if (index >= read<std::uint16_t>(shader, 0x4A)) {
+        logMaterialFailure(model, materialIndex, resource, shader, index, "object-attribute-range");
         fail(Failure::Parameter, materialIndex << 16); return false;
     }
     const auto* parameter = parameters + index * 0x18;
@@ -506,6 +545,7 @@ bool protectMaterial(void* model, unsigned materialIndex, unsigned buffer) {
         !palette::detail::floatRange(sourceOffset, read<std::uint16_t>(shader, 0x4C)) ||
         !gpuBytes || gpuBytes > UINT16_MAX || gpuBytes != read<std::uint16_t>(resource, 0xAA) ||
         gpuOffset < 0 || !palette::detail::floatRange(gpuOffset, static_cast<unsigned>(gpuBytes))) {
+        logMaterialFailure(model, materialIndex, resource, shader, index, "object-attribute-layout");
         fail(Failure::Parameter, (materialIndex << 16) | unsigned(index)); return false;
     }
     const float original = read<float>(source, sourceOffset);

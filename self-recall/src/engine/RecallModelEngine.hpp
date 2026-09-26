@@ -361,6 +361,20 @@ public:
     std::array<model::GearBinding, pure::kPoseModelLimit> gearBindings{};
 #endif
     Rejection error = Rejection::MissingRoot;
+    // Which ModelLimit check fired and the running totals, for the rejection log.
+    enum class LimitSite : std::uint8_t { None, ActorModelCount, TotalModels, Bones, Materials };
+    struct LimitHit {
+        LimitSite site = LimitSite::None;
+        std::int32_t actorModels = 0;
+        std::uint16_t models = 0, bones = 0, materials = 0, addBones = 0, addMaterials = 0;
+    } limitHit{};
+
+    bool modelLimit(LimitSite site, std::int32_t actorModels,
+                    std::uint16_t addBones = 0, std::uint16_t addMaterials = 0) {
+        limitHit = {site, actorModels, modelCount, boneCount, materialCount, addBones, addMaterials};
+        error = Rejection::ModelLimit;
+        return false;
+    }
 
     bool appendModel(const void* actor, bool body) {
         const auto firstModel = modelCount;
@@ -368,10 +382,8 @@ public:
         if (!root) return !body;
         const auto count = read<std::int32_t>(root, kModelCount);
         const auto* entries = read<const void* const*>(root, kModelEntries);
-        if (count < 0 || count > pure::kPoseModelLimit || (!entries && count) || (!count && body)) {
-            error = Rejection::ModelLimit;
-            return false;
-        }
+        if (count < 0 || count > pure::kPoseModelLimit || (!entries && count) || (!count && body))
+            return modelLimit(LimitSite::ActorModelCount, count);
         for (std::int32_t i = 0; i < count; ++i) {
             const auto* entry = entries[i];
             const auto* unit = entry ? read<const void*>(entry, 0) : nullptr;
@@ -380,7 +392,8 @@ public:
             for (std::uint16_t j = 0; j < modelCount; ++j)
                 duplicate |= views[j].identity.unit == reinterpret_cast<std::uintptr_t>(unit);
             if (duplicate) continue;
-            if (modelCount == pure::kPoseModelLimit) { error = Rejection::ModelLimit; return false; }
+            if (modelCount == pure::kPoseModelLimit)
+                return modelLimit(LimitSite::TotalModels, count);
             auto& view = views[modelCount];
             if (model::describe(mainBase_, unit, view) != model::ViewStatus::Ready) {
                 error = Rejection::UnsupportedModel;
@@ -388,8 +401,9 @@ public:
             }
             if (boneCount + view.identity.boneCount > pure::kPoseBoneLimit ||
                 materialCount + view.identity.materialCount > pure::kPoseMaterialLimit) {
-                error = Rejection::ModelLimit;
-                return false;
+                const bool bones = boneCount + view.identity.boneCount > pure::kPoseBoneLimit;
+                return modelLimit(bones ? LimitSite::Bones : LimitSite::Materials, count,
+                                  view.identity.boneCount, view.identity.materialCount);
             }
             boneCount = static_cast<std::uint16_t>(boneCount + view.identity.boneCount);
             materialCount = static_cast<std::uint16_t>(materialCount + view.identity.materialCount);

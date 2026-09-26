@@ -88,7 +88,7 @@ std::uint32_t corpusChecksum(std::span<const std::byte> bytes) {
     return value;
 }
 void require(bool pass, const char* message) { if (!pass) throw std::runtime_error(message); }
-void trimVisibility(std::uint32_t (&words)[kPoseBoneLimit / 32], unsigned count) {
+template<std::size_t N> void trimVisibility(std::uint32_t (&words)[N], unsigned count) {
     const auto complete = count / 32;
     const auto partial = count % 32;
     if (partial) words[complete] &= (1u << partial) - 1u;
@@ -104,8 +104,7 @@ void keepBodyOnly(RecordedPoseFrame& frame) {
     trimVisibility(frame.visible.bones, header.boneCount);
     trimVisibility(frame.visible.materials, header.materialCount);
 }
-// Storage-only stress: retain body bones and non-body skeletons through the measured 31-bone
-// parasail; runtime selection uses unavailable binding-component labels rather than size.
+// Storage-only stress: body bones plus every non-body skeleton up to the 31-bone parasail.
 void keepEquipmentBoneStress(RecordedPoseFrame& frame) {
     const auto original = frame;
     frame.visible = {};
@@ -264,7 +263,8 @@ int main(int argc, char** argv) {
             require((layout[0] == sizeof(PoseFrameHeader) ||
                      layout[0] == sizeof(LegacyPoseFrameHeaderV108)) &&
                     layout[1] <= kPoseModelLimit && layout[2] <= kPoseBoneLimit &&
-                    layout[3] == sizeof(RecordedVisibility), "pose ABI differs");
+                    layout[3] > sizeof(RecordedVisibility::materials) && layout[3] <= sizeof(RecordedVisibility) &&
+                    (layout[3] - sizeof(RecordedVisibility::materials)) % 4 == 0, "pose ABI differs");
             RecordedPoseFrame frame{};
             auto* cursor = payload.data() + sizeof(layout);
             if (layout[0] == sizeof(LegacyPoseFrameHeaderV108)) {
@@ -275,10 +275,13 @@ int main(int argc, char** argv) {
                 std::memcpy(&frame.header, cursor, sizeof(frame.header));
             }
             cursor += layout[0];
-            require(payload.size() == sizeof(layout)+layout[0]+layout[1]*sizeof(RecordedModelPose)+layout[2]*sizeof(RecordedBoneMatrix)+sizeof(frame.visible), "pose payload size");
+            require(payload.size() == sizeof(layout)+layout[0]+layout[1]*sizeof(RecordedModelPose)+layout[2]*sizeof(RecordedBoneMatrix)+layout[3], "pose payload size");
             std::memcpy(frame.models,cursor,layout[1]*sizeof(RecordedModelPose));cursor+=layout[1]*sizeof(RecordedModelPose);
             std::memcpy(frame.bones,cursor,layout[2]*sizeof(RecordedBoneMatrix));cursor+=layout[2]*sizeof(RecordedBoneMatrix);
-            std::memcpy(&frame.visible,cursor,sizeof(frame.visible));
+            // Corpora recorded before the 1024-bone limit carry a shorter bone bitmap.
+            const auto boneBytes = layout[3] - sizeof(frame.visible.materials);
+            std::memcpy(frame.visible.bones,cursor,boneBytes);
+            std::memcpy(frame.visible.materials,cursor+boneBytes,sizeof(frame.visible.materials));
             if (equipmentBones) keepEquipmentBoneStress(frame);
             else if (bodyOnly) keepBodyOnly(frame);
             if (sourceGeneration != frame.header.key.generation) {

@@ -477,11 +477,9 @@ public:
             return snapshot_;
         }
 
-        // Native 0.5 remains exactly 1/60 s and 1.0 remains exactly 1/30 s. UltraCam may publish
-        // fractional scales between those values, so carry their sub-nanosecond remainder too.
+        // UltraCam may publish fractional frame scales, so carry the sub-nanosecond remainder.
         const double exactDelta = scale * (1000000000.0 / 30.0) + remainderNanoseconds_;
-        // Snap only sub-millionth-nanosecond binary rounding at an integer boundary. This keeps
-        // exact 30/60/120 Hz sums without rounding every fractional frame upward.
+        // Snap only binary rounding at an integer boundary, keeping exact 30/60/120 Hz sums.
         const auto delta = static_cast<std::uint64_t>(exactDelta + 0.000001);
         if (snapshot_.elapsedNanoseconds > UINT64_MAX - delta) {
             snapshot_.status = GameTimeStatus::Exhausted;

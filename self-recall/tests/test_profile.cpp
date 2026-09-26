@@ -122,7 +122,7 @@ TEST_CASE("emulator arena retains a full window of incompressible maximum poses"
     REQUIRE(oldest);
     CHECK(newest.get()->header.elapsedNanoseconds - oldest.get()->header.elapsedNanoseconds ==
           kRecallWindowNanoseconds);
-    CHECK(std::memcmp(newest.get()->bones, input.bones.data(), sizeof(newest.get()->bones)) == 0);
+    CHECK(std::memcmp(newest.get()->bones, input.bones.data(), input.bones.size() * sizeof(RecordedBoneMatrix)) == 0);
 }
 #endif
 

@@ -11,7 +11,8 @@
 namespace self_recall::pure {
 
 inline constexpr std::uint16_t kPoseModelLimit = 32;
-inline constexpr std::uint16_t kPoseBoneLimit = 512;
+// Custom player models such as Wolf Link exceed 512 bones once a top is worn.
+inline constexpr std::uint16_t kPoseBoneLimit = 1024;
 inline constexpr std::uint16_t kPoseMaterialLimit = 512;
 inline constexpr std::size_t kPoseHistoryByteLimit = 80u * 1024u * 1024u;
 
@@ -73,7 +74,7 @@ struct RecordedVisibility {
     std::uint32_t bones[kPoseBoneLimit / 32]{};
     std::uint32_t materials[kPoseMaterialLimit / 32]{};
 };
-static_assert(sizeof(RecordedVisibility) == 128);
+static_assert(sizeof(RecordedVisibility) == (kPoseBoneLimit + kPoseMaterialLimit) / 8);
 
 inline bool visibilityBit(const std::uint32_t* bits, std::uint16_t index) {
     return (bits[index / 32] & (1u << (index % 32))) != 0;
@@ -784,8 +785,7 @@ private:
         });
     }
 
-    // Written groups leave RAM early under pressure. While writes are queued the frame is
-    // rejected so the card can catch up; otherwise (SD disabled) the oldest frames expire.
+    // Under pressure written groups leave RAM; queued writes reject the frame, else the oldest expire.
     void makeSpillRoom(unsigned bytes, bool writesQueued) {
         const auto open = spill_->openIndex();
         spill_->forEachLiveGroup([&](std::uint32_t index, SpillGroup& group) {

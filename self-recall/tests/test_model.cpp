@@ -17,8 +17,7 @@ TEST_CASE("native static accessories stay out of the same-bone clothing path") {
     using Selection = Collection::StaticSelection;
     std::array<std::byte, 0x428> armor{}, accessory{};
     const void* binding = accessory.data();
-    // Clean Armor_001_Upper has SameBoneModelBind; Accessory_Battery and
-    // Weapon_Sheath_001 have ModelBind, including the battery's Pod_C target.
+    // Armor_001_Upper uses SameBoneModelBind; the battery and sheath use ModelBind.
     std::memcpy(armor.data() + 0x420, &binding, sizeof(binding));
     std::memcpy(accessory.data() + 0x18, &binding, sizeof(binding));
     CHECK(Collection::acceptsStaticEquipment(armor.data(), Selection::Clothing));

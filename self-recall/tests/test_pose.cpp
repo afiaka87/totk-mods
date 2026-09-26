@@ -345,7 +345,7 @@ TEST_CASE("pose codec preserves arbitrary IEEE words visibility and model fields
         CHECK(size <= 4 + sizeof(RecordedVisibility) + 32 * sizeof(RecordedModelPose) + 512 * sizeof(RecordedBoneMatrix));
         decoded->header = input.value.header;
         REQUIRE(decodePosePayload({bytes.data(), size}, *decoded));
-        CHECK(std::memcmp(decoded->bones, input.bones.data(), sizeof(decoded->bones)) == 0);
+        CHECK(std::memcmp(decoded->bones, input.bones.data(), input.bones.size() * sizeof(RecordedBoneMatrix)) == 0);
         CHECK(std::memcmp(decoded->models, input.models.data(), sizeof(decoded->models)) == 0);
         CHECK(std::memcmp(&decoded->visible, &input.value.visible, sizeof(decoded->visible)) == 0);
         CHECK_FALSE(decodePosePayload({bytes.data(), size - 1}, *decoded));
@@ -493,21 +493,24 @@ TEST_CASE("static pose codec preserves incompressible IEEE words and rejects dam
 
 TEST_CASE("maximum roster and incompressible bones survive compressed history rollover") {
     auto slots = std::make_unique<PoseHistorySlot[]>(16);
-    auto blocks = std::make_unique<PosePayloadBlock[]>(1024);
-    auto history = std::make_unique<PoseHistory>(slots.get(), 16, std::span{blocks.get(), 1024});
+    // Twice the slot count in maximum frames, the same slack the 512-bone fixture had.
+    constexpr std::size_t blockCount = 32 * (kPosePayloadMaxBytes / kPoseBlockDataBytes + 2);
+    auto blocks = std::make_unique<PosePayloadBlock[]>(blockCount);
+    auto history = std::make_unique<PoseHistory>(slots.get(), 16, std::span{blocks.get(), blockCount});
     auto frame = std::make_unique<RecordedPoseFrame>();
     frame->header.modelCount = kPoseModelLimit;
     frame->header.boneCount = kPoseBoneLimit;
     frame->header.worldGeneration = frame->header.modelGeneration = 1;
     for (unsigned i = 0; i < kPoseModelLimit; ++i)
         frame->models[i].identity = {i+1, i+100, i+200,
-            static_cast<std::uint16_t>(i*16), 16, 0, 0};
+            static_cast<std::uint16_t>(i * (kPoseBoneLimit / kPoseModelLimit)), kPoseBoneLimit / kPoseModelLimit, 0, 0};
     std::mt19937 random(13337);
     for (unsigned i = 1; i <= 40; ++i) {
         frame->header.frameEpoch = i;
         frame->header.elapsedNanoseconds = std::uint64_t(i) * 1'000'000'000 / 30;
         for (auto& bone : frame->bones) for (auto& word : bone.words) word = random();
         auto result = history->record({frame->header, frame->models, frame->bones, frame->visible});
+        INFO("frame ", i, " status ", unsigned(result.status));
         REQUIRE(result.status == PoseRecordStatus::Recorded);
         auto pose = history->acquire(result.key); REQUIRE(pose);
         CHECK(std::memcmp(pose.get()->bones, frame->bones, sizeof(frame->bones)) == 0);

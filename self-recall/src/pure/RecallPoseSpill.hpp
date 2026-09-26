@@ -38,13 +38,11 @@ static_assert(sizeof(SpillJobHeader) == 72);
 inline constexpr unsigned kSpillMaxGroupBytes =
     sizeof(SpillJobHeader) + kPoseChainFrames * (kPosePayloadMaxBytes + 8u);
 
-// Closed groups are batched into one card write while retaining readable RAM blocks. The ring
-// is three times this threshold, so queued groups remain safe while waiting for the batch.
+// Card writes have a fixed cost, so closed groups wait (still readable in RAM) and share one write.
 inline constexpr unsigned kSpillWriteBatchBytes = 128u * 1024u;
 inline constexpr unsigned kSpillWriteBatchJobs = 8;
 
-// Group fields other than the atomics are written by the recorder before the state
-// leaves Free/Open, or by the worker while it holds the claim writer bit.
+// Non-atomic fields: recorder writes before leaving Free/Open, worker only under the claim writer bit.
 struct SpillGroup {
     std::atomic<std::uint64_t> state{0};
     std::atomic<std::uint32_t> claims{0};
@@ -112,7 +110,6 @@ public:
     void setEnabled(bool enabled) { enabled_.store(enabled, std::memory_order_release); }
     bool enabled() const { return enabled_.load(std::memory_order_acquire); }
 
-    // Recorder side -------------------------------------------------------------------
     void resetGeneration(std::uint32_t generation) {
         generation_.store(generation, std::memory_order_release);
         open_ = kNone;
@@ -217,7 +214,6 @@ public:
         return writePos_.load(std::memory_order_acquire) - readPos_.load(std::memory_order_acquire);
     }
 
-    // Worker side ---------------------------------------------------------------------
     void setPlayback(bool active, std::uint32_t generation, std::uint64_t serial) {
         playbackSerial_.store(serial, std::memory_order_release);
         playbackGeneration_.store(generation, std::memory_order_release);
@@ -231,7 +227,6 @@ public:
         return loadOne(file);
     }
 
-    // Reader side ---------------------------------------------------------------------
     SpillAvailability availability(std::uint32_t index, std::uint32_t token) const {
         if (index >= groups_.size()) return SpillAvailability::Lost;
         const auto& group = groups_[index];
@@ -305,15 +300,13 @@ private:
         return header.magic != kSpillJobMagic || header.generation != generation();
     }
 
-    // Consecutive queued groups are copied into one file write. Each group keeps its own
-    // offset and length inside that write, so readers cannot tell how groups were combined.
+    // Batches consecutive queued groups into one write; each keeps its own offset and length.
     SpillIoReport writeOne(SpillFile& file) {
         struct Batched {
             std::uint32_t group = 0, offset = 0, bytes = 0;
             std::uint64_t state = 0;
         };
-        // Wait only while the card works and the queue is current; failures and stale jobs must
-        // be handled promptly. Recall reads from RAM, so waiting only delays the card write.
+        // Wait only while the card works and the queue is current, so failures and stale jobs surface fast.
         if (pendingBytes() < kSpillWriteBatchBytes && !playbackActive() && !lastWriteFailed_ &&
             !queueIsStale()) return {};
 

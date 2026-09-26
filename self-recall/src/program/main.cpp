@@ -70,8 +70,7 @@ HOOK_DEFINE_TRAMPOLINE(NpadCalcHook) {
             self_recall::startup_trace::mark("41 npad-original-return", reinterpret_cast<std::uintptr_t>(device), 0);
         wwpg::modules::selfRecall().tick(device);
 
-        // The repository's proven SD-card rule is to mount only after the player
-        // has resolved; filesystem services are not ready in exl_main.
+        // Filesystem services are not ready in exl_main; mount only once the player exists.
         if (!self_recall::startup_trace::ready() && self_recall::world::havePlayer())
             self_recall::startup_trace::begin();
         if (!self_recall::startup_trace::ready()) return;
@@ -111,7 +110,7 @@ extern "C" void exl_main(void*, void*) {
                                 self_recall::pose_recorder::prepareScene});
     RayCastWorkerHook::InstallAtOffset(kRayCastWorker);
     NpadCalcHook::InstallAtOffset(kNpadCalc);
-    Logging.Log("[self-recall] v1.0.14 storage=%s: Glide outfit selects 1.25/1.5/2/4x Recall speed",
+    Logging.Log("[self-recall] v1.0.15 storage=%s: Glide outfit selects 1.25/1.5/2/4x Recall speed",
                 self_recall::pure::kStorageProfileName);
 }
 

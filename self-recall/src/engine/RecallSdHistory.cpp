@@ -132,8 +132,7 @@ void line(const char* format, ...) {
 
 std::uint64_t milliseconds(std::uint64_t nanoseconds) { return nanoseconds / 1000000ull; }
 
-// Log names carry a sequence number because the system tick restarts when the console
-// reboots, so a tick cannot order logs written by different sessions.
+// The system tick restarts on reboot, so log names carry a sequence number for ordering.
 bool logSequence(const char* name, unsigned long long& out) {
     const auto length = std::strlen(name);
     if (length < 8 || std::strncmp(name, "log-", 4) != 0 ||
@@ -156,8 +155,7 @@ struct LogTrim {
     unsigned deleted = 0, failed = 0;
 };
 
-// Deletes the oldest session logs until the ones left fit the budget. Only a bounded number
-// of files is considered per launch; anything beyond that is trimmed by the next launch.
+// Deletes the oldest session logs to fit the budget; a bounded number of files per launch.
 LogTrim trimLogs() {
     struct Entry {
         unsigned long long sequence = 0;

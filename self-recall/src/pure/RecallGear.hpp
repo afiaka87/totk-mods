@@ -36,8 +36,7 @@ inline GearMatch findRecordedGear(const RecordedPoseFrame& frame, std::uint32_t 
         if (!isGearIdentity(id) || (id.unit & 0xffu) != model) continue;
         const bool exact = id.resource == resource && id.boneCount == bones && id.materialCount == materials;
         if (id.unit == gearModelToken(actorId, model)) return {&pose, exact};
-        // A new actor can reuse an unloaded resource's address. Its geometry follows
-        // the slot attachment; exact bone replay requires the recorded actor.
+        // A new actor may reuse an unloaded address: follow the slot, exact bones need the recorded actor.
         if (id.skeleton == slot + 1 && !sameSlot.pose) sameSlot = {&pose, false};
     }
     return sameSlot;

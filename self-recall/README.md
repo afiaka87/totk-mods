@@ -1,4 +1,4 @@
-# Self Recall v1.0.14
+# Self Recall v1.0.15
 
 Recall Link through his recent movement and animation history. Both builds now
 retain 64 seconds. The regular build keeps the whole history in memory for
@@ -94,6 +94,20 @@ The v1.0.14 Switch-profile module passed an Eden compatibility session beside Ul
 Glideshot: Self Recall activated, both Glideshot input orders worked, and no UltraCam binding
 triggered. The regular build uses the same corrected gameplay-time conversion but was not
 separately booted for v1.0.14.
+
+The v1.0.15 changes passed an Eden session with Wolf Link and Airbender Glider installed: Recall
+played the full 64 seconds with a top worn and through a glide with the custom glider. The Switch
+build passed a physical-Switch session with all seven of the author's published mods, Wolf Link
+and Airbender Glider installed together: the game loaded, and both Recall cases played in full.
+
+## Changes in v1.0.15
+
+- Recall works with custom player models that have more bones, such as Wolf Link wearing a top.
+  Both builds now record up to 1,024 bones instead of 512; the Switch build uses about 1 MiB more
+  memory for this.
+- Recall no longer cancels while gliding with a modded paraglider whose material lacks the game's
+  object-attribute setting (for example Airbender Glider). That part of the glider may take on the
+  muted world colors during Recall.
 
 ## Changes in v1.0.14
 
