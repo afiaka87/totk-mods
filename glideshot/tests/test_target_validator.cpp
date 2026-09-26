@@ -5,7 +5,7 @@
 #include <cmath>
 #include <limits>
 
-#include "TargetValidator.hpp"
+#include "ArrowboundPure.hpp"
 
 using namespace zonai_hookshot::pure;
 

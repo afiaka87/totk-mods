@@ -22,30 +22,21 @@ namespace arrowbound::arrow_mode {
 namespace {
 using namespace arrowbound::pure;
 
-constexpr std::ptrdiff_t kPouchMgrSlot = 0x04630020;
-constexpr std::ptrdiff_t kCEmptyStringSlot = 0x0462E0F0;
-constexpr std::ptrdiff_t kGmdEmptyString64 = 0x0462E1B8;
-constexpr std::ptrdiff_t kResolveCategory = 0x01706D80;
-constexpr std::ptrdiff_t kAddToPouch = 0x00CE0EEC;
-constexpr std::ptrdiff_t kGetPouchStructHandle = 0x00D4499C;
-constexpr std::ptrdiff_t kGetPouchCount = 0x00D44A08;
-constexpr std::ptrdiff_t kGetStructByIndex = 0x00942FE8;
-constexpr std::ptrdiff_t kGetStructString64 = 0x00935BE0; // same queued-aware getter as native pouch UI
-
 constexpr std::uint32_t kContentArrayHash = 0x4290322E;
 constexpr std::uint32_t kNameFieldHash = 0x25EFA387;
 constexpr std::uint32_t kKeyItemCategory = 8;
+constexpr std::ptrdiff_t kKeyItemStructHandle = 0x88;
 constexpr int kActionEnable = 15;
 constexpr int kActionDisable = 16;
 constexpr std::ptrdiff_t kActionWindow = 496;
-constexpr std::ptrdiff_t kSetButtonText = 0x01ABD660;
-constexpr std::ptrdiff_t kSetButtonEnabled = 0x01B17D78;
 constexpr int kGrantPushes = 6;
 constexpr int kProbeRetryTicks = aim::kTimeoutTicks + 3;
 constexpr std::uint64_t kGrantRetryTicks = 300;
 
 struct State {
     std::uintptr_t base = 0;
+    const profiles::Inventory* inventory = profiles::inventory(profiles::GameVersion::V121);
+    const profiles::Menu* menu = profiles::menu(profiles::GameVersion::V121);
     std::atomic<std::uint32_t> selectedCarrier{0};
     std::atomic<bool> selectingCarrier{false};
     std::atomic<bool> codeOnlyReady{false};
@@ -76,17 +67,19 @@ bool nameEq(const char* left, const char* right) {
 
 std::uintptr_t resolveGmd() {
     if (!g.base) return 0;
-    const auto indirect = *reinterpret_cast<const std::uintptr_t*>(
-        g.base + totk::engine::Totk121Offsets::kGameDataManagerIndirect.value);
-    if (!okPtr(indirect)) return 0;
-    const auto manager = *reinterpret_cast<const std::uintptr_t*>(indirect);
+    const auto& profile = *g.inventory;
+    auto manager = *reinterpret_cast<const std::uintptr_t*>(
+        g.base + profile.gameDataManagerSlot);
+    if (!okPtr(manager)) return 0;
+    if (profile.gameDataDereferences == 2)
+        manager = *reinterpret_cast<const std::uintptr_t*>(manager);
     return okPtr(manager) ? manager : 0;
 }
 
 std::uintptr_t resolvePouchMgr() {
     if (!g.base) return 0;
     const auto slot = *reinterpret_cast<const std::uintptr_t*>(
-        g.base + kPouchMgrSlot);
+        g.base + g.inventory->pouchManagerSlot);
     if (!okPtr(slot)) return 0;
     const auto manager = *reinterpret_cast<const std::uintptr_t*>(slot);
     return okPtr(manager) ? manager : 0;
@@ -114,22 +107,20 @@ bool intStoresHaveRoom(std::uintptr_t manager, int pushes) {
 
 const char* slotName(std::uint32_t category, std::uint32_t index,
                      unsigned char record[16]) {
+    if (category != kKeyItemCategory) return nullptr;
     const auto manager = resolveGmd();
     const auto pouchMgr = resolvePouchMgr();
     if (!manager || !pouchMgr) return nullptr;
-    using GetHandleFn = std::uintptr_t (*)(std::uintptr_t, std::uint32_t);
     using GetByIndexFn = std::uint32_t (*)(std::uintptr_t, void*,
                                            std::uintptr_t, std::uint32_t,
                                            std::uint32_t);
     using GetStringFn = std::uint32_t (*)(std::uintptr_t, const char**,
                                           const void*, std::uint32_t);
-    const auto getHandle = reinterpret_cast<GetHandleFn>(
-        g.base + kGetPouchStructHandle);
     const auto getByIndex = reinterpret_cast<GetByIndexFn>(
-        g.base + kGetStructByIndex);
+        g.base + g.inventory->structByIndex);
     const auto getString = reinterpret_cast<GetStringFn>(
-        g.base + kGetStructString64);
-    const auto handle = getHandle(pouchMgr, category);
+        g.base + g.inventory->structString64);
+    const auto handle = pouchMgr + kKeyItemStructHandle;
     if (!okPtr(handle)) return nullptr;
     for (int i = 0; i < 16; ++i) record[i] = 0;
     if ((getByIndex(manager, record, handle, kContentArrayHash, index) & 1u) ==
@@ -137,7 +128,7 @@ const char* slotName(std::uint32_t category, std::uint32_t index,
         return nullptr;
     }
     const char* name = *reinterpret_cast<const char* const*>(
-        g.base + kGmdEmptyString64);
+        g.base + g.inventory->initialEmptyStringSlot);
     if ((getString(manager, &name, record, kNameFieldHash) & 1u) == 0)
         return nullptr;
     return name;
@@ -147,7 +138,7 @@ CarrierPresence findCarrier() {
     const auto pouchMgr = resolvePouchMgr();
     if (!pouchMgr || !resolveGmd()) return CarrierPresence::Unknown;
     using GetCountFn = std::uint32_t (*)(std::uintptr_t, std::uint32_t);
-    const auto count = reinterpret_cast<GetCountFn>(g.base + kGetPouchCount)(
+    const auto count = reinterpret_cast<GetCountFn>(g.base + g.inventory->pouchCount)(
         pouchMgr, kKeyItemCategory);
     alignas(8) unsigned char record[16]{};
     return scanCarrier(count,
@@ -171,7 +162,7 @@ bool grantCarrier() {
     auto* name = reinterpret_cast<const char**>(&nameRef);
     using ResolveCategoryFn = std::uint8_t (*)(std::uint32_t*, const char**);
     const auto resolveCategory = reinterpret_cast<ResolveCategoryFn>(
-        g.base + kResolveCategory);
+        g.base + g.inventory->resolveCategory);
     std::uint32_t category = 0;
     if ((resolveCategory(&category, name) & 1u) == 0 ||
         category != kKeyItemCategory) {
@@ -184,8 +175,8 @@ bool grantCarrier() {
         std::int32_t, std::uint8_t, std::uint32_t, std::uint32_t,
         std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t,
         std::uint32_t*, std::uint8_t);
-    const auto addToPouch = reinterpret_cast<AddToPouchFn>(g.base + kAddToPouch);
-    void* modifier = *reinterpret_cast<void**>(g.base + kCEmptyStringSlot);
+    const auto addToPouch = reinterpret_cast<AddToPouchFn>(g.base + g.inventory->addToPouch);
+    void* modifier = *reinterpret_cast<void**>(g.base + g.inventory->cEmptyStringSlot);
     const std::uint64_t result = addToPouch(
         reinterpret_cast<void*>(pouchMgr), name, modifier, category, 1, 1, 0,
         0, 0, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
@@ -245,6 +236,15 @@ void serviceLiveWork(HookshotRuntime& rt) {
 }  // namespace
 
 void initialize(std::uintptr_t mainBase) { g.base = mainBase; }
+
+bool useGameProfile(profiles::GameVersion version) {
+    const auto* inventory = profiles::inventory(version);
+    const auto* menu = profiles::menu(version);
+    if (!inventory || !menu) return false;
+    g.inventory = inventory;
+    g.menu = menu;
+    return true;
+}
 
 void filterSerializedSave(void* rawManager, std::uint32_t fileIndex) {
     if (fileIndex != 0) return; // progress.sav only
@@ -347,9 +347,9 @@ void endSelection(void* rawScreen) {
     using SetEnabled = void (*)(std::uintptr_t, unsigned, bool);
     const bool active = enabled();
     const auto& message = active ? kDeactivate : kActivate;
-    reinterpret_cast<SetText>(g.base + kSetButtonText)(
+    reinterpret_cast<SetText>(g.base + g.menu->setButtonText)(
         window, 0, active ? kActionDisable : kActionEnable, &message);
-    reinterpret_cast<SetEnabled>(g.base + kSetButtonEnabled)(window, 0, true);
+    reinterpret_cast<SetEnabled>(g.base + g.menu->setButtonEnabled)(window, 0, true);
     ZHLOG("ARROW_MODE_MENU enabled=%u code_only=1", (unsigned)active);
 }
 
@@ -388,7 +388,7 @@ void refreshSelectedSlot(void* rawScreen) {
     }
     std::uint32_t category = 0, index = 0;
     using GetActive = void (*)(std::uintptr_t, std::uint32_t*, std::uint32_t*);
-    reinterpret_cast<GetActive>(g.base + 0x01A7A010)(pouch, &category, &index);
+    reinterpret_cast<GetActive>(g.base + g.menu->getActive)(pouch, &category, &index);
     alignas(8) unsigned char record[16]{};
     if (category != kKeyItemCategory || !nameEq(slotName(category, index, record), kCarrierActor)) {
         ZHLOG("ARROW_MODE_REFRESH selection changed category=%u index=%u", category, index);
@@ -398,7 +398,7 @@ void refreshSelectedSlot(void* rawScreen) {
     const auto integer = [](std::uintptr_t p) { return *reinterpret_cast<const std::uint32_t*>(p); };
     const auto pane = pointer(screen + 0x1E0);
     using GetControl = std::uintptr_t (*)(std::uintptr_t);
-    const auto control = okPtr(pane) ? reinterpret_cast<GetControl>(g.base + 0x01AC2528)(pane) : 0;
+    const auto control = okPtr(pane) ? reinterpret_cast<GetControl>(g.base + g.menu->getControl)(pane) : 0;
     const auto slot = engine::selectedKeyItemSlot(control, index, okPtr, pointer, integer);
     if (!slot) {
         ZHLOG("ARROW_MODE_REFRESH no live selected slot index=%u", index);
@@ -409,12 +409,17 @@ void refreshSelectedSlot(void* rawScreen) {
     using SetIcon = void (*)(std::uintptr_t, const char**, bool, bool);
     using SetState = void (*)(std::uintptr_t, std::uint32_t);
     const bool active = enabled();
-    reinterpret_cast<SetCheck>(g.base + 0x01A583A8)(slot, active);
-    const auto icon = reinterpret_cast<GetIcon>(g.base + 0x01A58378)(slot);
+    reinterpret_cast<SetCheck>(g.base + g.menu->setCheck)(slot, active);
+    const auto icon = reinterpret_cast<GetIcon>(g.base + g.menu->getIcon)(slot);
     if (okPtr(icon)) {
         const char* iconActor = engine::kActiveCarrierIconActor;
-        reinterpret_cast<SetIcon>(g.base + 0x01A594FC)(icon, &iconActor, false, active);
-        reinterpret_cast<SetState>(g.base + 0x01A58464)(icon, engine::carrierIconState(active));
+        if (g.menu->setIconHasActiveArg) {
+            reinterpret_cast<SetIcon>(g.base + g.menu->setIcon)(icon, &iconActor, false, active);
+        } else {
+            using SetIconWithoutActive = void (*)(std::uintptr_t, const char**, bool);
+            reinterpret_cast<SetIconWithoutActive>(g.base + g.menu->setIcon)(icon, &iconActor, false);
+        }
+        reinterpret_cast<SetState>(g.base + g.menu->setState)(icon, engine::carrierIconState(active));
     }
     ZHLOG("ARROW_MODE_REFRESH enabled=%u state=%u icon=%u", (unsigned)active,
           engine::carrierIconState(active), (unsigned)okPtr(icon));

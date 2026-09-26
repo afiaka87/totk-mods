@@ -33,6 +33,7 @@ add_executable(zonai_hookshot_pure_tests
 target_include_directories(zonai_hookshot_pure_tests PRIVATE
     "${DOCTEST_INCLUDE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/pure"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../arrowbound/src/pure"
 )
 target_compile_features(zonai_hookshot_pure_tests PRIVATE cxx_std_23)
 if(MSVC)

@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
 
-// The velocity setter is the Player component call at main+0x01621CBC, not the shared rigid-body lane. What an
-// action-thread hook may touch: the actor and Player component resolved from the action's own context.
+// Action hooks resolve the actor and Player component from the active game profile.
 #pragma once
+
+#include "EngineNamespace.hpp"
 
 #include <cstdint>
 
+#include <arrowbound/GameProfiles.hpp>
 #include "Vec3.hpp"
 
-namespace arrowbound::action {
+namespace HOOKSHOT_ENGINE_NS::action {
 struct Context {
     std::uintptr_t actor = 0;
     std::uintptr_t playerComponent = 0;
@@ -20,9 +22,8 @@ struct Context {
 };
 
 void initialize(std::uintptr_t mainBase);
+bool useGameProfile(arrowbound::profiles::GameVersion version);
 
-// Verified in the 1.2.1 disassembly: ExecuteBase::getActor main+0x00BC7610, GetPlayerComponent
-// main+0x0107E9A0.
 Context resolve(void* action);
 
 pure::Vec3 actorPosition(const Context& context);
@@ -31,4 +32,4 @@ pure::Vec3 actorVelocity(const Context& context);
 // scale=false: raw metres per second (the true path multiplies by 30).
 void setLinearVelocity(const Context& context, const pure::Vec3& velocity);
 
-}  // namespace arrowbound::action
+}  // namespace HOOKSHOT_ENGINE_NS::action

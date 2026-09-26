@@ -10,10 +10,12 @@
 #include "totk/engine/Scene.hpp"
 #include "totk/engine/Pointer.hpp"
 #include <lib.hpp>
+#include <arrowbound/ActiveGame.hpp>
 
 namespace arrowbound::ragdoll_transport {
 namespace {
 std::uintptr_t base{};
+const profiles::Game* game{};
 std::atomic<std::uint32_t> generation{};
 std::atomic_flag busy = ATOMIC_FLAG_INIT;
 std::atomic<unsigned> bindingCount{}, faults{};
@@ -79,28 +81,26 @@ engine::ActorReference playerReference() {
     const auto scene=totk::engine::resolveScene(base);
     if (!scene) { reject("scene"); return {}; }
     using PlayerLink=const void* (*)(std::uintptr_t);
-    const auto* link=reinterpret_cast<PlayerLink>(base+0x00B7EF98)(scene.value.residentActorManager);
+    const auto* link=reinterpret_cast<PlayerLink>(base+game->calls.getPlayerActor)(scene.value.residentActorManager);
     if (!link) { reject("player_link"); return {}; }
     using Resolve=engine::ActorReference (*)(const void*);
-    return reinterpret_cast<Resolve>(base+0x00753530)(link);
+    return reinterpret_cast<Resolve>(base+game->calls.getReference)(link);
 }
 std::uintptr_t structureFor(std::uintptr_t player) {
     using GetSet=std::uintptr_t (*)(std::uintptr_t);
     using GetStructure=std::uintptr_t (*)(std::uintptr_t,unsigned);
-    const auto set=reinterpret_cast<GetSet>(base+0x00DA744C)(player);
-    return valid(set) ? reinterpret_cast<GetStructure>(base+0x011B4520)(set,0) : 0;
+    const auto set=reinterpret_cast<GetSet>(base+game->physics.getControllerSet.offset)(player);
+    return valid(set) ? reinterpret_cast<GetStructure>(base+game->physics.getStructure.offset)(set,0) : 0;
 }
 std::uintptr_t worldFor(std::uintptr_t body) {
-    // The engine singleton slot requires both dereferences.
-    const auto slot=read<std::uintptr_t>(base,0x0462E038);
-    if (!valid(slot)) return 0;
-    const auto engine=read<std::uintptr_t>(slot,0);
+    // The physics engine variable holds the engine pointer (one dereference).
+    const auto engine=read<std::uintptr_t>(base,game->variables.physics);
     if (!valid(engine)) return 0;
     const auto physics=read<std::uintptr_t>(engine,0xC8);
     if (!valid(physics)) return 0;
     const auto layer=(read<std::uint64_t>(body,0x68)>>5)&1;
     const auto wrapper=read<std::uintptr_t>(physics,0xC0+8*layer);
-    return valid(wrapper) ? read<std::uintptr_t>(wrapper,0xE0) : 0;
+    return valid(wrapper) ? read<std::uintptr_t>(wrapper,game->layout.worldFromWrapper) : 0;
 }
 void clearIdentity(std::uintptr_t player, std::uintptr_t structure) {
     if (state.count) ZHLOG("RAGDOLL_FLIGHT_RETIRE reason=identity count=%u",state.count);
@@ -129,15 +129,15 @@ bool currentOwner(const Binding& binding) {
 void queueRestore(Binding& binding, std::uintptr_t body) {
     if (!binding.lease.owned) return;
     using Added=bool (*)(std::uintptr_t);
-    if (!reinterpret_cast<Added>(base+0x00DE8918)(body)) {
+    if (!reinterpret_cast<Added>(base+game->physics.isAddedToWorld.offset)(body)) {
         reject("restore_body_detached");
         binding.lease={};
         return;
     }
     using Mutex=void (*)(std::uintptr_t);
     using GetRequest=std::uintptr_t (*)(std::uintptr_t);
-    reinterpret_cast<Mutex>(base+0x02B17270)(body+0x78);
-    const auto request=reinterpret_cast<GetRequest>(base+0x00656DF4)(body);
+    reinterpret_cast<Mutex>(base+game->physics.bodyLock.offset)(body+0x78);
+    const auto request=reinterpret_cast<GetRequest>(base+game->physics.getOrAllocRequest.offset)(body);
     if (valid(request)) {
         auto& flags=*reinterpret_cast<std::uint32_t*>(request+0xD4);
         if (!(flags&0x80)) {
@@ -149,7 +149,7 @@ void queueRestore(Binding& binding, std::uintptr_t body) {
             } else reject("restore_velocity");
         }
     } else reject("restore_request");
-    reinterpret_cast<Mutex>(base+0x02B17280)(body+0x78);
+    reinterpret_cast<Mutex>(base+game->physics.bodyUnlock.offset)(body+0x78);
 }
 void retireCurrent(std::uintptr_t player, std::uintptr_t structure) {
     state.transport={};
@@ -204,12 +204,12 @@ void observe(std::uintptr_t structure, const float* basis, float delta) {
     if (count<2 || count>65 || !valid(entries) || !valid(mapping) || !valid(source)) { reject("layout",count); return; }
     using FindBody=std::uint16_t (*)(std::uintptr_t,const char* const*);
     const char* name="Skl_Root";
-    const auto root=reinterpret_cast<FindBody>(base+0x0134D5E0)(structure,&name);
+    const auto root=reinterpret_cast<FindBody>(base+game->physics.findBodyByName.offset)(structure,&name);
     const auto mappedCount=read<unsigned>(mapping,8);
     const auto mapped=read<std::uintptr_t>(mapping,0x10);
     if (root>=count-1 || root>=mappedCount || mappedCount>64 || !valid(mapped)) { reject("root_mapping",mappedCount); return; }
     using Refresh=void (*)(std::uintptr_t,std::uintptr_t);
-    reinterpret_cast<Refresh>(base+0x00EDDE40)(mapping,source);
+    reinterpret_cast<Refresh>(base+game->physics.refreshMapping.offset)(mapping,source);
     const auto target=pure::transformPoint(basis,read<pure::Vec3>(mapped+120u*root,0x18));
     std::array<pure::RagdollBodyPose,64> poses{};
     std::array<Binding,64> fresh{};
@@ -224,7 +224,7 @@ void observe(std::uintptr_t structure, const float* basis, float delta) {
         const auto world=worldFor(body);
         if (!valid(sdk) || !valid(world)) { reject("backend",i); return; }
         const auto table=read<std::uintptr_t>(world,0);
-        if (!valid(table) || read<std::uintptr_t>(table,0x198)!=base+0x00151D4C) { reject("world_writer",i); return; }
+        if (!valid(table) || read<std::uintptr_t>(table,0x198)!=base+game->physics.setBodyLinearVelocity.offset) { reject("world_writer",i); return; }
         fresh[used].body=body;
         fresh[used].world=world;
         fresh[used].handle=read<std::uint64_t>(sdk,8);
@@ -232,8 +232,8 @@ void observe(std::uintptr_t structure, const float* basis, float delta) {
         if (i==root) anchor=used;
         using GetMatrix=std::uint64_t (*)(std::uintptr_t,float*);
         using GetVelocity=void (*)(std::uintptr_t,pure::Vec3*);
-        reinterpret_cast<GetMatrix>(base+0x00CCB4D4)(body,poses[used].matrix.data());
-        reinterpret_cast<GetVelocity>(base+0x011B44AC)(body,&poses[used].velocity);
+        reinterpret_cast<GetMatrix>(base+game->physics.getCurrentMatrix.offset)(body,poses[used].matrix.data());
+        reinterpret_cast<GetVelocity>(base+game->physics.getNextLinearVelocity.offset)(body,&poses[used].velocity);
         ++used;
     }
     auto planned=previous;
@@ -293,6 +293,56 @@ HOOK_DEFINE_TRAMPOLINE(VelocityClampHook) {
         return native;
     }
 };
+// 1.4.x inlines the clamp: after the native write, replace the queued request velocity under the body lock.
+void overrideRequest(std::uintptr_t body, const pure::Vec3& incoming) {
+    if (!candidate(body)) return;
+    Lock lock;
+    if (!lock.held) { reject("request_busy"); return; }
+    if (!allowed()) return;
+    for (unsigned i=0;i<state.count;++i) {
+        auto& binding=state.bodies[i];
+        if (binding.body!=body) continue;
+        const auto speed=pure::length(incoming);
+        if (!pure::finite3(incoming) || !std::isfinite(speed)) { reject("velocity_nonfinite"); return; }
+        // Flag 0x100 routes the request to a shared queue entry; leave that one alone.
+        if (read<std::uint64_t>(body,0x68)&0x100) { reject("request_shared"); return; }
+        using Mutex=void (*)(std::uintptr_t);
+        reinterpret_cast<Mutex>(base+game->physics.bodyLock.offset)(body+0x78);
+        const auto request=read<std::uintptr_t>(body,0x60);
+        pure::Vec3 native{};
+        bool written=false;
+        if (valid(request) && (read<std::uint32_t>(request,0xD4)&0x80)) {
+            native=read<pure::Vec3>(request,0x44);
+            write(request,0x44,pure::boundedFlightVelocity(incoming));
+            written=true;
+        }
+        const auto wrote=written ? read<pure::Vec3>(request,0x44) : native;
+        reinterpret_cast<Mutex>(base+game->physics.bodyUnlock.offset)(body+0x78);
+        if (!written) { reject("request_missing"); return; }
+        const auto n=++binding.clamps;
+        if (binding.root && (n<=30 || n%6==0))
+            ZHLOG("RAGDOLL_SPEED_REQUEST shot=%u n=%u wanted_cm_s=%d native_cm_s=%d allowed_cm_s=%d",
+                state.shot,n,pure::traceNumber(speed),pure::traceNumber(pure::length(native)),
+                pure::traceNumber(pure::length(wrote)));
+        return;
+    }
+}
+HOOK_DEFINE_TRAMPOLINE(RequestVelocityHook) {
+    static std::uint64_t Callback(std::uintptr_t body, pure::Vec3* velocity) {
+        const auto incoming=velocity ? *velocity : pure::Vec3{};
+        const auto result=Orig(body,velocity);
+        if (velocity) overrideRequest(body,incoming);
+        return result;
+    }
+};
+HOOK_DEFINE_TRAMPOLINE(RequestVelocityWrapperHook) {
+    static std::uint64_t Callback(std::uintptr_t wrapper, pure::Vec3* velocity) {
+        const auto incoming=velocity ? *velocity : pure::Vec3{};
+        const auto result=Orig(wrapper,velocity);
+        if (velocity && valid(wrapper)) overrideRequest(read<std::uintptr_t>(wrapper,24),incoming);
+        return result;
+    }
+};
 HOOK_DEFINE_TRAMPOLINE(WorldVelocityHook) {
     static std::uint64_t Callback(std::uintptr_t world, std::uint64_t handle, const void* velocity, int activation) {
         std::uintptr_t observedMotion=0;
@@ -309,7 +359,7 @@ HOOK_DEFINE_TRAMPOLINE(WorldVelocityHook) {
                     break;
                 }
                 using Get=std::uintptr_t (*)(std::uintptr_t,std::uint64_t);
-                const auto motion=reinterpret_cast<Get>(base+0x00151AB4)(world,handle);
+                const auto motion=reinterpret_cast<Get>(base+game->physics.getSpeedLimit.offset)(world,handle);
                 if (!valid(motion)) { reject("motion"); break; }
                 const auto current=read<float>(motion,12);
                 if (!std::isfinite(current) || current<=0) { reject("native_limit"); break; }
@@ -359,14 +409,16 @@ void retireIfInactive() {
     retireCurrent(reference.actor,structure);
 }
 void install(std::uintptr_t mainBase) {
+    game=profiles::active();
+    if (!game) return;
     base=mainBase;
-    struct Guard { std::uintptr_t offset; std::uint32_t word; };
-    constexpr Guard guards[]={{0x006CB204,0xD101C3FF},{0x00DA744C,0xF9411408},
-        {0x011B4520,0xAA0003E8},{0x0134D5E0,0xA9BC7BFD},{0x00EDDE40,0xD10283FF},
-        {0x00CCB4D4,0xA9BD7BFD},{0x011B44AC,0xA9BD7BFD},{0x0231E650,0xD100C3FF},
-        {0x00151D4C,0xD10283FF},{0x00151AB4,0xA9BE7BFD},{0x00656DF4,0xF9403408},
-        {0x00DE8918,0xF9403009},{0x02B17270,0xD000D7F0},{0x02B17280,0xD000D7F0}};
+    const auto& p=game->physics;
+    const profiles::Site guards[]={p.ragdollStep,p.getControllerSet,p.getStructure,p.findBodyByName,
+        p.refreshMapping,p.getCurrentMatrix,p.getNextLinearVelocity,p.velocityClamp,
+        p.setBodyLinearVelocity,p.getSpeedLimit,p.getOrAllocRequest,p.isAddedToWorld,p.bodyLock,
+        p.bodyUnlock,p.requestVelocity,p.requestVelocityWrapper};
     for (const auto& guard:guards) {
+        if (!guard.offset) continue;
         const auto word=read<std::uint32_t>(base,guard.offset);
         if (word!=guard.word) {
             ZHLOG("HOOK DISABLED ragdoll flight offset=%x word=%08x expected=%08x",unsigned(guard.offset),word,guard.word);
@@ -374,9 +426,18 @@ void install(std::uintptr_t mainBase) {
             return;
         }
     }
-    VelocityClampHook::InstallAtOffset(0x0231E650);
-    WorldVelocityHook::InstallAtOffset(0x00151D4C);
-    RagdollStepHook::InstallAtOffset(0x006CB204);
-    ZHLOG("RAGDOLL_FLIGHT_READY threshold_cm=800 ceiling_cm_s=500000 matrix_writes=0");
+    if (p.velocityClamp.offset) {
+        VelocityClampHook::InstallAtOffset(p.velocityClamp.offset);
+    } else if (p.requestVelocity.offset && p.requestVelocityWrapper.offset) {
+        RequestVelocityHook::InstallAtOffset(p.requestVelocity.offset);
+        RequestVelocityWrapperHook::InstallAtOffset(p.requestVelocityWrapper.offset);
+    } else {
+        ZHLOG("HOOK DISABLED ragdoll flight: no velocity request site");
+        base=0;
+        return;
+    }
+    WorldVelocityHook::InstallAtOffset(p.setBodyLinearVelocity.offset);
+    RagdollStepHook::InstallAtOffset(p.ragdollStep.offset);
+    ZHLOG("RAGDOLL_FLIGHT_READY game=%s threshold_cm=800 ceiling_cm_s=500000 matrix_writes=0",game->name);
 }
 }

@@ -2,10 +2,12 @@
 // Copyright (c) Clay Mullis
 #pragma once
 
+#include "EngineNamespace.hpp"
+
 #include <cstdint>
 #include <cstddef>
 
-namespace arrowbound::engine {
+namespace HOOKSHOT_ENGINE_NS::engine {
 
 struct SoundHandle {
     std::int8_t system = 0;
@@ -16,4 +18,4 @@ struct SoundHandle {
 static_assert(sizeof(SoundHandle) == 8);
 static_assert(offsetof(SoundHandle, index) == 2 && offsetof(SoundHandle, createId) == 4);
 
-} // namespace arrowbound::engine
+} // namespace HOOKSHOT_ENGINE_NS::engine

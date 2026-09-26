@@ -12,6 +12,7 @@
 #include "FacingController.hpp"
 #include "HookshotAudio.hpp"
 #include "HookshotCues.hpp"
+#include "ActivationButtons.hpp"
 #include "HookshotInput.hpp"
 #include "HookshotLog.hpp"
 #include "HookshotRuntime.hpp"
@@ -33,6 +34,38 @@ struct AudioState {
 };
 AudioState g_audio;
 bool g_allowActivation = true;
+
+// What owns Link half a second after a B clear: the paraglider or a fall.
+struct CancelWatch {
+    std::uint64_t tick = 0;
+    std::uint32_t parasailUpdates = 0;
+    std::uint32_t fallUpdates = 0;
+    bool parasailAtCancel = false;
+    bool pending = false;
+};
+CancelWatch g_cancelWatch;
+constexpr std::uint64_t kCancelWatchTicks = 30;
+
+void armCancelWatch(HookshotRuntime& rt) {
+    g_cancelWatch.tick = rt.session.tick;
+    g_cancelWatch.parasailUpdates = rt.drive.updates.load(std::memory_order_relaxed);
+    g_cancelWatch.fallUpdates = rt.drive.fallUpdates.load(std::memory_order_relaxed);
+    g_cancelWatch.parasailAtCancel = rt.drive.parasailActive.load(std::memory_order_relaxed) != 0;
+    g_cancelWatch.pending = true;
+}
+
+void serviceCancelWatch(HookshotRuntime& rt, bool bHeld) {
+    if (!g_cancelWatch.pending || rt.session.tick - g_cancelWatch.tick < kCancelWatchTicks) return;
+    g_cancelWatch.pending = false;
+    ZHLOG("CANCEL_RESULT parasail_at_cancel=%u parasail_now=%u fall_now=%u "
+          "parasail_updates=%u fall_updates=%u b_held=%u b_latched=%u",
+          (unsigned)g_cancelWatch.parasailAtCancel,
+          rt.drive.parasailActive.load(std::memory_order_relaxed),
+          rt.drive.fallActive.load(std::memory_order_relaxed),
+          rt.drive.updates.load(std::memory_order_relaxed) - g_cancelWatch.parasailUpdates,
+          rt.drive.fallUpdates.load(std::memory_order_relaxed) - g_cancelWatch.fallUpdates,
+          (unsigned)bHeld, (unsigned)rt.machine.bLatched);
+}
 
 void silenceAudio() {
     audio::resetAbilityCues();
@@ -107,6 +140,7 @@ void handleEvent(HookshotRuntime& rt, Event event) {
             transport::stopDrive(rt, "cancel");
             note("chain cleared");
             ZHLOG("CLEAR");
+            armCancelWatch(rt);
             break;
 
         case Event::DetachRequested: transport::onDetachRequested(rt); break;
@@ -172,7 +206,8 @@ void runtimeTick(void* device) {
     in.worldReady = ready;
     in.freshInput = fresh;
     in.chordHeld = g_allowActivation && input_policy::aimHeld(buttons);
-    in.triggerHeld = (buttons & input::kButtonL) != 0;
+    in.triggerHeld = (buttons & input_policy::kButtonL) != 0;
+    in.bHeld = (buttons & input::kButtonB) != 0;
 
     const bool ownAim = in.chordHeld || rt.machine.phase == Phase::Targeting ||
                         rt.machine.phase == Phase::Confirming;
@@ -235,6 +270,7 @@ void runtimeTick(void* device) {
     if (out.event != Event::None) handleEvent(rt, out.event);
 
     capture::serviceInputTelemetry(rt);
+    serviceCancelWatch(rt, in.bHeld);
 
     // The carrier runs only while its phase owns Link; B or a reset transitions out before this
     // call.
@@ -258,8 +294,8 @@ void runtimeTick(void* device) {
     std::uint64_t mask =
         (out.consumed.a ? input::kButtonA : 0ull) |
         (out.consumed.b ? input::kButtonB : 0ull) |
-        (out.consumed.trigger ? input::kButtonL : 0ull);
-    if (ownAim) mask |= input::kAimChord;
+        (out.consumed.trigger ? input_policy::kButtonL : 0ull);
+    if (ownAim) mask |= input_policy::kAimChord;
     if (mask) frame.maskOwnedButtons(mask);
 }
 
@@ -276,9 +312,7 @@ void moduleInit(std::uintptr_t base) {
 void moduleEnter() {
     HookshotRuntime& rt = runtime();
     silenceAudio();
-    const bool latch = rt.machine.triggerLatched;  // quarantine survives re-entry
-    rt.machine = {};
-    rt.machine.triggerLatched = latch;
+    pure::resetKeepingLatches(rt.machine);  // quarantines survive
     rt.prevButtons = 0;
     rt.lastButtons = 0;
     rt.haveButtons = false;
@@ -358,9 +392,7 @@ void yieldMovement() {
     transport::stopDrive(rt, "bow aim");
     aim::abandonPending();
     silenceAudio();
-    const bool latch = rt.machine.triggerLatched;
-    rt.machine = {};
-    rt.machine.triggerLatched = latch;
+    pure::resetKeepingLatches(rt.machine);  // quarantines survive
     rt.launch = {};
     rt.positionDrive = {};
     rt.capture = {};

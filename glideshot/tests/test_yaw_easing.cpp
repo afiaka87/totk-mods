@@ -6,7 +6,7 @@
 #include <limits>
 #include <string>
 
-#include "YawEasing.hpp"
+#include "ArrowboundPure.hpp"
 
 using namespace zonai_hookshot::pure;
 

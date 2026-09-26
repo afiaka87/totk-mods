@@ -1,4 +1,4 @@
-# Arrowbound v0.1.2
+# Arrowbound v0.2.3
 
 Activate the Arrowbound Emblem in Key Items, shoot a bow, and follow the arrow with the paraglider
 open. Arrows keep their vanilla speed, gravity, arc, range and lifetime. Aim in midair with normal
@@ -30,10 +30,10 @@ No game assets, replacement ROMFS files or custom GameData schema are distribute
 
 ## Requirements and validation
 
-Requires Tears of the Kingdom 1.2.1, build `9B4E43650501A4D4`, and an exefs-compatible loader.
-Earlier shared gameplay passed on Eden and physical Switch inside combined Glideshot.
-The latest shared flight-clock correction passed inside Glideshot on physical
-Switch alongside Self Recall. Standalone hardware testing has not been repeated.
+The source carries checked address tables for Tears of the Kingdom 1.0.0 through 1.4.3 and
+selects one at startup; an unrecognized build installs nothing. Inside Glideshot v0.10.4 the
+shared code was observed working on Eden on all nine versions. The standalone package keeps
+1.2.1's NPDM and is documented for 1.2.1 only; it has not had its own observed boot.
 Earlier fast-arrow fixes passed Citron tests. At very high speed, Link's legs can
 still tuck backward. This folder is source, not a binary download.
 
@@ -53,14 +53,15 @@ the required game-facing headers. The native source uses C++26.
 - Use exlaunch's consumer templates, which are not included. Set `EXL_MODULE_NAME "arrowbound"`,
   `EXL_USE_FAKEHEAP`, no `EXL_DEBUG`, `HeapSize 0x10000`, `JitSize 0x4000`,
   `InlinePoolSize 0x1000`, `LogBufferSize 512`, and an empty reloc table.
-- Compile definition `TOTK_VERSION=121`; program ID `0100F2C0115B6000`; module `subsdk9`.
+- Compile definition `TOTK_VERSION=121` (selects the 1.2.1 SDK headers; game addresses come from
+  `src/include/arrowbound/GameProfiles.hpp` at runtime); program ID `0100F2C0115B6000`; module `subsdk9`.
 - This release retains `ARROWBOUND_FLIGHT_DIAGNOSTICS=1` to match the tested build.
 
 ## Host tests
 
 Run `tests/run_host_tests.ps1` with CMake, Ninja and a C++23 compiler installed. It fetches doctest
-2.4.11 if no vendored copy is available. The 71 cases cover following, ownership, wall capture,
-carrier saving, menu text and persistence failure handling. Engine-facing tests use local stubs;
+2.4.11 if no vendored copy is available. The 74 cases cover following, per-build address tables,
+ownership, wall capture, carrier saving, menu text and persistence failure handling. Engine-facing tests use local stubs;
 the default suite needs no game files. Glideshot's test runner also runs this suite.
 
 ## A note on the code

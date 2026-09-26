@@ -18,6 +18,7 @@
 #include "ChainShaders.hpp"
 #include "ChainVisual.hpp"
 #include "totk/render/PfxHook.hpp"
+#include <arrowbound/ActiveGame.hpp>
 
 namespace zonai_hookshot::render {
 namespace {
@@ -25,19 +26,7 @@ using pure::ChainStyleResolved;
 using pure::ChainUniforms;
 using pure::Vec3;
 
-// Pinned engine addresses (TotK 1.2.1).
-
-constexpr std::uintptr_t kGetProcSlot = 0x46170f0;     // nvnDeviceGetProcAddress
-constexpr std::uintptr_t kGraphicsSlot = 0x462ef88;    // graphics singleton; device at +0x30
-constexpr std::uintptr_t kUniformAllocatorSlot = 0x46382e0;
-
-constexpr std::uintptr_t kGraphicsContextCtor = 0x74c19c;   // sead::GraphicsContext::GraphicsContext
-constexpr std::uintptr_t kGraphicsContextApply = 0x756a08;  // sead::GraphicsContext::apply
-constexpr std::uintptr_t kCreateDynamicUniformBlock = 0x95f604;
-constexpr std::uintptr_t kActivateSampler = 0x95ef6c;
-constexpr std::uintptr_t kFramebufferBind = 0xc5a6fc;
-constexpr std::uintptr_t kFramebufferUnbind = 0x962c18;
-constexpr std::uintptr_t kFramebufferBarrier = 0xc4b7ac;
+// Engine addresses and layouts come from the running build's game profile; 1.4.x moved several of them.
 
 // sead::GraphicsContext offsets: bytes 0/1 depth test/write, dword 4 blend-enable mask, from byte
 // 40 six bytes per target stored as srcRGB, srcAlpha, dstRGB, dstAlpha, eqRGB, eqAlpha.
@@ -51,15 +40,10 @@ constexpr std::size_t kStateBlendDstAlpha = 43;
 constexpr std::size_t kStateBlendEquationRgb = 44;
 constexpr std::size_t kStateBlendEquationAlpha = 45;
 
-// Render camera record, reached from the draw context.
+// Render camera record, reached from the draw context; projection 4x4 and view 3x4, row major.
 constexpr std::size_t kContextCamera = 0x18;
-constexpr std::size_t kCameraProjection = 0x160;   // 4x4, row major
-constexpr std::size_t kCameraView = 0x100;         // 3x4, row major
-constexpr std::size_t kCameraNear = 0x1e0;
-constexpr std::size_t kCameraFar = 0x1e4;
 
 // Scene render-target record, for the depth texture.
-constexpr std::size_t kSceneBuffers = 0x1ec0;
 constexpr std::size_t kBuffersRecord = 0x10;
 
 constexpr float kTau = pure::kChainTau;
@@ -102,6 +86,7 @@ const Style kStyles[] = {
 constexpr std::uint8_t kStyleCount = sizeof(kStyles) / sizeof(kStyles[0]);
 
 std::uintptr_t g_base{};
+const arrowbound::profiles::Game* g_game{};
 float g_phaseRadians = 0.0f;
 
 bool g_ready{}, g_attempted{}, g_programReady{}, g_programAttempted{};
@@ -147,17 +132,16 @@ void write(void* p, std::size_t offset, T value) {
 }
 
 template <class F>
-F native(std::uintptr_t offset) {
+F native(std::ptrdiff_t offset) {
     return reinterpret_cast<F>(g_base + offset);
 }
 
-// Engine singletons live in double-dereferenced slots.
-void* global(std::uintptr_t offset) {
-    const auto slot = read<std::uintptr_t>(reinterpret_cast<void*>(g_base), offset);
-    const auto& module = exl::util::GetMainModuleInfo();
-    if (slot < module.m_Text.m_Start || slot >= g_base + 0x6000000 || (slot & 7))
-        return nullptr;
-    return read<void*>(reinterpret_cast<void*>(slot), 0);
+const arrowbound::profiles::Layout& layout() { return g_game->layout; }
+
+// Engine variables hold their object pointer (one dereference). The profile generator
+// cross-checks each against its 1.2.1 GOT slot.
+void* variable(std::ptrdiff_t offset) {
+    return read<void*>(reinterpret_cast<void*>(g_base), offset);
 }
 
 // Every guard logs why it fired once per distinct reason, so a blank screen is diagnosable without
@@ -179,8 +163,8 @@ bool resolve(F& target, const char* name) {
     return target != nullptr;
 }
 
-constexpr unsigned depthSlot(unsigned flags) {
-    return (flags & 1) ? 0x700 : (flags & 2) ? 0xe40 : 0;
+unsigned depthSlot(unsigned flags) {
+    return (flags & 1) ? unsigned(layout().depthFull) : (flags & 2) ? unsigned(layout().depthHalf) : 0;
 }
 
 // GPU setup, done lazily on the first draw callback, once the device exists.
@@ -188,10 +172,10 @@ constexpr unsigned depthSlot(unsigned flags) {
 bool initializeGpuStorage() {
     if (g_ready) return true;
     if (g_attempted) return false;
-    auto* graphics = global(kGraphicsSlot);
-    g_getProc = reinterpret_cast<PFNNVNDEVICEGETPROCADDRESSPROC>(global(kGetProcSlot));
+    auto* graphics = variable(g_game->variables.graphics);
+    g_getProc = reinterpret_cast<PFNNVNDEVICEGETPROCADDRESSPROC>(variable(g_game->variables.getProc));
     if (!graphics || !g_getProc) { refuse(1); return false; }
-    g_device = read<NVNdevice*>(graphics, 0x30);
+    g_device = read<NVNdevice*>(graphics, layout().deviceOffset);
     if (!g_device) { refuse(2); return false; }
     g_attempted = true;
 
@@ -285,10 +269,10 @@ void mixRgb(float* out, const float* from, const float* to, float amount) {
 bool readCamera(const void* context, pure::CameraFrame& camera) {
     const auto* record = read<const unsigned char*>(context, kContextCamera);
     if (!record) return false;
-    std::memcpy(camera.proj, record + kCameraProjection, sizeof(camera.proj));
-    std::memcpy(camera.view, record + kCameraView, sizeof(camera.view));
-    camera.nearMetres = read<float>(record, kCameraNear);
-    camera.farMetres = read<float>(record, kCameraFar);
+    std::memcpy(camera.proj, record + layout().cameraProjection, sizeof(camera.proj));
+    std::memcpy(camera.view, record + layout().cameraView, sizeof(camera.view));
+    camera.nearMetres = read<float>(record, layout().cameraNear);
+    camera.farMetres = read<float>(record, layout().cameraFar);
     for (float value : camera.proj)
         if (!std::isfinite(value)) return false;
     for (float value : camera.view)
@@ -313,7 +297,7 @@ void resolveStyle(const Snapshot& snapshot, float pulse, ChainStyleResolved& out
     out.reticleCoverage = 1.0f;
     out.reticleUnderCoverage = 1.0f;
     // Line-renderer widths are used as half widths for the spine and strands, since the shader
-    // fades a pixel on each side (v0.6.0 boot: strands too thin).
+    // fades a pixel on each side; full widths render the strands too thin.
     out.spineHalfPx = style.spineWidth * 0.75f;
     out.strandHalfPx = style.helixCoreWidth * (1.0f + 0.35f * pulse);
     out.ringHalfPx = style.reticleWidth * (1.0f + 0.60f * pulse) * 0.5f;
@@ -331,8 +315,8 @@ void draw(void* drawContext, void* scene, void* context) {
     if (!snapshot.visible || snapshot.style == 0 || snapshot.style >= kStyleCount)
         return;
 
-    if (!drawContext || !scene || !context || !read<void*>(context, 0x540) ||
-        !read<void*>(context, 0x548)) {
+    if (!drawContext || !scene || !context || !read<void*>(context, layout().contextTarget) ||
+        !read<void*>(context, layout().contextViewport)) {
         refuse(9);
         return;
     }
@@ -340,7 +324,7 @@ void draw(void* drawContext, void* scene, void* context) {
     if (!command) { refuse(10); return; }
 
     // borrow the scene depth texture
-    const auto* buffers = read<const void*>(scene, kSceneBuffers);
+    const auto* buffers = read<const void*>(scene, layout().sceneBuffers);
     if (!buffers || read<unsigned>(buffers, 8) < 1) { refuse(11); return; }
     auto* record = read<unsigned char*>(buffers, kBuffersRecord);
     if (!record) { refuse(12); return; }
@@ -348,8 +332,8 @@ void draw(void* drawContext, void* scene, void* context) {
     const auto slot = depthSlot(targetFlags);
     if (!slot) { refuse(13, targetFlags); return; }
     void* sampler = record + slot;
-    const unsigned width = read<std::uint16_t>(sampler, 0x30);
-    const unsigned height = read<std::uint16_t>(sampler, 0x32);
+    const unsigned width = read<std::uint16_t>(sampler, layout().textureWidth);
+    const unsigned height = read<std::uint16_t>(sampler, layout().textureWidth + 2);
     if (width < 16 || height < 16 || width > 8192 || height > 8192) {
         refuse(14, width);
         return;
@@ -396,19 +380,19 @@ void draw(void* drawContext, void* scene, void* context) {
     if (!initializeProgram()) return;
 
     // uniform block from the engine's per-draw allocator
-    const auto* allocator = global(kUniformAllocatorSlot);
+    const auto* allocator = variable(g_game->variables.uniformAllocator);
     if (!allocator || !read<void*>(allocator, 24) || !read<unsigned>(allocator, 72)) {
         refuse(17);
         return;
     }
     void* block = nullptr;
-    native<void (*)(void**, const void*, std::size_t)>(kCreateDynamicUniformBlock)(
+    native<void (*)(void**, const void*, std::size_t)>(g_game->calls.uniformBlock)(
         &block, &uniforms, sizeof(uniforms));
-    if (!block || !read<std::uint64_t>(block, 120)) { refuse(18); return; }
+    if (!block || !read<std::uint64_t>(block, layout().uniformAddress)) { refuse(18); return; }
 
     // Premultiplied over, not additive: the spine and reticle underlay must be able to darken.
     alignas(8) unsigned char state[128]{};
-    native<void (*)(void*)>(kGraphicsContextCtor)(state);
+    native<void (*)(void*)>(g_game->calls.contextCtor)(state);
     state[kStateDepthTest] = 0;      // the shader does its own depth compare
     state[kStateDepthWrite] = 0;
     write<unsigned>(state, kStateBlendTargets, 1);   // blend enabled, target 0
@@ -418,16 +402,17 @@ void draw(void* drawContext, void* scene, void* context) {
     state[kStateBlendDstAlpha] = NVN_BLEND_FUNC_ONE;   // leave destination alpha alone
     state[kStateBlendEquationRgb] = NVN_BLEND_EQUATION_ADD;
     state[kStateBlendEquationAlpha] = NVN_BLEND_EQUATION_ADD;
-    native<void (*)(void*, void*)>(kGraphicsContextApply)(state, drawContext);
-    native<void (*)(void*, void*)>(kFramebufferBind)(context, drawContext);
+    native<void (*)(void*, void*)>(g_game->calls.contextApply)(state, drawContext);
+    native<void (*)(void*, void*)>(g_game->calls.bind)(context, drawContext);
 
-    const bool sampled = native<bool (*)(void*, void*, unsigned, void*)>(kActivateSampler)(
+    const bool sampled = native<bool (*)(void*, void*, unsigned, void*)>(g_game->calls.activateSampler)(
         g_samplerBindings, drawContext, 0, sampler);
     if (sampled) {
         g_bindProgram(command, &g_program, 63);
         // The fragment uniform block binds at NVN index 0.
         g_bindUniform(command, NVN_SHADER_STAGE_FRAGMENT, 0,
-                      read<std::uint64_t>(block, 120), read<unsigned>(block, 56));
+                      read<std::uint64_t>(block, layout().uniformAddress),
+                      read<unsigned>(block, layout().uniformSize));
 
         // Scissor to the bounding box of the endpoints and reticle; the union with its vertical mirror is submitted
         // because the scissor origin convention is not established, and both bound the work.
@@ -471,10 +456,17 @@ void draw(void* drawContext, void* scene, void* context) {
     }
 
     // put the frame back the way it was
-    native<void (*)(void*, void*)>(kFramebufferUnbind)(context, drawContext);
-    native<void (*)(void*, void*)>(kFramebufferBarrier)(read<void*>(context, 0x540), drawContext);
-    native<void (*)(void*)>(kGraphicsContextCtor)(state);
-    native<void (*)(void*, void*)>(kGraphicsContextApply)(state, drawContext);
+    native<void (*)(void*, void*)>(g_game->calls.unbind)(context, drawContext);
+    auto* target = read<void*>(context, layout().contextTarget);
+    if (g_game->newRenderer()) {
+        const std::uint64_t barrierFlags = 2;
+        native<void (*)(void*, void*, const std::uint64_t*)>(g_game->calls.barrier)(
+            target, drawContext, &barrierFlags);
+    } else {
+        native<void (*)(void*, void*)>(g_game->calls.barrier)(target, drawContext);
+    }
+    native<void (*)(void*)>(g_game->calls.contextCtor)(state);
+    native<void (*)(void*, void*)>(g_game->calls.contextApply)(state, drawContext);
 }
 
 struct DrawPfxHook {
@@ -494,8 +486,12 @@ struct DrawPfxHook {
 }  // namespace
 
 void installShaderPass(std::uintptr_t mainBase) {
+    g_game = arrowbound::profiles::active();
+    if (!g_game) return;
     g_base = mainBase;
-    if (!totk::render::installPfxHook(mainBase, DrawPfxHook::Callback,
+    const auto& entry = g_game->drawPfx;
+    const totk::render::PfxSite site{std::uintptr_t(entry.offset), entry.first, entry.second};
+    if (!totk::render::installPfxHook(mainBase, site, DrawPfxHook::Callback,
                                      DrawPfxHook::previous, "glideshot")) return;
     Logging.Log("[zonai-hookshot] CHAIN_SHADER installed pool=%u fragment=%u",
                 static_cast<unsigned>(sizeof(g_codeMemory)),

@@ -7,8 +7,7 @@
 
 #include <cstdint>
 
-#include "TargetValidator.hpp"
-#include "Vec3.hpp"
+#include "ArrowboundPure.hpp"
 
 namespace zonai_hookshot::pure {
 enum class ChainStyle : uint8_t {

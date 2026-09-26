@@ -5,6 +5,8 @@
 
 #include <cstdint>
 
+#include <arrowbound/GameProfiles.hpp>
+
 #include "HookshotRuntime.hpp"
 
 namespace arrowbound::arrow_mode {
@@ -12,6 +14,7 @@ namespace arrowbound::arrow_mode {
 inline constexpr const char* kCarrierActor = "Obj_CaveWellHonor_00";
 
 void initialize(std::uintptr_t mainBase);
+bool useGameProfile(profiles::GameVersion version);
 void service(HookshotRuntime& runtime);
 void onWorldReset(std::uint32_t worldGeneration);
 

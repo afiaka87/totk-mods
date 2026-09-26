@@ -5,13 +5,13 @@
 // advances an exact distance and stops short of the anchor.
 #pragma once
 
-#include "Vec3.hpp"
+#include "ArrowboundPure.hpp"
 
 namespace zonai_hookshot::pure {
 struct PositionZipConfig {
     float speed = 60.0f;       // metres/second
     float updateRate = 60.0f;  // diagnostic assumption: one gameplay tick/update
-    float standoff = 0.5f;     // stop this far outside the frozen anchor
+    float standoff = 1.0f;     // stop this far outside the frozen anchor
     int maxTicks = 600;
 };
 

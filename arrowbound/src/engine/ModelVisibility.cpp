@@ -7,6 +7,7 @@
 #include "../pure/FlightDiagnostics.hpp"
 #include "../program/modules/arrowbound/HookshotLog.hpp"
 #include "totk/engine/Scene.hpp"
+#include <arrowbound/ActiveGame.hpp>
 #include <lib.hpp>
 
 namespace arrowbound::model_trace {
@@ -213,6 +214,9 @@ HOOK_DEFINE_TRAMPOLINE(TraceShapeArrayDraw) {
 void begin(std::uint32_t id) { start.store(epoch.load()); trace.store(id,std::memory_order_release); }
 void reset() { trace.store(0,std::memory_order_release); }
 void install(std::uintptr_t mainBase) {
+    // Diagnostic trace mapped for 1.2.1 only.
+    const auto* game = profiles::active();
+    if (!game || game->version != profiles::GameVersion::V121) return;
     base = mainBase;
     constexpr std::uint32_t offsets[]{0x973550,0x974D9C,0x970820,0x981248,0x76B6EC,0x2A43014,0x74C284,0x2A4A228};
     constexpr std::uint32_t words[]{0xD101C3FF,0xA9BA7BFD,0xD101C3FF,0x6DB923E9,0xD10283FF,0x79402C09,0xD10383FF,0xD100C3FF};

@@ -27,6 +27,7 @@ add_executable(arrowbound_pure_tests
     test_flight_diagnostics.cpp
     test_flight_clock.cpp
     test_ragdoll_transport.cpp
+    test_game_profiles.cpp
     ../src/program/modules/arrowbound/WallGripService.cpp
     ../src/engine/HookshotInput.cpp
     ../src/engine/ArrowSettings.cpp
@@ -36,6 +37,7 @@ target_include_directories(arrowbound_pure_tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/pure"
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/engine"
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/support"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs"
 )
 target_compile_features(arrowbound_pure_tests PRIVATE cxx_std_23)

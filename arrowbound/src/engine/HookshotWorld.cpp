@@ -10,22 +10,19 @@
 #include "totk/engine/Scene.hpp"
 #include "totk/engine/Totk121Offsets.hpp"
 #include "totk/engine/Transform.hpp"
+#include <arrowbound/ActiveGame.hpp>
 #if ARROWBOUND_FLIGHT_DIAGNOSTICS
 #include "../program/modules/arrowbound/HookshotLog.hpp"
 #include "FlightDiagnostics.hpp"
 #endif
 
-namespace arrowbound::world {
+namespace HOOKSHOT_ENGINE_NS::world {
 namespace {
 namespace comp {
 // Offsets into the component table.
 constexpr std::ptrdiff_t kPerimeter = 0x388;
 constexpr std::ptrdiff_t kPlayer = 0x3A8;
 }  // namespace comp
-
-namespace off {
-constexpr std::ptrdiff_t kPlayerResetStepRate = 0x01D2D91C;
-}  // namespace off
 
 namespace perimeter {
 constexpr std::ptrdiff_t kFlags = 0x294;
@@ -164,7 +161,7 @@ bool resetPlayerStepRate() {
         totk::engine::readMemory<std::uintptr_t>(registry + comp::kPlayer);
     if (!totk::engine::isPlausibleAddress(player)) return false;
     const auto reset = reinterpret_cast<void (*)(std::uintptr_t)>(
-        g_state.mainBase + off::kPlayerResetStepRate);
+        g_state.mainBase + arrowbound::profiles::active()->calls.resetStepRate);
     reset(player);
     return true;
 }
@@ -182,4 +179,4 @@ bool climbBitEngaged() {
             perimeter::kClimbEngaged) != 0;
 }
 
-}  // namespace arrowbound::world
+}  // namespace HOOKSHOT_ENGINE_NS::world

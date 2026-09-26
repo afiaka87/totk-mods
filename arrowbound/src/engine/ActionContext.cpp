@@ -4,17 +4,12 @@
 #include "ActionContext.hpp"
 
 #include "totk/engine/Pointer.hpp"
-#include "totk/engine/Totk121Offsets.hpp"
 
-namespace arrowbound::action {
+namespace HOOKSHOT_ENGINE_NS::action {
 namespace {
-namespace off {
-constexpr std::ptrdiff_t kAiGetActor = 0x00BC7610;
-constexpr std::ptrdiff_t kAiGetPlayerComponent = 0x0107E9A0;
-constexpr std::ptrdiff_t kPlayerSetLinearVelocity = 0x01621CBC;
-}  // namespace off
-
 std::uintptr_t g_mainBase = 0;
+const arrowbound::profiles::Action* g_profile =
+    arrowbound::profiles::action(arrowbound::profiles::GameVersion::V121);
 
 }  // namespace
 
@@ -28,13 +23,18 @@ bool Context::playerOk() const {
 
 void initialize(std::uintptr_t mainBase) { g_mainBase = mainBase; }
 
+bool useGameProfile(arrowbound::profiles::GameVersion version) {
+    g_profile = arrowbound::profiles::action(version);
+    return g_profile != nullptr;
+}
+
 Context resolve(void* actionObject) {
     Context context{};
-    if (!actionObject || g_mainBase == 0) return context;
+    if (!actionObject || g_mainBase == 0 || !g_profile) return context;
     const auto getActor = reinterpret_cast<std::uintptr_t (*)(void*)>(
-        g_mainBase + off::kAiGetActor);
+        g_mainBase + g_profile->getActor);
     const auto getPlayer = reinterpret_cast<std::uintptr_t (*)(void*)>(
-        g_mainBase + off::kAiGetPlayerComponent);
+        g_mainBase + g_profile->getPlayerComponent);
     context.actor = getActor(actionObject);
     context.playerComponent = getPlayer(actionObject);
     return context;
@@ -42,13 +42,13 @@ Context resolve(void* actionObject) {
 
 pure::Vec3 actorPosition(const Context& context) {
     const auto* position = reinterpret_cast<const float*>(
-        context.actor + totk::engine::layout::kActorPosition);
+        context.actor + g_profile->actorPosition);
     return {position[0], position[1], position[2]};
 }
 
 pure::Vec3 actorVelocity(const Context& context) {
     const auto* velocity = reinterpret_cast<const float*>(
-        context.actor + totk::engine::layout::kActorLinearVelocity);
+        context.actor + g_profile->actorVelocity);
     return {velocity[0], velocity[1], velocity[2]};
 }
 
@@ -56,8 +56,8 @@ void setLinearVelocity(const Context& context, const pure::Vec3& velocity) {
     const float values[3] = {velocity.x, velocity.y, velocity.z};
     const auto setVelocity =
         reinterpret_cast<void (*)(std::uintptr_t, const float*, bool)>(
-            g_mainBase + off::kPlayerSetLinearVelocity);
+            g_mainBase + g_profile->setLinearVelocity);
     setVelocity(context.playerComponent, values, false);
 }
 
-}  // namespace arrowbound::action
+}  // namespace HOOKSHOT_ENGINE_NS::action

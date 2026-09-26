@@ -7,21 +7,47 @@
 #include "HookshotRuntime.hpp"
 #include "WallGripService.hpp"
 #include "totk/engine/Pointer.hpp"
+#include <arrowbound/ActiveGame.hpp>
+#include <cstring>
 
 namespace arrowbound::parasail {
 namespace {
+// The character controller's ragdoll module. Builds without the native getter (1.4.x inlines
+// it) walk the controller's module list by name, as that getter does.
+std::uintptr_t playerRagdoll(std::uintptr_t base, std::uintptr_t controller) {
+    const auto* game = profiles::active();
+    if (!game || !totk::engine::isPlausibleAddress(controller)) return 0;
+    if (game->calls.getRagdoll) {
+        using GetRagdollFn = std::uintptr_t (*)(std::uintptr_t);
+        return reinterpret_cast<GetRagdollFn>(base + game->calls.getRagdoll)(controller);
+    }
+    const auto count = *reinterpret_cast<const std::int32_t*>(controller + 80);
+    const auto modules = *reinterpret_cast<const std::uintptr_t*>(controller + 88);
+    if (count <= 0 || count > 64 || !totk::engine::isPlausibleAddress(modules)) return 0;
+    for (std::int32_t i = 0; i < count; ++i) {
+        const auto module = reinterpret_cast<const std::uintptr_t*>(modules)[i];
+        if (!totk::engine::isPlausibleAddress(module)) continue;
+        const auto table = *reinterpret_cast<const std::uintptr_t*>(module);
+        if (!totk::engine::isPlausibleAddress(table)) continue;
+        using NameFn = const char* (*)(std::uintptr_t);
+        const auto* name = reinterpret_cast<const NameFn*>(table)[2](module);
+        if (name && std::strcmp(name, "CharacterExternalPlayerRagdoll") == 0) return module;
+    }
+    return 0;
+}
+
 void observePose(void* action, bool entered) {
     auto& rt = runtime();
     auto& drive = rt.drive;
     if (!action || !drive.presentParaglider.load(std::memory_order_acquire)) return;
     const auto phase = *reinterpret_cast<const std::uint32_t*>(
         reinterpret_cast<std::uintptr_t>(action) + 0x20);
+    const auto* game = profiles::active();
+    if (!game) return;
     using GetControllerFn = std::uintptr_t (*)(void*);
-    using GetRagdollFn = std::uintptr_t (*)(std::uintptr_t);
     const auto controller = reinterpret_cast<GetControllerFn>(
-        rt.session.base + 0x01B6766C)(action);
-    const auto ragdoll = totk::engine::isPlausibleAddress(controller) ?
-        reinterpret_cast<GetRagdollFn>(rt.session.base + 0x00830D24)(controller) : 0;
+        rt.session.base + game->calls.getCharacterController)(action);
+    const auto ragdoll = playerRagdoll(rt.session.base, controller);
     const bool valid = totk::engine::isPlausibleAddress(ragdoll);
     const std::uint32_t enabled = valid ? *reinterpret_cast<const std::uint8_t*>(ragdoll + 0x15C) : 0;
     const std::uint32_t mode = valid ? *reinterpret_cast<const std::uint32_t*>(ragdoll + 0x14C) : 0xFF;

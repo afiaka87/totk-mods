@@ -8,6 +8,8 @@
 // inside the physics worker while that body is alive.
 #pragma once
 
+#include "EngineNamespace.hpp"
+
 #include <cstdint>
 
 #include "TargetValidator.hpp"
@@ -15,7 +17,7 @@
 #include "RayQueryExclusion.hpp"
 #include "totk/harness/Module.hpp"
 
-namespace arrowbound::aim {
+namespace HOOKSHOT_ENGINE_NS::aim {
 constexpr std::uint32_t kSolidMask = 0x20;
 constexpr int kTimeoutTicks = 24;
 
@@ -45,4 +47,4 @@ void abandonPending();
 // Physics-thread callback from the RayCastWorker trampoline.
 void observe(wwpg::RaycastFn original, const void* from, const void* object);
 
-}  // namespace arrowbound::aim
+}  // namespace HOOKSHOT_ENGINE_NS::aim

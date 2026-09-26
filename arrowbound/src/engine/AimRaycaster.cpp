@@ -8,13 +8,9 @@
 #include <atomic>
 #include <cmath>
 
-namespace arrowbound::aim {
+namespace HOOKSHOT_ENGINE_NS::aim {
 namespace {
 using namespace arrowbound::pure;
-
-namespace off {
-constexpr std::ptrdiff_t kGetMotionType = 0x006AB438;  // phive rigid-body class
-}  // namespace off
 
 namespace ray {
 constexpr std::ptrdiff_t kHit = 0x20;         // BYTE
@@ -29,6 +25,16 @@ enum class RayState : std::uint32_t { Idle, Pending, Working, Ready };
 
 bool okPtr(std::uintptr_t pointer) {
     return pointer >= 0x1000 && (pointer & 7) == 0 && pointer < (1ull << 40);
+}
+
+std::uint32_t motionType(std::uintptr_t body) {
+    const auto pending = *reinterpret_cast<const std::uintptr_t*>(body + 0x60);
+    if (pending && (*reinterpret_cast<const std::uint32_t*>(pending + 0xD4) & 4))
+        return *reinterpret_cast<const std::uint32_t*>(pending + 0x80);
+    const auto flags = *reinterpret_cast<const std::uint64_t*>(body + 0x68);
+    if (flags & 0x40) return 0;
+    if (flags & 0x80) return 1;
+    return 2;
 }
 
 // Everything below rayState is published before the Pending store and read by the worker only
@@ -161,7 +167,7 @@ void observe(wwpg::RaycastFn original, const void* from, const void* object) {
     *(std::uint64_t*)(g_mailbox.object + ray::kBodySdkId) = ~0ull;
     *(std::uint64_t*)(g_mailbox.object + ray::kHitBody) = 0;
     if (g_mailbox.exclude && !engine::rebaseRayFilter(g_mailbox.object, object)) {
-        Logging.Log("[arrowbound] RAY_FILTER unavailable; refusing request");
+        Logging.Log(HOOKSHOT_ENGINE_TAG " RAY_FILTER unavailable; refusing request");
     } else {
         g_mailbox.result = original(&g_mailbox.from, &g_mailbox.to, g_mailbox.object,
             g_mailbox.exclude ? &g_mailbox.excludedGroup : nullptr, g_mailbox.mask, 0u);
@@ -173,15 +179,12 @@ void observe(wwpg::RaycastFn original, const void* from, const void* object) {
         const std::uintptr_t hitBody =
             *(std::uintptr_t*)(g_mailbox.object + ray::kHitBody);
         if (okPtr(hitBody)) {
-            const auto getMotionType =
-                reinterpret_cast<std::uint32_t (*)(std::uintptr_t)>(
-                    g_mailbox.base + off::kGetMotionType);
             g_mailbox.bodyKnown = true;
-            g_mailbox.motion = getMotionType(hitBody);
+            g_mailbox.motion = motionType(hitBody);
         }
     }
     g_mailbox.rayState.store(static_cast<std::uint32_t>(RayState::Ready),
                              std::memory_order_release);
 }
 
-}  // namespace arrowbound::aim
+}  // namespace HOOKSHOT_ENGINE_NS::aim

@@ -1,4 +1,4 @@
-# Glideshot v0.9.4
+# Glideshot v0.10.4
 
 A hookshot for Tears of the Kingdom. Aim at a climbable wall from the ground, from a climb or from
 the air, fire a visible chain, zip along it at 60 m/s, and land in the game's own climbing state.
@@ -6,14 +6,15 @@ The paraglider opens by itself for the last stretch so the game decides the grab
 
 Glideshot also includes Arrowbound: activate the Arrowbound Emblem in Key Items, shoot an arrow,
 and follow its normal flight with the paraglider open. Both features have been tested together
-on Eden and physical Nintendo Switch with Tears of the Kingdom 1.2.1.
+on Eden with Tears of the Kingdom 1.0.0 through 1.4.3. Earlier versions were also tested on
+physical Nintendo Switch with 1.2.1.
 
 ## Controls
 
 - Hold **ZL + L** (left shoulder button) briefly to raise the aim. A green
   diamond marks a wall the chain can take; a red diamond marks a surface it refuses.
 - Press **A** to fire. The chain draws to the anchor at once and Link follows one tick later.
-- Press **B** at any point to let go. Losing the world (a shrine door, a warp, a load) also ends
+- Press **B** at any point to let go into the open paraglider. Losing the world (a shrine door, a warp, a load) also ends
   the trip.
 
 While the aim is up, its activation buttons are hidden from the game. Drawing the bow releases
@@ -57,8 +58,10 @@ back to the interface cues otherwise. No audio files are shipped.
 
 ## Requirements and installation
 
-Requires Tears of the Kingdom **1.2.1**, build `9B4E43650501A4D4`, and an executable-mod loader
-compatible with Atmosphere's contents layout.
+Requires Tears of the Kingdom **1.0.0, 1.1.0, 1.1.2, 1.2.0, 1.2.1, 1.4.0, 1.4.1, 1.4.2 or 1.4.3**
+and an executable-mod loader compatible with Atmosphere's contents layout. One package serves
+every listed version: at startup the mod identifies the running game build and uses that build's
+checked address table. On an unrecognized build it logs the reason and installs nothing.
 
 1. Close the game.
 2. Choose the emulator archive for Eden or another emulator, or the Switch archive for physical
@@ -84,12 +87,24 @@ passed Eden and Citron checks. This is not exhaustive compatibility testing.
 - At very high arrow speeds, Link's legs can tuck backward while flight stays visible
   and smooth. Wing-fused arrows and every modded bow have not been exhaustively tested.
 - The chain's coil can look blurred past the halfway point on long shots.
-- A very short shot can reach its half-metre standoff before the paraglider opens; the mod holds
+- A very short shot can reach its one-metre standoff before the paraglider opens; the mod holds
   position until it does.
 - The Ultrahand travel and arrival sounds depend on the game having its expression sound user
   loaded at that moment. When it is not, the interface fallbacks play instead.
 
-## Current update
+## Current update (v0.10.4)
+
+- Supports game versions 1.0.0 through 1.4.3 in one package. All nine versions were observed
+  working on Eden; this internal cleanup build was rechecked on 1.2.1 and 1.4.3.
+- B cancel always leaves Link in the open paraglider; B is hidden from the game until released.
+- Travel stops one metre from the wall instead of half a metre, so Link no longer ends up inside
+  the wall.
+- Fixes deactivating the Arrowbound Emblem and arrow following on 1.4.x.
+- Glideshot now builds Arrowbound's shared engine, math and support code instead of carrying
+  duplicate copies.
+- This version has not been retested on physical Switch.
+
+## Changes in v0.9.4
 
 - Uses ZL + L, avoiding Self Recall's ZL + R3 activation.
 - Preserves both renderers when Glideshot and Survey share the drawing callback.
@@ -135,14 +150,17 @@ guarantee that it builds or works as-is; you set up the toolchain and framework 
 - Framework: [exlaunch](https://github.com/shadowninja108/exlaunch) (GPL-2.0, not included).
   Known-good base: commit `f698816d`. Apply the `InlineFloatCtx` fix from exlaunch issue #28 / PR #31;
   the jump-boost inline hook reads a float register through it.
-- Layout: place `src/program/main.cpp`, `src/program/modules/`, `src/engine/`, `src/pure/` and
-  `src/support/` in an exlaunch project with `src/program`, `src/pure`, `src/engine` and
-  `src/support` on the include path.
+- Layout: place `src/program/main.cpp`, `src/program/modules/`, `src/engine/` and `src/pure/` in
+  an exlaunch project. Include paths: `src/pure`, `../arrowbound/src/pure`, `src/engine`,
+  `../arrowbound/src/engine`, `../arrowbound/src/support` and `../runtime-support/include`.
 - Keep the sibling `../arrowbound/` folder. Compile its `src/engine` and
   `src/program/modules/arrowbound` sources, but not its standalone `src/program/main.cpp`.
   `../arrowbound/cmake/ImportArrowbound.cmake` shows the object-target integration with isolated
   private include paths. Expose its `src/include` to this host and use this host's exlaunch
   configuration so there is only one entry point and one hook pool. The native source uses C++26.
+- Also compile Arrowbound's `src/engine/{ActionContext,AimRaycaster,HookshotAudio,HookshotInput,
+  HookshotWorld}.cpp` a second time for Glideshot with `HOOKSHOT_ENGINE_NS=zonai_hookshot` and
+  `HOOKSHOT_ENGINE_TAG="[zonai-hookshot]"`, so each feature keeps its own engine state.
 - Shaders: `shaders/chain.frag`, `shaders/chain.vert` and `shaders/chain_math.inl` are compiled
   to NVN binaries by `tools/compile_shaders.py` (see `cmake/ChainShader.cmake`), which expects an
   external NVN GLSL compiler pinned by hash. The generated `ChainShaders.hpp` is not checked in.
@@ -150,12 +168,15 @@ guarantee that it builds or works as-is; you set up the toolchain and framework 
   `EXL_MODULE_NAME "zonai-hookshot"`, keep `EXL_USE_FAKEHEAP`, remove `EXL_DEBUG`, and use
   `HeapSize 0x10000`, `JitSize 0x4000`, `InlinePoolSize 0x1000`, `LogBufferSize 512`. Leave the
   reloc table in `offsets.hpp` empty.
-- Compile definition: `TOTK_VERSION=121`. Program ID `0100F2C0115B6000`, module `subsdk5`.
+- Compile definition: `TOTK_VERSION=121` (selects the 1.2.1 SDK headers; game addresses come
+  from `../arrowbound/src/include/arrowbound/GameProfiles.hpp` at runtime). Program ID
+  `0100F2C0115B6000`, module `subsdk5`. Set the NPDM system resource size to `0x1800000`
+  (24 MiB), which every supported version boots with.
 - This release retains `ARROWBOUND_FLIGHT_DIAGNOSTICS=1` to match the tested build.
 
 ## Tests
 
-- `tests/run_host_tests.ps1` runs both suites: 83 manual/composition cases and 71 Arrowbound
+- `tests/run_host_tests.ps1` runs both suites: 85 manual/composition cases and 74 Arrowbound
   cases. Keep the sibling Arrowbound folder. Tests need CMake, Ninja, a C++23 compiler and network
   access to fetch doctest 2.4.11 when it is not vendored. No game files are needed for the default run.
 
@@ -176,7 +197,7 @@ MIT - see `LICENSE` at the repository root. `NOTICE` describes the exlaunch depe
 
 ## Downloads
 
-Use `glideshot-v0.9.4-emulator-subsdk5.zip` or `glideshot-v0.9.4-switch-subsdk5.zip`.
+Use `glideshot-v0.10.4-emulator-subsdk5.zip` or `glideshot-v0.10.4-switch-subsdk5.zip`.
 The Switch archive wraps the same payload in `0100F2C0115B6000/` for extraction
 under `atmosphere/contents/`. Check the supplied SHA256SUMS.txt before installation.
 Remove only this mod's old subsdk9 when upgrading from a pre-slot-5 installation;

@@ -3,7 +3,7 @@
 #include <doctest.h>
 #include <array>
 #include <cstring>
-#include "../src/engine/SoundHandle.hpp"
+#include "../../arrowbound/src/engine/SoundHandle.hpp"
 
 #include "HookshotCues.hpp"
 
@@ -32,7 +32,7 @@ TEST_CASE("a started ability sound plays once without a late fallback") {
 }
 
 TEST_CASE("sound handles use native system index and create-id fields") {
-    using namespace zonai_hookshot::engine;
+    using namespace arrowbound::engine;
     SoundHandle handle{};
     CHECK(handle.index == -1);
     CHECK(handle.createId == 0);

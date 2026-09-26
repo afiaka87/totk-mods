@@ -9,7 +9,7 @@
 #include <cstdint>
 
 #include "ChainPresentation.hpp"
-#include "Vec3.hpp"
+#include "ArrowboundPure.hpp"
 
 namespace zonai_hookshot::pure {
 // Shared GLSL/C++ definitions; chAbs is the one primitive the including language supplies.

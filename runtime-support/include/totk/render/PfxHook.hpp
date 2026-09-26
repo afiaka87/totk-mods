@@ -9,12 +9,12 @@ using PfxCallback = std::uint64_t (*)(void*, void*);
 
 // Startup only, before rendering begins. Never relocate an existing detour's
 // embedded pointer: preserve its destination directly as our predecessor.
-inline bool installPfxHook(std::uintptr_t mainBase, PfxCallback callback,
+inline bool installPfxHook(std::uintptr_t mainBase, const PfxSite& pfx, PfxCallback callback,
                            PfxCallback& previous, const char* owner) {
     if (previous) return true;
-    const auto site = mainBase + kPfxHookOffset;
+    const auto site = mainBase + pfx.offset;
     const auto* words = reinterpret_cast<const std::uint32_t*>(site);
-    const auto entry = decodePfxEntry(site, words);
+    const auto entry = decodePfxEntry(site, words, pfx.first, pfx.second);
     if (entry.kind == PfxEntryKind::Unsupported) {
         Logging.Log("[%s] PFX refused bytes=%08x,%08x", owner, words[0], words[1]);
         return false;
@@ -37,5 +37,11 @@ inline bool installPfxHook(std::uintptr_t mainBase, PfxCallback callback,
     Logging.Log("[%s] PFX installed kind=%u previous=%p", owner,
                 static_cast<unsigned>(entry.kind), reinterpret_cast<void*>(previous));
     return true;
+}
+
+// TotK 1.2.1's draw-extension entry.
+inline bool installPfxHook(std::uintptr_t mainBase, PfxCallback callback,
+                           PfxCallback& previous, const char* owner) {
+    return installPfxHook(mainBase, kPfxSite121, callback, previous, owner);
 }
 }

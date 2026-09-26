@@ -73,13 +73,21 @@ bool startPositionZip(HookshotRuntime& runtime) {
               (int)(distance(start, runtime.launch.anchor) * 10.0f));
         return false;
     }
-    ZHLOG("COMPOSE_START span_dm=%d travel_dm=%d step_cm=%d standoff_dm=%d "
+    // How far the endpoint sits off the wall plane: the standoff is measured along the line, so a
+    // glancing shot leaves less room than the standoff itself.
+    const float normalLength = length(runtime.aim.committedNormal);
+    const float wallClearance = normalLength > 0.5f
+        ? std::fabs(dot(runtime.positionDrive.path.direction, runtime.aim.committedNormal)) /
+              normalLength * kPositionZipConfig.standoff
+        : -1.0f;
+    ZHLOG("COMPOSE_START span_dm=%d travel_dm=%d step_cm=%d standoff_dm=%d wall_clear_cm=%d "
           "glide_at_start=%u fall_at_start=%u yaw_mode=%s yaw_mdeg=%d",
           (int)(distance(start, runtime.launch.anchor) * 10.0f),
           (int)(runtime.positionDrive.path.travelDistance * 10.0f),
           (int)(kPositionZipConfig.speed / kPositionZipConfig.updateRate *
                 100.0f),
           (int)(kPositionZipConfig.standoff * 10.0f),
+          (int)(wallClearance * 100.0f),
           drive.parasailActive.load(std::memory_order_relaxed),
           drive.fallActive.load(std::memory_order_relaxed),
           yawTimingName(runtime.positionDrive.yaw.timing),

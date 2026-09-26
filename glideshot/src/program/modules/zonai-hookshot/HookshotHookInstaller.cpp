@@ -10,24 +10,13 @@
 #include "ParasailHandoff.hpp"
 #include "TransportController.hpp"
 #include "GripHooks.hpp"
+#include <arrowbound/ActiveGame.hpp>
 
 namespace {
 namespace transport = zonai_hookshot::transport;
 namespace parasail = zonai_hookshot::parasail;
 namespace capture = zonai_hookshot::capture;
 zonai_hookshot::hooks::Observers g_observers{};
-
-constexpr ptrdiff_t kParasailEnter = 0x01D6E54C;
-constexpr ptrdiff_t kParasailUpdate = 0x01D6E810;
-constexpr ptrdiff_t kParasailLeave = 0x01D6F2A0;
-constexpr ptrdiff_t kFallEnter = 0x01D61428;
-constexpr ptrdiff_t kFallUpdate = 0x01D61790;
-constexpr ptrdiff_t kFallLeave = 0x01D61988;
-constexpr ptrdiff_t kJumpMultiplierSelect = 0x0107EA8C;
-constexpr ptrdiff_t kJumpHeightClampSetup = 0x0107EA94;
-constexpr u32 kJumpMultiplierSelectWord = 0x1E281C21;
-constexpr u32 kJumpHeightClampWord = 0x1E229001;
-constexpr ptrdiff_t kGlideEntryPredicate = 0x01722210;
 
 HOOK_DEFINE_TRAMPOLINE(NpadControllerCalcImplHook) {
     static void Callback(void* controller) {
@@ -114,14 +103,14 @@ HOOK_DEFINE_TRAMPOLINE(GlideEntryPredicateHook) {
     }
 };
 
-bool hookWordMatches(uintptr_t base, ptrdiff_t offset, u32 expected,
+bool hookWordMatches(uintptr_t base, const arrowbound::profiles::Site& site,
                      const char* label) {
-    const u32 actual = *reinterpret_cast<const u32*>(base + offset);
-    if (actual == expected) return true;
+    const u32 actual = *reinterpret_cast<const u32*>(base + site.offset);
+    if (actual == site.word) return true;
     Logging.Log(
         "[zonai-hookshot] HOOK DISABLED %s: main+%p word %08x != "
         "expected %08x (version/cheat conflict)",
-        label, reinterpret_cast<void*>(offset), actual, expected);
+        label, reinterpret_cast<void*>(site.offset), actual, site.word);
     return false;
 }
 
@@ -129,30 +118,41 @@ bool hookWordMatches(uintptr_t base, ptrdiff_t offset, u32 expected,
 
 namespace zonai_hookshot::hooks {
 void installUnique(std::uintptr_t mainBase, const Observers& observers) {
+    const auto* game = arrowbound::profiles::active();
+    if (!game) return;
+    const auto& h = game->hooks;
     g_observers = observers;
-    const bool gripReady = installGripHooks(mainBase, ClimbUpdateHook::Callback,
+    static std::uintptr_t s_gripController{};
+    s_gripController = h.gripController.offset;
+    const GripSites grip{std::uintptr_t(h.gripController.offset), h.gripController.word,
+                         std::uintptr_t(h.climbUpdate.offset), h.climbUpdate.word};
+    const bool gripReady = installGripHooks(mainBase, grip, ClimbUpdateHook::Callback,
         ClimbUpdateHook::previous, [] {
-            NpadControllerCalcImplHook::InstallAtOffset(kGripController);
+            NpadControllerCalcImplHook::InstallAtOffset(s_gripController);
         });
     if (g_observers.gripHooksReady) g_observers.gripHooksReady(gripReady);
-    ParasailEnterHook::InstallAtOffset(kParasailEnter);
-    ParasailUpdateHook::InstallAtOffset(kParasailUpdate);
-    ParasailLeaveHook::InstallAtOffset(kParasailLeave);
-    FallEnterHook::InstallAtOffset(kFallEnter);
-    FallUpdateHook::InstallAtOffset(kFallUpdate);
-    FallLeaveHook::InstallAtOffset(kFallLeave);
-    GlideEntryPredicateHook::InstallAtOffset(kGlideEntryPredicate);
-    if (hookWordMatches(mainBase, kJumpMultiplierSelect,
-                        kJumpMultiplierSelectWord, "jump source") &&
-        hookWordMatches(mainBase, kJumpHeightClampSetup, kJumpHeightClampWord,
-                        "jump hook")) {
-        JumpBoostHook::InstallAtOffset(kJumpHeightClampSetup);
+    const auto entry = [mainBase](const arrowbound::profiles::Site& site, const char* label) {
+        return arrowbound::profiles::entryHookable(mainBase, site, label);
+    };
+    if (entry(h.parasailEnter, "parasail enter"))
+        ParasailEnterHook::InstallAtOffset(h.parasailEnter.offset);
+    if (entry(h.parasailUpdate, "parasail update"))
+        ParasailUpdateHook::InstallAtOffset(h.parasailUpdate.offset);
+    if (entry(h.parasailLeave, "parasail leave"))
+        ParasailLeaveHook::InstallAtOffset(h.parasailLeave.offset);
+    if (entry(h.fallEnter, "fall enter")) FallEnterHook::InstallAtOffset(h.fallEnter.offset);
+    if (entry(h.fallUpdate, "fall update")) FallUpdateHook::InstallAtOffset(h.fallUpdate.offset);
+    if (entry(h.fallLeave, "fall leave")) FallLeaveHook::InstallAtOffset(h.fallLeave.offset);
+    if (entry(h.glideEntry, "glide admission"))
+        GlideEntryPredicateHook::InstallAtOffset(h.glideEntry.offset);
+    if (hookWordMatches(mainBase, h.jumpSelect, "jump source") &&
+        hookWordMatches(mainBase, h.jumpHook, "jump hook")) {
+        JumpBoostHook::InstallAtOffset(h.jumpHook.offset);
         Logging.Log(
             "[zonai-hookshot] jump boost hook installed @ main+%p "
             "(one-shot 4x; inactive=vanilla)",
-            reinterpret_cast<void*>(kJumpHeightClampSetup));
+            reinterpret_cast<void*>(h.jumpHook.offset));
     }
-
 }
 
 void afterNpad(void* device) { transport::applyLaunchInjection(device); }

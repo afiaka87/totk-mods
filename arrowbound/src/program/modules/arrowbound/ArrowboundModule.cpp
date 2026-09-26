@@ -14,6 +14,7 @@
 #include "HookshotRuntime.hpp"
 #include "HookshotWorld.hpp"
 #include "ArrowSettings.hpp"
+#include <arrowbound/ActiveGame.hpp>
 #include "../../../engine/FlightClock.hpp"
 #include <nn/util.h>
 #include <array>
@@ -70,6 +71,10 @@ void serviceAimMailbox(HookshotRuntime& rt) {
 void initialize(std::uintptr_t mainBase) {
     auto& rt = runtime();
     rt.session.base = mainBase;
+    if (const auto* game = profiles::active()) {
+        action::useGameProfile(game->version);
+        arrow_mode::useGameProfile(game->version);
+    }
     audio::initialize(mainBase);
     world::initialize(mainBase);
     action::initialize(mainBase);

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
 
-// How Link reaches the anchor. Production: an exact forceSetMatrix line drive at 60 m/s to a half- metre standoff
+// How Link reaches the anchor. Production: an exact forceSetMatrix line drive at 60 m/s to a one-metre standoff
 // with the paraglider admitted underneath.
 
 // Laboratory (positionDriveEnabled false): synthetic X press, jump boost, velocity while native Fall owns Link, late
@@ -17,7 +17,7 @@ namespace zonai_hookshot::transport {
 inline constexpr pure::PositionZipConfig kPositionZipConfig{};
 static_assert(kPositionZipConfig.speed == 60.0f);
 static_assert(kPositionZipConfig.updateRate == 60.0f);
-static_assert(kPositionZipConfig.standoff == 0.5f);
+static_assert(kPositionZipConfig.standoff == 1.0f);
 
 // Laboratory lane only.
 constexpr float kDirectionTestArriveRadius = 0.5f;

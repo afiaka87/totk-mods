@@ -3,40 +3,63 @@
 
 #include "HookshotInput.hpp"
 
-namespace arrowbound::input {
+namespace HOOKSHOT_ENGINE_NS::input {
 namespace {
 // Sampling numbers persist across ticks; this is the mod's single reader.
 totk::engine::NpadReader g_reader{};
+
+namespace layout = totk::engine::layout;
+
+constexpr std::ptrdiff_t kControllerLeftStick = 0x120;
+constexpr std::ptrdiff_t kControllerNpadId = 0x178;
+constexpr std::ptrdiff_t kControllerSamplingNumber = 0x180;
 
 }  // namespace
 
 totk::engine::NpadFrame readFrame(void* device) { return g_reader.read(device); }
 
-int newestLiveController(void* device) {
-    if (!device) return -1;
-    namespace layout = totk::engine::layout;
-    std::int64_t best = 0;
-    int result = -1;
+LiveSlot newestLiveSlot(void* device) {
+    LiveSlot live{};
+    if (!device) return live;
+    std::int64_t best = 0;  // require a positive sampling number
     for (std::size_t slot = 0; slot < layout::kNpadSlotCount; ++slot) {
-        const auto* state = static_cast<const unsigned char*>(device) +
-            slot * static_cast<std::size_t>(layout::kNpadSlotStride) + layout::kNpadState;
-        const auto sample = *reinterpret_cast<const std::int64_t*>(state + layout::kNpadSamplingNumber);
+        auto* state = static_cast<unsigned char*>(device) +
+                      slot * static_cast<std::size_t>(layout::kNpadSlotStride) +
+                      layout::kNpadState;
+        const std::int64_t sample =
+            *reinterpret_cast<const std::int64_t*>(state +
+                                                   layout::kNpadSamplingNumber);
         if (sample > best) {
             best = sample;
-            result = static_cast<int>(slot);
+            live.index = static_cast<int>(slot);
+            live.state = state;
         }
     }
-    return result;
+    live.samplingNumber = best;
+    return live;
+}
+
+bool slotHolds(const LiveSlot& slot, std::uint64_t mask) {
+    if (!slot.valid()) return false;
+    return (*reinterpret_cast<const std::uint64_t*>(slot.state +
+                                                    layout::kNpadButtons) &
+            mask) != 0;
+}
+
+void pressInSlot(const LiveSlot& slot, std::uint64_t mask) {
+    if (!slot.valid()) return;
+    *reinterpret_cast<std::uint64_t*>(slot.state + layout::kNpadButtons) |= mask;
 }
 
 bool openProcessedController(void* controller, ProcessedController& out) {
     if (!controller) return false;
     auto* bytes = static_cast<unsigned char*>(controller);
-    // Identical to the accepted Zonai Hookshot 1.2.1 controller adapter.
-    out.npadId = *reinterpret_cast<const std::uint32_t*>(bytes + 0x178);
-    out.samplingNumber = *reinterpret_cast<const std::uint64_t*>(bytes + 0x180);
-    out.leftStick = reinterpret_cast<float*>(bytes + 0x120);
+    out.npadId = *reinterpret_cast<const std::uint32_t*>(bytes +
+                                                         kControllerNpadId);
+    out.samplingNumber = *reinterpret_cast<const std::uint64_t*>(
+        bytes + kControllerSamplingNumber);
+    out.leftStick = reinterpret_cast<float*>(bytes + kControllerLeftStick);
     return true;
 }
 
-}  // namespace arrowbound::input
+}  // namespace HOOKSHOT_ENGINE_NS::input

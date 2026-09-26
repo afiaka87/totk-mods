@@ -21,9 +21,6 @@ enum class RosterError : std::uint8_t {
     ListUnavailable,
     CountInvalid,
     ActorNotFound,
-    ProcessManagerUnavailable,
-    ProcessLinkOffsetInvalid,
-    ProcessListCorrupt,
     WalkLimitReached,
 };
 
@@ -120,121 +117,6 @@ resolvePlayerActors(const SceneContext& scene) {
         return core::Result<PlayerActors, RosterError>::failure(RosterError::ActorNotFound);
     }
     return core::Result<PlayerActors, RosterError>::success(result);
-}
-
-struct ActiveProcessView {
-    ActorHandle handle{};
-    core::ActorName processName{};
-    std::uint32_t processState = 0;
-};
-
-using ProcessListLockFunction = void (*)(std::uintptr_t);
-
-struct ActiveProcessRosterAccess {
-    std::uintptr_t manager = 0;
-    ProcessListLockFunction lock = nullptr;
-    ProcessListLockFunction unlock = nullptr;
-    core::SceneToken scene{};
-};
-
-[[nodiscard]] inline core::Result<ActiveProcessRosterAccess, RosterError>
-resolveActiveProcessRoster(std::uintptr_t mainBase, core::SceneToken scene) {
-    if (!isPlausibleAddress(mainBase)) {
-        return core::Result<ActiveProcessRosterAccess, RosterError>::failure(
-            RosterError::ProcessManagerUnavailable);
-    }
-    const auto indirect = readMemory<std::uintptr_t>(
-        mainBase + Totk121Offsets::kProcessManagerIndirect.value);
-    const auto manager = isPlausibleAddress(indirect)
-                             ? readMemory<std::uintptr_t>(indirect)
-                             : 0;
-    if (!isPlausibleAddress(manager)) {
-        return core::Result<ActiveProcessRosterAccess, RosterError>::failure(
-            RosterError::ProcessManagerUnavailable);
-    }
-    return core::Result<ActiveProcessRosterAccess, RosterError>::success(
-        ActiveProcessRosterAccess{
-            manager,
-            reinterpret_cast<ProcessListLockFunction>(
-                mainBase + Totk121Offsets::kProcessListLock.value),
-            reinterpret_cast<ProcessListLockFunction>(
-                mainBase + Totk121Offsets::kProcessListUnlock.value),
-            scene,
-        });
-}
-
-// The visitor runs under the engine's process-list mutex: no logging, engine calls, blocking, or
-// retained raw pointers.
-template <class Visitor>
-[[nodiscard]] core::Result<RosterWalkReport, RosterError>
-visitActiveProcesses(const ActiveProcessRosterAccess& roster, Visitor&& visitor) {
-    if (!isPlausibleAddress(roster.manager) || !roster.lock || !roster.unlock) {
-        return core::Result<RosterWalkReport, RosterError>::failure(
-            RosterError::ProcessManagerUnavailable);
-    }
-
-    const auto mutex = roster.manager + layout::kProcessListMutex;
-    roster.lock(mutex);
-
-    const auto linkOffset = readMemory<std::int32_t>(
-        roster.manager + layout::kProcessActiveLinkOffset);
-    if (linkOffset <= 0 || linkOffset >= 4096) {
-        roster.unlock(mutex);
-        return core::Result<RosterWalkReport, RosterError>::failure(
-            RosterError::ProcessLinkOffsetInvalid);
-    }
-
-    const auto anchor = roster.manager + layout::kProcessActiveHead - 8;
-    const auto start =
-        readMemory<std::uintptr_t>(roster.manager + layout::kProcessActiveHead);
-    auto node = start;
-    RosterWalkReport report{};
-    std::uint32_t walked = 0;
-    while (isPlausibleAddress(node) && node != anchor && walked < 4096) {
-        ++walked;
-        const auto process = node - static_cast<std::uintptr_t>(linkOffset);
-        if (!isPlausibleAddress(process)) {
-            roster.unlock(mutex);
-            return core::Result<RosterWalkReport, RosterError>::failure(
-                RosterError::ProcessListCorrupt);
-        }
-
-        const auto state =
-            readMemory<std::uint32_t>(process + layout::kProcessState);
-        if (state >= 2 && state <= 6) {
-            const auto processName =
-                readMemory<std::uintptr_t>(process + layout::kProcessName);
-            const auto identityName =
-                readMemory<std::uintptr_t>(process + layout::kActorNamePointer);
-            if (isPlausibleStringAddress(processName) &&
-                isPlausibleStringAddress(identityName)) {
-                ActiveProcessView view{};
-                view.handle = ActorHandle{process, identityName, roster.scene};
-                view.processName.assign(reinterpret_cast<const char*>(processName));
-                view.processState = state;
-                ++report.visited;
-                if (visitor(view) == VisitControl::Stop) {
-                    roster.unlock(mutex);
-                    return core::Result<RosterWalkReport, RosterError>::success(report);
-                }
-            }
-        }
-
-        node = readMemory<std::uintptr_t>(node + sizeof(std::uintptr_t));
-        if (node == start) break;
-    }
-
-    report.complete = node == anchor;
-    roster.unlock(mutex);
-    if (!report.complete && walked >= 4096) {
-        return core::Result<RosterWalkReport, RosterError>::failure(
-            RosterError::WalkLimitReached);
-    }
-    if (!report.complete && !isPlausibleAddress(node)) {
-        return core::Result<RosterWalkReport, RosterError>::failure(
-            RosterError::ProcessListCorrupt);
-    }
-    return core::Result<RosterWalkReport, RosterError>::success(report);
 }
 
 } // namespace totk::engine

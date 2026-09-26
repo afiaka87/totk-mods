@@ -2,13 +2,12 @@
 // Copyright (c) Clay Mullis
 
 #include <lib.hpp>
+#include <arrowbound/ActiveGame.hpp>
 
 #include "modules/arrowbound/ArrowboundHookInstaller.hpp"
 #include "modules/arrowbound/ArrowboundModule.hpp"
 
 namespace {
-constexpr ptrdiff_t kNpadCalc = 0x02A267BC;
-constexpr ptrdiff_t kRayCastWorker = 0x00858590;
 
 HOOK_DEFINE_TRAMPOLINE(RayCastWorkerHook) {
     static u64 OriginalThunk(const void* from, const void* to,
@@ -36,12 +35,20 @@ HOOK_DEFINE_TRAMPOLINE(NpadCalcHook) {
 extern "C" void exl_main(void*, void*) {
     exl::hook::Initialize();
     const uintptr_t mainBase = exl::util::modules::GetTargetStart();
+    const auto* game = arrowbound::profiles::activate(
+        mainBase, exl::util::GetMainModuleInfo().m_Text.m_Size);
+    if (!game) {
+        Logging.Log("[arrowbound] 0.2.3 unknown game build; nothing installed");
+        return;
+    }
     arrowbound::initialize(mainBase);
     arrowbound::enter();
-    RayCastWorkerHook::InstallAtOffset(kRayCastWorker);
-    NpadCalcHook::InstallAtOffset(kNpadCalc);
+    if (arrowbound::profiles::entryHookable(mainBase, game->hooks.raycastWorker, "raycast"))
+        RayCastWorkerHook::InstallAtOffset(game->hooks.raycastWorker.offset);
+    if (arrowbound::profiles::entryHookable(mainBase, game->hooks.npadCalc, "npad"))
+        NpadCalcHook::InstallAtOffset(game->hooks.npadCalc.offset);
     arrowbound::hooks::install(mainBase);
-    Logging.Log("[arrowbound] 0.1.0 loaded");
+    Logging.Log("[arrowbound] 0.2.3 loaded for TotK %s", game->name);
 }
 
 extern "C" NORETURN void exl_exception_entry() { EXL_ABORT("unreachable"); }

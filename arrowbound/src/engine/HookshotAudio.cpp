@@ -6,24 +6,18 @@
 #include "SoundHandle.hpp"
 
 #include <lib.hpp>
+#include <arrowbound/ActiveGame.hpp>
 
-namespace arrowbound::audio {
+namespace HOOKSHOT_ENGINE_NS::audio {
 namespace {
 
-namespace off {
-// Hand a cue name to a sound user instance and play it.
-constexpr std::ptrdiff_t kSearchAndEmit = 0x00B026E0;
-// The slot holding the sound system whose list carries every registered user.
-constexpr std::ptrdiff_t kSystemSlot = 0x00462F2B0;
-constexpr std::ptrdiff_t kHandleIsValid = 0x00D17C80;
-constexpr std::ptrdiff_t kHandleAliveAssets = 0x01A00080;
-constexpr std::ptrdiff_t kSetPosition = 0x00829F60;
-constexpr std::ptrdiff_t kKill = 0x00BBCCAC;
-constexpr std::ptrdiff_t kFade = 0x00AF78BC;
-}  // namespace off
+// Sound functions and variables for the running build (arrowbound game profile).
+const arrowbound::profiles::Calls& calls() { return arrowbound::profiles::active()->calls; }
+const arrowbound::profiles::Variables& variables() {
+    return arrowbound::profiles::active()->variables;
+}
 
 using SearchAndEmitFn = void (*)(void* user, const char* name, void* outHandle);
-using HandleIsValidFn = bool (*)(const void* handle);
 
 constexpr const char* kInterfaceUser = "UI_GlobalSound";
 
@@ -64,9 +58,8 @@ bool looksLikeInstance(u64 inst) {
 // The registered-user list node for a name, or 0.
 u64 findUser(const char* userName) {
     if (g_mainBase == 0) return 0;
-    const u64 holder = *(u64*)(g_mainBase + off::kSystemSlot);
-    if (!okPtr(holder)) return 0;
-    const u64 system = *(u64*)holder;
+    // The sound system variable holds the system whose list carries every registered user.
+    const u64 system = *(u64*)(g_mainBase + variables().soundSystem);
     if (!okPtr(system)) return 0;
     if (*(u32*)(system + 32) == 0) return 0;
 
@@ -102,26 +95,39 @@ void* speaker() {
     return found;
 }
 
+// The sound handle's slot still carries the handle's creation id. Mirrors the 1.2.1 native
+// check, which 1.4.x inlines: per-system slot table and stride, slot +0x20 holds the id.
+bool handleLive(const engine::SoundHandle& handle) {
+    if (handle.index == -1 || handle.system < 0 || handle.system > 1) return false;
+    const u64 tables = *(u64*)(g_mainBase + variables().handleTableSlot);
+    const u64 strides = *(u64*)(g_mainBase + variables().handleStrideSlot);
+    if (!okPtr(tables) || !okPtr(strides)) return false;
+    const u64 table = ((const u64*)tables)[handle.system];
+    const u64 stride = ((const u64*)strides)[handle.system];
+    const u64 slot = stride * (u64)(std::int64_t)handle.index + table;
+    if (slot == 0 || !okPtr(slot)) return false;
+    return *(const u32*)(slot + 0x20) == handle.createId;
+}
+
 bool emit(void* instance, const char* cueName, engine::SoundHandle* retained = nullptr) {
     if (instance == nullptr || cueName == nullptr || g_mainBase == 0) return false;
     // Bytes 2-3 are the sound index; -1 means "no sound" and must be the
     // starting state, since index 0 is someone else's real sound.
     engine::SoundHandle handle{};
-    auto searchAndEmit = (SearchAndEmitFn)(g_mainBase + off::kSearchAndEmit);
+    auto searchAndEmit = (SearchAndEmitFn)(g_mainBase + calls().searchAndEmit);
     searchAndEmit(instance, cueName, &handle);
     if (retained) *retained = handle;
-    auto isValid = (HandleIsValidFn)(g_mainBase + off::kHandleIsValid);
-    return isValid(&handle);
+    return handleLive(handle);
 }
 
 bool validHandle(const engine::SoundHandle& handle) {
     return g_mainBase && handle.system == 1 && handle.index >= 0 &&
-        reinterpret_cast<HandleIsValidFn>(g_mainBase + off::kHandleIsValid)(&handle);
+        handleLive(handle);
 }
 
 void stop(AbilityCue& cue) {
     if (cue.active && validHandle(cue.handle))
-        reinterpret_cast<void (*)(engine::SoundHandle*)>(g_mainBase + off::kKill)(&cue.handle);
+        reinterpret_cast<void (*)(engine::SoundHandle*)>(g_mainBase + calls().kill)(&cue.handle);
     cue = {};
 }
 
@@ -132,9 +138,9 @@ void update(AbilityCue& cue, pure::Vec3 position) {
     if (event) {
         if (pure::finite3(position))
             reinterpret_cast<void (*)(engine::SoundHandle*, const pure::Vec3*)>(
-                g_mainBase + off::kSetPosition)(&cue.handle, &position);
+                g_mainBase + calls().setPosition)(&cue.handle, &position);
         assets = reinterpret_cast<unsigned (*)(const engine::SoundHandle*)>(
-            g_mainBase + off::kHandleAliveAssets)(&cue.handle);
+            g_mainBase + calls().liveAssets)(&cue.handle);
     }
     const bool wasResolved = cue.gate.resolved;
     if (cue.gate.needsFallback(event, assets)) {
@@ -142,10 +148,10 @@ void update(AbilityCue& cue, pure::Vec3 position) {
         const char* kind = cue.kind;
         stop(cue); // Empty pending events cannot play late on top of the fallback.
         const bool emitted = emit(speaker(), fallback);
-        Logging.Log("[arrowbound] AUDIO_FALLBACK kind=%s cue=%s result=%u reason=no_live_asset",
+        Logging.Log(HOOKSHOT_ENGINE_TAG " AUDIO_FALLBACK kind=%s cue=%s result=%u reason=no_live_asset",
                     kind, fallback, (unsigned)emitted);
     } else if (!wasResolved && cue.gate.resolved) {
-        Logging.Log("[arrowbound] AUDIO_ASSET kind=%s live=%u follows_player=1", cue.kind, assets);
+        Logging.Log(HOOKSHOT_ENGINE_TAG " AUDIO_ASSET kind=%s live=%u follows_player=1", cue.kind, assets);
     } else if (!event) {
         cue = {};
     }
@@ -158,7 +164,7 @@ void updateArrowFollowLoop(pure::Vec3 position) {
     }
     if (pure::finite3(position))
         reinterpret_cast<void (*)(engine::SoundHandle*, const pure::Vec3*)>(
-            g_mainBase + off::kSetPosition)(&g_arrowFollowLoop, &position);
+            g_mainBase + calls().setPosition)(&g_arrowFollowLoop, &position);
 }
 
 }  // namespace
@@ -184,7 +190,7 @@ void playAbilityCue(bool arrival, pure::Vec3 position) {
     const char* name = arrival ? kCueArrive : kCueTravel;
     const bool allocated = emit(firstInstance(findUser(kCueAbilityUser)), name, &cue.handle);
     cue.active = true;
-    Logging.Log("[arrowbound] AUDIO_REQUEST kind=%s cue=%s event=%u", cue.kind, name, (unsigned)allocated);
+    Logging.Log(HOOKSHOT_ENGINE_TAG " AUDIO_REQUEST kind=%s cue=%s event=%u", cue.kind, name, (unsigned)allocated);
     update(cue, position);
 }
 
@@ -192,7 +198,7 @@ void startArrowFollowLoop(pure::Vec3 position) {
     stopArrowFollowLoop();
     const bool allocated = emit(firstInstance(findUser(pure::kCueAbilityUser)),
                                 pure::kCueArrowFollowLoop, &g_arrowFollowLoop);
-    Logging.Log("[arrowbound] AUDIO_REQUEST kind=arrow_follow cue=%s event=%u",
+    Logging.Log(HOOKSHOT_ENGINE_TAG " AUDIO_REQUEST kind=arrow_follow cue=%s event=%u",
                 pure::kCueArrowFollowLoop, (unsigned)allocated);
     updateArrowFollowLoop(position);
 }
@@ -200,7 +206,7 @@ void startArrowFollowLoop(pure::Vec3 position) {
 void stopArrowFollowLoop() {
     if (validHandle(g_arrowFollowLoop))
         reinterpret_cast<void (*)(engine::SoundHandle*, int)>(
-            g_mainBase + off::kFade)(&g_arrowFollowLoop, -1);
+            g_mainBase + calls().fade)(&g_arrowFollowLoop, -1);
     g_arrowFollowLoop = {};
 }
 
@@ -220,4 +226,4 @@ bool describeUser(const char* userName, int& instances) {
     return user != 0;
 }
 
-}  // namespace arrowbound::audio
+}  // namespace HOOKSHOT_ENGINE_NS::audio

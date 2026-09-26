@@ -15,16 +15,20 @@ inline TestLogger Logging;
 namespace exl::hook {
 inline std::uintptr_t original{};
 inline unsigned trampolineCount{}, patchCount{};
+// Emulates HookFuncImpl's absolute form: a leading NOP when the entry is 4 mod 8.
 template<class Callback>
 Callback Hook(std::uintptr_t site, Callback callback, bool trampoline) {
     auto* words = reinterpret_cast<std::uint32_t*>(site);
+    const bool nop = (site & 7) == 4;
+    auto* jump = nop ? words + 1 : words;
     std::uintptr_t predecessor = original;
-    if (words[0] == 0x58000051 && words[1] == 0xd61f0220)
-        std::memcpy(&predecessor, words + 2, sizeof(predecessor));
-    words[0] = 0x58000051;
-    words[1] = 0xd61f0220;
+    if (jump[0] == 0x58000051 && jump[1] == 0xd61f0220)
+        std::memcpy(&predecessor, jump + 2, sizeof(predecessor));
+    if (nop) words[0] = 0xd503201f;
+    jump[0] = 0x58000051;
+    jump[1] = 0xd61f0220;
     const auto target = reinterpret_cast<std::uintptr_t>(callback);
-    std::memcpy(words + 2, &target, sizeof(target));
+    std::memcpy(jump + 2, &target, sizeof(target));
     ++patchCount;
     if (trampoline) ++trampolineCount;
     return trampoline ? reinterpret_cast<Callback>(predecessor) : nullptr;

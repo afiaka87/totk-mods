@@ -5,10 +5,12 @@
 // decided in pure/HookshotCues.hpp.
 #pragma once
 
+#include "EngineNamespace.hpp"
+
 #include <cstdint>
 #include "Vec3.hpp"
 
-namespace arrowbound::audio {
+namespace HOOKSHOT_ENGINE_NS::audio {
 
 void initialize(std::uintptr_t mainBase);
 
@@ -34,4 +36,4 @@ void resetAbilityCues();
 // Whether a named user is registered right now and how many instances it has.
 bool describeUser(const char* userName, int& instances);
 
-}  // namespace arrowbound::audio
+}  // namespace HOOKSHOT_ENGINE_NS::audio

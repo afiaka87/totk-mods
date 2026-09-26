@@ -5,7 +5,7 @@
 // alters velocity.
 #pragma once
 
-#include "Vec3.hpp"
+#include "ArrowboundPure.hpp"
 
 namespace zonai_hookshot::pure {
 struct DirectionTelemetry {

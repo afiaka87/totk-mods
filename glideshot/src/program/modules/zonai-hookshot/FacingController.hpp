@@ -8,7 +8,7 @@
 #include "HookshotRuntime.hpp"
 
 namespace zonai_hookshot::facing {
-// Tuning frozen by the v0.3.9 boot.
+// Play-tested tuning (stage note, v0.3.9).
 inline constexpr pure::YawConfig kConfig{};
 
 // False when the live rotation is unreadable.

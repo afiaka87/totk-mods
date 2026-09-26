@@ -2,10 +2,12 @@
 // Copyright (c) Clay Mullis
 #pragma once
 
+#include "EngineNamespace.hpp"
+
 #include <cstdint>
 #include <cstring>
 
-namespace arrowbound::engine {
+namespace HOOKSHOT_ENGINE_NS::engine {
 
 struct RayGroup {
     std::uint32_t id = 0;
@@ -30,4 +32,4 @@ inline bool rebaseRayFilter(void* query, const void* donor) {
     return true;
 }
 
-} // namespace arrowbound::engine
+} // namespace HOOKSHOT_ENGINE_NS::engine

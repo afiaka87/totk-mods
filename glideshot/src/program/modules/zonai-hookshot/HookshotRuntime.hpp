@@ -8,15 +8,12 @@
 #include <atomic>
 #include <cstdint>
 
-#include "CaptureMath.hpp"
+#include "ArrowboundPure.hpp"
 #include "ChainVisual.hpp"
 #include "HookshotState.hpp"
 #include "LaunchInjector.hpp"
 #include "PositionZip.hpp"
-#include "TargetValidator.hpp"
 #include "TransportMath.hpp"
-#include "Vec3.hpp"
-#include "YawEasing.hpp"
 
 namespace zonai_hookshot {
 inline float bitsToFloat(std::uint32_t bits) {

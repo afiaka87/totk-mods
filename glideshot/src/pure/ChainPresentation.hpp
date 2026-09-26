@@ -8,7 +8,7 @@
 #include <cmath>
 #include <cstdint>
 
-#include "Vec3.hpp"
+#include "ArrowboundPure.hpp"
 
 namespace zonai_hookshot::pure {
 // World length of one coil turn; the shader derives its turn count from the same constant.

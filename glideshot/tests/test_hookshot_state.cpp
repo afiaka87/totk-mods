@@ -516,3 +516,41 @@ TEST_CASE("B cancels the position zip and world loss resets it") {
     CHECK(out.event == Event::Reset);
     CHECK(m.phase == Phase::Idle);
 }
+
+TEST_CASE("a B clear stays masked until B is physically released") {
+    MachineConfig c{};
+    auto m = latchedMachine(c);
+    auto in = idleInputs();
+    in.aEdge = true;
+    step(m, in, c);
+    REQUIRE(m.phase == Phase::PositionCruise);
+    in = idleInputs();
+    in.bEdge = true;
+    in.bHeld = true;
+    REQUIRE(step(m, in, c).event == Event::Cleared);
+    CHECK(m.bLatched);
+    // Cooldown owns no buttons, but the held B must not reach the game as a fresh press.
+    in = idleInputs();
+    in.bHeld = true;
+    for (int i = 0; i < 5; ++i) CHECK(step(m, in, c).consumed.b);
+    // A stale tick keeps the latch; the first fresh sample with B up releases it.
+    in.freshInput = false;
+    CHECK(step(m, in, c).consumed.b);
+    in = idleInputs();
+    CHECK_FALSE(step(m, in, c).consumed.b);
+    CHECK_FALSE(m.bLatched);
+    // A later B press outside Glideshot passes through.
+    in.bEdge = true;
+    in.bHeld = true;
+    while (m.phase != Phase::Idle) step(m, idleInputs(), c);
+    CHECK_FALSE(step(m, in, c).consumed.b);
+}
+
+TEST_CASE("an idle B press is never latched") {
+    Machine m{};
+    auto in = idleInputs();
+    in.bEdge = true;
+    in.bHeld = true;
+    CHECK_FALSE(step(m, in).consumed.b);
+    CHECK_FALSE(m.bLatched);
+}

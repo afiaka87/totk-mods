@@ -2,7 +2,7 @@
 // Copyright (c) Clay Mullis
 #include <doctest.h>
 
-#include "CaptureMath.hpp"
+#include "ArrowboundPure.hpp"
 
 using namespace zonai_hookshot::pure;
 

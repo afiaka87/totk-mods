@@ -6,14 +6,14 @@
 
 using namespace zonai_hookshot::pure;
 
-TEST_CASE("position zip freezes a straight endpoint half a metre before anchor") {
+TEST_CASE("position zip freezes a straight endpoint one metre before anchor") {
     PositionZipState state{};
     REQUIRE(beginPositionZip(state, {0.0f, 0.0f, 0.0f}, {30.0f, 40.0f, 0.0f}));
-    CHECK(state.travelDistance == doctest::Approx(49.5f));
-    CHECK(state.endpoint.x == doctest::Approx(29.7f));
-    CHECK(state.endpoint.y == doctest::Approx(39.6f));
+    CHECK(state.travelDistance == doctest::Approx(49.0f));
+    CHECK(state.endpoint.x == doctest::Approx(29.4f));
+    CHECK(state.endpoint.y == doctest::Approx(39.2f));
     CHECK(distance(state.endpoint, Vec3{30.0f, 40.0f, 0.0f}) ==
-          doctest::Approx(0.5f));
+          doctest::Approx(1.0f));
 }
 
 TEST_CASE("position zip advances exactly one metre per 60 Hz update") {
@@ -29,7 +29,7 @@ TEST_CASE("position zip advances exactly one metre per 60 Hz update") {
 
 TEST_CASE("position zip reaches exact endpoint without overshooting") {
     PositionZipState state{};
-    REQUIRE(beginPositionZip(state, {0.0f, 0.0f, 0.0f}, {3.5f, 0.0f, 0.0f}));
+    REQUIRE(beginPositionZip(state, {0.0f, 0.0f, 0.0f}, {4.0f, 0.0f, 0.0f}));
     Vec3 next{};
     CHECK(stepPositionZip(state, next) == PositionZipResult::Continue);
     CHECK(next.x == doctest::Approx(1.0f));

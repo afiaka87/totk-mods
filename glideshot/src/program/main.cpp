@@ -2,8 +2,10 @@
 // Copyright (c) Clay Mullis
 
 #include <lib.hpp>
+#include <arrowbound/ActiveGame.hpp>
 #include <arrowbound/Module.hpp>
 
+#include "ActivationButtons.hpp"
 #include "HookshotInput.hpp"
 #include "TraversalOwnership.hpp"
 #include "modules/zonai-hookshot/ChainRenderer.hpp"
@@ -11,11 +13,10 @@
 #include "modules/zonai-hookshot/HookshotHookInstaller.hpp"
 #include "modules/zonai-hookshot/HookshotHooks.hpp"
 #include "modules/zonai-hookshot/HookshotIntegration.hpp"
+#include "ActionContext.hpp"
 
 namespace {
 
-constexpr ptrdiff_t kNpadCalc = 0x02A267BC;
-constexpr ptrdiff_t kRayCastWorker = 0x00858590;
 constexpr std::uint64_t kButtonZR = 1ull << 9;
 totk::engine::NpadReader g_input;
 std::uint64_t g_lastButtons = 0;
@@ -51,7 +52,8 @@ HOOK_DEFINE_TRAMPOLINE(NpadCalcHook) {
         const auto decision = zonai_hookshot::pure::traversalOwnership({
             manual::ownsMovement(), arrowbound::movementEngaged(),
             fresh, (g_lastButtons & kButtonZR) != 0,
-            (g_lastButtons & input::kAimChord) == input::kAimChord,
+            (g_lastButtons & zonai_hookshot::input_policy::kAimChord) ==
+                zonai_hookshot::input_policy::kAimChord,
             (g_lastButtons & input::kButtonB) != 0});
         zonai_hookshot::pure::dispatchTraversal(decision,
             [] { manual::yieldMovement(); },
@@ -70,6 +72,13 @@ HOOK_DEFINE_TRAMPOLINE(NpadCalcHook) {
 extern "C" void exl_main(void*, void*) {
     exl::hook::Initialize();
     const uintptr_t mainBase = exl::util::modules::GetTargetStart();
+    const auto* game = arrowbound::profiles::activate(
+        mainBase, exl::util::GetMainModuleInfo().m_Text.m_Size);
+    if (!game) {
+        Logging.Log("[glideshot] 0.10.4 unknown game build; nothing installed");
+        return;
+    }
+    zonai_hookshot::action::useGameProfile(game->version);
     zonai_hookshot::render::configure(mainBase);
     zonai_hookshot::render::installShaderPass(mainBase);
     const auto& module = wwpg::modules::zonaiHookshot();
@@ -77,8 +86,10 @@ extern "C" void exl_main(void*, void*) {
     module.enter();
     arrowbound::initialize(mainBase);
     arrowbound::enter();
-    RayCastWorkerHook::InstallAtOffset(kRayCastWorker);
-    NpadCalcHook::InstallAtOffset(kNpadCalc);
+    if (arrowbound::profiles::entryHookable(mainBase, game->hooks.raycastWorker, "raycast"))
+        RayCastWorkerHook::InstallAtOffset(game->hooks.raycastWorker.offset);
+    if (arrowbound::profiles::entryHookable(mainBase, game->hooks.npadCalc, "npad"))
+        NpadCalcHook::InstallAtOffset(game->hooks.npadCalc.offset);
     zonai_hookshot::hooks::installUnique(mainBase, {
         arrowbound::wall_grip::onControllerUpdate,
         arrowbound::parasail::onEnterHook,
@@ -91,7 +102,8 @@ extern "C" void exl_main(void*, void*) {
         arrowbound::parasail::onGlideEntryPredicate,
         arrowbound::sharedGripHooksReady});
     arrowbound::installFeatureHooks(mainBase);
-    Logging.Log("[glideshot] 0.9.1 + Arrowbound loaded (shared hooks, exclusive traversal)");
+    Logging.Log("[glideshot] 0.10.4 + Arrowbound loaded for TotK %s (shared hooks, exclusive traversal)",
+                game->name);
 }
 
 extern "C" NORETURN void exl_exception_entry() { EXL_ABORT("unreachable"); }

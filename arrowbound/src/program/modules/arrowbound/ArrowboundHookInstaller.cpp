@@ -14,51 +14,23 @@
 #include "../../../engine/FlightClock.hpp"
 #include "../../../engine/ModelVisibility.hpp"
 #include "../../../engine/RagdollTransport.hpp"
+#include <arrowbound/ActiveGame.hpp>
 
 namespace {
 namespace parasail = arrowbound::parasail;
 
-constexpr ptrdiff_t kParasailEnter = 0x01D6E54C;
-constexpr ptrdiff_t kParasailLoopEntry = 0x01D6E5BC;
-constexpr ptrdiff_t kParasailUpdate = 0x01D6E810;
-constexpr ptrdiff_t kParasailLeave = 0x01D6F2A0;
-constexpr ptrdiff_t kFallEnter = 0x01D61428;
-constexpr ptrdiff_t kFallUpdate = 0x01D61790;
-constexpr ptrdiff_t kFallLeave = 0x01D61988;
-constexpr ptrdiff_t kGlideEntryPredicate = 0x01722210;
-constexpr ptrdiff_t kBowGetResult = 0x01D2E890;
-constexpr ptrdiff_t kSerializeSaveData = 0x0241469C;
-constexpr ptrdiff_t kNpadControllerCalcImpl = 0x024789BC;
-constexpr ptrdiff_t kClimbUpdate = 0x01D56D50;
-
-constexpr ptrdiff_t kEquipmentReleaseArrow = 0x015D65BC;
-constexpr ptrdiff_t kArrowControllerUpdate = 0x0173B034;
-constexpr ptrdiff_t kArrowImpactClassify = 0x0173C920;
-constexpr ptrdiff_t kArrowWorldSweep = 0x0173E298;
-constexpr ptrdiff_t kPouchOnSelectSlot = 0x01B16650;
-constexpr ptrdiff_t kPouchHandleAction = 0x01B1241C;
-constexpr ptrdiff_t kPouchSetSlot = 0x01A58EE0;
-constexpr ptrdiff_t kPouchSelectionDeal = 0x01B171AC;
-constexpr ptrdiff_t kFindMessage = 0x00D7AF44;
-
-constexpr u32 kEquipmentReleaseArrowWord = 0xD10283FF;
-constexpr u32 kArrowControllerUpdateWord = 0xD10283FF;
-constexpr u32 kArrowImpactClassifyWord = 0xFC160FEE;
-constexpr u32 kArrowWorldSweepWord = 0x6DB63BEF;
-constexpr u32 kPouchOnSelectSlotWord = 0xD10343FF;
-constexpr u32 kPouchHandleActionWord = 0xFC190FEA;
-constexpr u32 kPouchSetSlotWord = 0xD107C3FF;
-constexpr u32 kBowGetResultWord = 0xA9BD7BFD;
-constexpr u32 kSerializeSaveDataWord = 0xD10103FF;
-constexpr u32 kParasailLoopEntryWord = 0xF0014628;
-constexpr u32 kNpadControllerCalcImplWord = 0x6DB923E9;
-constexpr u32 kClimbUpdateWord = 0xA9BE7BFD;
-constexpr u32 kPouchSelectionDealWord = 0x910083E0;
-constexpr u32 kFindMessageWord = 0xD10583FF;
-
+// 1.0.0-1.2.1: X1 points at the item-name pointer. 1.4.x: X10 holds the name pointer itself.
 HOOK_DEFINE_INLINE(PouchSelectionDealHook) {
     static void Callback(exl::hook::InlineCtx* ctx) {
         ctx->X[1] = arrowbound::arrow_mode::selectionDeal(ctx->X[1]);
+    }
+};
+
+HOOK_DEFINE_INLINE(PouchSelectionDealNameHook) {
+    static void Callback(exl::hook::InlineCtx* ctx) {
+        const auto name = arrowbound::arrow_mode::selectionDeal(
+            reinterpret_cast<std::uintptr_t>(&ctx->X[10]));
+        ctx->X[10] = *reinterpret_cast<const std::uint64_t*>(name);
     }
 };
 
@@ -218,6 +190,16 @@ HOOK_DEFINE_TRAMPOLINE(PouchOnSelectSlotHook) {
     }
 };
 
+// 1.4.1+: the handler gained a leading result-flag pointer; category and index follow it.
+HOOK_DEFINE_TRAMPOLINE(PouchOnSelectSlotFlagHook) {
+    static u64 Callback(void* screen, bool* result, u32 category, u32 index, void* arg4) {
+        arrowbound::arrow_mode::beginSelection(category, index);
+        const u64 value = Orig(screen, result, category, index, arg4);
+        arrowbound::arrow_mode::endSelection(screen);
+        return value;
+    }
+};
+
 HOOK_DEFINE_TRAMPOLINE(PouchHandleActionHook) {
     static u64 Callback(void* screen, int action) {
         const bool owned = arrowbound::arrow_mode::beginAction(action);
@@ -236,75 +218,85 @@ HOOK_DEFINE_TRAMPOLINE(PouchSetSlotHook) {
     }
 };
 
-bool hookWordMatches(uintptr_t base, ptrdiff_t offset, u32 expected,
+bool hookWordMatches(uintptr_t base, const arrowbound::profiles::Site& site,
                      const char* label) {
-    const u32 actual = *reinterpret_cast<const u32*>(base + offset);
-    if (actual == expected) return true;
+    const u32 actual = *reinterpret_cast<const u32*>(base + site.offset);
+    if (actual == site.word) return true;
     Logging.Log(
         "[arrowbound] HOOK DISABLED %s: main+%p word %08x != expected %08x "
         "(version/cheat conflict)",
-        label, reinterpret_cast<void*>(offset), actual, expected);
+        label, reinterpret_cast<void*>(site.offset), actual, site.word);
     return false;
 }
 }
 
 namespace arrowbound::hooks {
 void install(std::uintptr_t mainBase, bool installShared) {
+    const auto* game = profiles::active();
+    if (!game) return;
+    const auto& h = game->hooks;
     game_clock::install(mainBase);
     model_trace::install(mainBase);
     ragdoll_transport::install(mainBase);
     if (installShared) {
-        ParasailEnterHook::InstallAtOffset(kParasailEnter);
-        ParasailUpdateHook::InstallAtOffset(kParasailUpdate);
-        ParasailLeaveHook::InstallAtOffset(kParasailLeave);
-        FallEnterHook::InstallAtOffset(kFallEnter);
-        FallUpdateHook::InstallAtOffset(kFallUpdate);
-        FallLeaveHook::InstallAtOffset(kFallLeave);
-        GlideEntryPredicateHook::InstallAtOffset(kGlideEntryPredicate);
-        if (hookWordMatches(mainBase, kNpadControllerCalcImpl, kNpadControllerCalcImplWord, "grip input") &&
-            hookWordMatches(mainBase, kClimbUpdate, kClimbUpdateWord, "grip climb release")) {
-            NpadControllerCalcImplHook::InstallAtOffset(kNpadControllerCalcImpl);
-            ClimbUpdateHook::InstallAtOffset(kClimbUpdate);
+#define INSTALL_ENTRY(Hook, Site, Label)                  \
+    do {                                              \
+        if (profiles::entryHookable(mainBase, Site, Label)) \
+            Hook::InstallAtOffset(Site.offset);       \
+    } while (false)
+        INSTALL_ENTRY(ParasailEnterHook, h.parasailEnter, "parasail enter");
+        INSTALL_ENTRY(ParasailUpdateHook, h.parasailUpdate, "parasail update");
+        INSTALL_ENTRY(ParasailLeaveHook, h.parasailLeave, "parasail leave");
+        INSTALL_ENTRY(FallEnterHook, h.fallEnter, "fall enter");
+        INSTALL_ENTRY(FallUpdateHook, h.fallUpdate, "fall update");
+        INSTALL_ENTRY(FallLeaveHook, h.fallLeave, "fall leave");
+        INSTALL_ENTRY(GlideEntryPredicateHook, h.glideEntry, "glide admission");
+#undef INSTALL_ENTRY
+        if (hookWordMatches(mainBase, h.gripController, "grip input") &&
+            hookWordMatches(mainBase, h.climbUpdate, "grip climb release")) {
+            NpadControllerCalcImplHook::InstallAtOffset(h.gripController.offset);
+            ClimbUpdateHook::InstallAtOffset(h.climbUpdate.offset);
             arrowbound::runtime().grip.hooksReady.store(1, std::memory_order_release);
         }
     }
 
-#define INSTALL_VERIFIED(Hook, Offset, Word, Label)                         \
+#define INSTALL_VERIFIED(Hook, Site, Label)                               \
     do {                                                                    \
-        if (hookWordMatches(mainBase, Offset, Word, Label))                 \
-            Hook::InstallAtOffset(Offset);                                  \
+        if (hookWordMatches(mainBase, Site, Label))                         \
+            Hook::InstallAtOffset(Site.offset);                             \
     } while (false)
 
-    INSTALL_VERIFIED(EquipmentReleaseArrowHook, kEquipmentReleaseArrow,
-                     kEquipmentReleaseArrowWord, "arrow release");
-    INSTALL_VERIFIED(ArrowControllerUpdateHook, kArrowControllerUpdate,
-                     kArrowControllerUpdateWord, "arrow update");
-    INSTALL_VERIFIED(ArrowImpactClassifyHook, kArrowImpactClassify,
-                     kArrowImpactClassifyWord, "arrow impact");
-    INSTALL_VERIFIED(ArrowWorldSweepHook, kArrowWorldSweep,
-                     kArrowWorldSweepWord, "arrow world impact");
+    INSTALL_VERIFIED(EquipmentReleaseArrowHook, h.releaseArrow, "arrow release");
+    INSTALL_VERIFIED(ArrowControllerUpdateHook, h.arrowUpdate, "arrow update");
+    INSTALL_VERIFIED(ArrowImpactClassifyHook, h.arrowImpact, "arrow impact");
+    INSTALL_VERIFIED(ArrowWorldSweepHook, h.arrowSweep, "arrow world impact");
     // Install the menu and its action interception together, never a native sage action alone.
     const bool emblemReady =
-        hookWordMatches(mainBase, kPouchOnSelectSlot, kPouchOnSelectSlotWord, "pouch selection") &&
-        hookWordMatches(mainBase, kPouchHandleAction, kPouchHandleActionWord, "pouch action") &&
-        hookWordMatches(mainBase, kPouchSetSlot, kPouchSetSlotWord, "emblem appearance") &&
-        hookWordMatches(mainBase, kPouchSelectionDeal, kPouchSelectionDealWord, "emblem menu type") &&
-        hookWordMatches(mainBase, kFindMessage, kFindMessageWord, "emblem literal text") &&
-        hookWordMatches(mainBase, kSerializeSaveData, kSerializeSaveDataWord, "unsaved emblem carrier");
+        hookWordMatches(mainBase, h.pouchSelect, "pouch selection") &&
+        hookWordMatches(mainBase, h.pouchSelectArgs, "pouch selection arguments") &&
+        hookWordMatches(mainBase, h.pouchAction, "pouch action") &&
+        hookWordMatches(mainBase, h.pouchSetSlot, "emblem appearance") &&
+        hookWordMatches(mainBase, h.pouchDeal, "emblem menu type") &&
+        hookWordMatches(mainBase, h.findMessage, "emblem literal text") &&
+        hookWordMatches(mainBase, h.serializeSave, "unsaved emblem carrier");
     if (emblemReady) {
-        PouchOnSelectSlotHook::InstallAtOffset(kPouchOnSelectSlot);
-        PouchHandleActionHook::InstallAtOffset(kPouchHandleAction);
-        PouchSetSlotHook::InstallAtOffset(kPouchSetSlot);
-        PouchSelectionDealHook::InstallAtOffset(kPouchSelectionDeal);
-        FindMessageHook::InstallAtOffset(kFindMessage);
-        SerializeSaveDataHook::InstallAtOffset(kSerializeSaveData);
+        if (h.pouchSelectArgs.word == arrowbound::profiles::kPouchSelectFlagForm)
+            PouchOnSelectSlotFlagHook::InstallAtOffset(h.pouchSelect.offset);
+        else
+            PouchOnSelectSlotHook::InstallAtOffset(h.pouchSelect.offset);
+        PouchHandleActionHook::InstallAtOffset(h.pouchAction.offset);
+        PouchSetSlotHook::InstallAtOffset(h.pouchSetSlot.offset);
+        if (game->newRenderer())
+            PouchSelectionDealNameHook::InstallAtOffset(h.pouchDeal.offset);
+        else
+            PouchSelectionDealHook::InstallAtOffset(h.pouchDeal.offset);
+        FindMessageHook::InstallAtOffset(h.findMessage.offset);
+        SerializeSaveDataHook::InstallAtOffset(h.serializeSave.offset);
     }
     arrowbound::arrow_mode::setCodeOnlyReady(emblemReady);
     Logging.Log("[arrowbound] CODE_ONLY_EMBLEM ready=%u", emblemReady);
-    INSTALL_VERIFIED(BowGetResultHook, kBowGetResult,
-                      kBowGetResultWord, "released bow completion");
-    INSTALL_VERIFIED(ParasailLoopEntryHook, kParasailLoopEntry,
-                      kParasailLoopEntryWord, "arrow steady-glide entry");
+    INSTALL_VERIFIED(BowGetResultHook, h.bowResult, "released bow completion");
+    INSTALL_VERIFIED(ParasailLoopEntryHook, h.parasailLoop, "arrow steady-glide entry");
 
 #undef INSTALL_VERIFIED
 }

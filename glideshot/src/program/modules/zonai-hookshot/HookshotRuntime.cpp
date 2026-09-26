@@ -18,9 +18,7 @@ void note(const char* text) { ZHLOG("NOTE %s", text); }
 
 void resetSession(const char* reason) {
     const bool wasActive = g_runtime.machine.phase != pure::Phase::Idle;
-    const bool latch = g_runtime.machine.triggerLatched;
-    g_runtime.machine = {};
-    g_runtime.machine.triggerLatched = latch;
+    pure::resetKeepingLatches(g_runtime.machine);  // quarantines survive
     g_runtime.launch = {};
     g_runtime.positionDrive = {};
     g_runtime.capture = {};

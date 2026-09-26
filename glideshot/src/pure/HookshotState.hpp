@@ -9,7 +9,7 @@
 
 #include <cstdint>
 
-#include "TargetValidator.hpp"
+#include "ArrowboundPure.hpp"
 
 namespace zonai_hookshot::pure {
 enum class Phase : uint8_t {
@@ -19,7 +19,7 @@ enum class Phase : uint8_t {
     Confirming,   // A pressed: waiting (bounded) for a post-press fresh sample
     ChainLaunch,  // anchor frozen, chain extending outward
     Latched,       // one-tick latch beat before automatic transport
-    PositionCruise,// exact forceSetMatrix line drive to the 0.5 m standoff
+    PositionCruise,// exact forceSetMatrix line drive to the 1.0 m standoff
     Capture,       // v0.3.6: short Parasail-hosted physical wall approach
     DetachRequest, // P2: native detach armed, awaiting an observed Fall update
     FallCruise,    // P2: native Fall owns Link, velocity driven to the anchor
@@ -61,7 +61,7 @@ enum class Event : uint8_t {
     CooldownDone,
     DetachRequested,   // A in Latched; module arms the native detach lanes
     PositionZipStarted,// launch reached anchor; freeze start/line/endpoint
-    PositionZipEnded,  // the exact 0.5 m standoff endpoint was applied
+    PositionZipEnded,  // the exact 1.0 m standoff endpoint was applied
     PositionZipFailed, // v0.3.5 invalid/timeout guard fired
     CaptureStarted,    // exact carrier ended with native Parasail active
     ClimbAcquired,     // authoritative ExecutePlayerClimb update observed
@@ -93,6 +93,7 @@ struct MachineInputs {
     bool triggerHeld = false;  // physical L shoulder button (last fresh sample)
     bool aEdge = false;          // must be false when freshInput is false
     bool bEdge = false;          // must be false when freshInput is false
+    bool bHeld = false;          // physical B button (last fresh sample)
     ConfirmDecision confirm = ConfirmDecision::Waiting;  // only read in Confirming
     bool launchComplete = false; // ChainLaunch leading endpoint reached anchor
     bool fallEntered = false;    // a native Fall update was observed since the arm
@@ -113,6 +114,9 @@ struct Machine {
     int cooldownLeft = 0;
     int transportTicks = 0;    // P2 acquisition counter (detach + handoff windows)
     bool triggerLatched = false;  // mask the L button until physical release
+    // A B press the machine consumed stays masked until physical release, so a held B never
+    // reaches the game as a fresh press (vanilla B closes the paraglider).
+    bool bLatched = false;
     // Latched lasts one tick so B can still cancel and the renderer shows the latch beat before
     // Link moves.
     bool autoZipPending = false;
@@ -142,6 +146,14 @@ inline OwnedButtons ownedButtons(Phase p) {
     }
 }
 
+inline void resetKeepingLatches(Machine& m) {
+    const bool trigger = m.triggerLatched;
+    const bool b = m.bLatched;
+    m = {};
+    m.triggerLatched = trigger;
+    m.bLatched = b;
+}
+
 struct StepOutput {
     Event event = Event::None;
     OwnedButtons consumed{};  // mask these from the game for THIS tick
@@ -151,13 +163,12 @@ inline StepOutput step(Machine& m, const MachineInputs& in, const MachineConfig&
     const Phase before = m.phase;
 
     if (in.freshInput && !in.triggerHeld) m.triggerLatched = false;
+    if (in.freshInput && !in.bHeld) m.bLatched = false;
 
     Event ev = Event::None;
     if (!in.worldReady) {
         const bool wasActive = m.phase != Phase::Idle;
-        const bool latch = m.triggerLatched;
-        m = {};
-        m.triggerLatched = latch;
+        resetKeepingLatches(m);
         ev = wasActive ? Event::Reset : Event::None;
     } else {
         switch (m.phase) {
@@ -171,9 +182,7 @@ inline StepOutput step(Machine& m, const MachineInputs& in, const MachineConfig&
             case Phase::Arming:
                 if (in.freshInput) {
                     if (!in.chordHeld) {
-                        const bool latch = m.triggerLatched;
-                        m = {};
-                        m.triggerLatched = latch;
+                        resetKeepingLatches(m);
                         ev = Event::ArmingAbandoned;
                     } else if (++m.armTicks >= c.armHoldTicks) {
                         m.phase = Phase::Targeting;
@@ -323,9 +332,7 @@ inline StepOutput step(Machine& m, const MachineInputs& in, const MachineConfig&
                 break;
             case Phase::Cooldown:
                 if (--m.cooldownLeft <= 0) {
-                    const bool latch = m.triggerLatched;
-                    m = {};
-                    m.triggerLatched = latch;
+                    resetKeepingLatches(m);
                     ev = Event::CooldownDone;
                 }
                 break;
@@ -340,6 +347,8 @@ inline StepOutput step(Machine& m, const MachineInputs& in, const MachineConfig&
                              (m.triggerLatched && in.triggerHeld);
     out.consumed.a = pre.a || post.a;
     out.consumed.b = pre.b || post.b;
+    if (out.consumed.b && in.bEdge) m.bLatched = true;
+    out.consumed.b = out.consumed.b || (m.bLatched && in.bHeld);
     return out;
 }
 

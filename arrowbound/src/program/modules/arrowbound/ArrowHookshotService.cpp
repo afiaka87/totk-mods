@@ -16,22 +16,35 @@
 #include "../../../engine/FlightClock.hpp"
 #include "../../../engine/RagdollTransport.hpp"
 #include "totk/engine/Pointer.hpp"
-#include "totk/engine/Totk121Offsets.hpp"
+#include <arrowbound/ActiveGame.hpp>
 
 namespace arrowbound::arrow_hookshot {
 namespace {
 using namespace arrowbound::pure;
 
-constexpr std::ptrdiff_t kEquipmentIsPouchUser = 0x00CDD494;
-constexpr std::ptrdiff_t kActorLinkGetReference = 0x00753530;
 constexpr auto kControllerActor = engine::kArrowControllerActor;
-constexpr std::ptrdiff_t kBodyGetNextVelocity = 0x011B44AC;
-// Native update 0x0173B260 reads this rate; flight/fall velocity includes its multiplier.
-constexpr std::ptrdiff_t kActorArrowTimeRate = 0x280;
-constexpr std::ptrdiff_t kControllerState = 368;
+// Per build (layout.arrowTimeRate): the native arrow update reads this rate; flight/fall
+// velocity includes its multiplier. layout.controllerState is the arrow controller's state.
+const profiles::Game& game() { return *profiles::active(); }
 constexpr ArrowConfig kConfig{};
 
 bool okPtr(std::uintptr_t value) { return totk::engine::isPlausibleAddress(value); }
+
+// Whether the releasing equipment user is the player's pouch user. 1.4.x inlines the native
+// check: owner = user +0x1620; the answer is the byte the flag helper returns for the owner.
+bool isPouchUser(std::uintptr_t base, void* equipmentUser) {
+    const auto& calls = game().calls;
+    if (calls.isPouchUser) {
+        using IsPouchUserFn = std::uint64_t (*)(void*);
+        return (reinterpret_cast<IsPouchUserFn>(base + calls.isPouchUser)(equipmentUser) & 1u) != 0;
+    }
+    const auto owner = *reinterpret_cast<const std::uintptr_t*>(
+        reinterpret_cast<std::uintptr_t>(equipmentUser) + 0x1620);
+    if (!owner) return false;
+    using FlagFn = const std::uint8_t* (*)(std::uintptr_t);
+    const auto* flag = reinterpret_cast<FlagFn>(base + calls.pouchFlagHelper)(owner);
+    return flag && *flag != 0;
+}
 
 bool readArrowBodyMotion(std::uintptr_t actor, Vec3& position, Vec3& velocity) {
     using SearchBodyFn = std::uintptr_t (*)(std::uintptr_t, const char* const*,
@@ -40,23 +53,21 @@ bool readArrowBodyMotion(std::uintptr_t actor, Vec3& position, Vec3& velocity) {
     const char* controllerName = "Atk";
     const char* bodyName = "Bullet";
     const auto search = reinterpret_cast<SearchBodyFn>(
-        runtime().session.base +
-        totk::engine::Totk121Offsets::kActorSearchRigidBodySensor.value);
+        runtime().session.base + game().calls.searchBody);
     const auto body = search(actor, &controllerName, &bodyName);
     if (!okPtr(body)) return false;
     const auto getPosition = reinterpret_cast<GetPositionFn>(
-        runtime().session.base +
-        totk::engine::Totk121Offsets::kRigidBodyGetPosition.value);
+        runtime().session.base + game().calls.bodyPosition);
     getPosition(body, &position);
     using GetVelocityFn = void (*)(std::uintptr_t, Vec3*);
-    reinterpret_cast<GetVelocityFn>(runtime().session.base + kBodyGetNextVelocity)(body, &velocity);
+    reinterpret_cast<GetVelocityFn>(runtime().session.base + game().physics.getNextLinearVelocity.offset)(body, &velocity);
     return finite3(position) && finite3(velocity);
 }
 
 engine::ArrowIdentity arrowIdentity(void* rawController) {
     using GetReferenceFn = engine::ActorReference (*)(std::uintptr_t);
     const auto getReference = reinterpret_cast<GetReferenceFn>(
-        runtime().session.base + kActorLinkGetReference);
+        runtime().session.base + game().calls.getReference);
     return engine::resolveArrowIdentity(reinterpret_cast<std::uintptr_t>(rawController), okPtr,
         [](std::uintptr_t address) { return *reinterpret_cast<const std::uintptr_t*>(address); },
         [getReference](std::uintptr_t link) {
@@ -149,9 +160,7 @@ void onArrowRelease(void* equipmentUser) {
     if (mailbox.modeEnabled.load(std::memory_order_acquire) == 0 ||
         mailbox.acceptShots.load(std::memory_order_acquire) == 0) return;
 #endif
-    using IsPouchUserFn = std::uint64_t (*)(void*);
-    const auto isPouchUser = reinterpret_cast<IsPouchUserFn>(rt.session.base + kEquipmentIsPouchUser);
-    if ((isPouchUser(equipmentUser) & 1u) == 0) return;
+    if (!isPouchUser(rt.session.base, equipmentUser)) return;
     mailbox.releaseObserved.fetch_add(1,std::memory_order_relaxed);
     diagnostics::release(mailbox.modeEnabled.load(std::memory_order_acquire) != 0);
     if (mailbox.modeEnabled.load(std::memory_order_acquire) == 0 ||
@@ -180,7 +189,7 @@ void onArrowUpdate(void* controller) {
 #if ARROWBOUND_FLIGHT_DIAGNOSTICS
     const auto diagnosticController = reinterpret_cast<std::uintptr_t>(controller);
     if (okPtr(diagnosticController)) {
-        const auto diagnosticState = *reinterpret_cast<const std::uint32_t*>(diagnosticController + kControllerState);
+        const auto diagnosticState = *reinterpret_cast<const std::uint32_t*>(diagnosticController + game().layout.controllerState);
         if (arrowClaimIsNew(diagnosticState)) {
             const auto player = mailbox.playerActor.load(std::memory_order_acquire);
             diagnostics::claim(controller, diagnosticState, okPtr(player) && arrowIdentity(controller).belongsTo(player));
@@ -191,7 +200,7 @@ void onArrowUpdate(void* controller) {
         !mailbox.pendingShot.load(std::memory_order_acquire)) return;
     const auto candidate = reinterpret_cast<std::uintptr_t>(controller);
     if (!okPtr(candidate)) return;
-    const auto state = *reinterpret_cast<const std::uint32_t*>(candidate + kControllerState);
+    const auto state = *reinterpret_cast<const std::uint32_t*>(candidate + game().layout.controllerState);
     if (!arrowClaimIsNew(state)) {
         if (mailbox.claimOldIgnored.fetch_add(1, std::memory_order_relaxed) == 0)
             ZHLOG("ARROW_CLAIM_SKIP state=%u reason=not_new", state);
@@ -234,7 +243,7 @@ void onArrowSample(void* rawController, float nativeDelta) {
     }
     auto& mailbox = runtime().arrow;
     const Vec3 bodyVelocity = velocity;
-    const float actorRate = *reinterpret_cast<const float*>(actor + kActorArrowTimeRate);
+    const float actorRate = *reinterpret_cast<const float*>(actor + game().layout.arrowTimeRate);
     diagnostics::sample(rawController, position, bodyVelocity, actorRate, nativeDelta);
     if (!isTracked(rawController)) return;
     if (!arrowFollowVelocity(bodyVelocity, actorRate, velocity)) {
@@ -246,7 +255,7 @@ void onArrowSample(void* rawController, float nativeDelta) {
     if (!arrowMotionReady(position, velocity)) {
         if (mailbox.sampleMotionWaits.fetch_add(1, std::memory_order_relaxed) == 0)
             ZHLOG("ARROW_SAMPLE_WAIT state=%u reason=motion_not_ready",
-                  *reinterpret_cast<const std::uint32_t*>(controller + kControllerState));
+                  *reinterpret_cast<const std::uint32_t*>(controller + game().layout.controllerState));
         return;
     }
     mailbox.sampleSeq.fetch_add(1, std::memory_order_acq_rel);

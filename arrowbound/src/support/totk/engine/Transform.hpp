@@ -40,15 +40,17 @@ struct TransformFunctions {
 
     [[nodiscard]] static TransformFunctions fromMainBase(std::uintptr_t mainBase) {
         if (!isPlausibleAddress(mainBase)) return {};
+        // A zero offset leaves the function unavailable on this build.
+        const auto at = [mainBase](core::ImageOffset offset) {
+            return offset.value ? mainBase + offset.value : std::uintptr_t{0};
+        };
         return TransformFunctions{
-            reinterpret_cast<ForceSetMatrixFunction>(
-                mainBase + Totk121Offsets::kForceSetMatrix.value),
-            reinterpret_cast<GetMotionTypeFunction>(
-                mainBase + Totk121Offsets::kGetMotionType.value),
+            reinterpret_cast<ForceSetMatrixFunction>(at(Totk121Offsets::kForceSetMatrix)),
+            reinterpret_cast<GetMotionTypeFunction>(at(Totk121Offsets::kGetMotionType)),
             reinterpret_cast<RequestMotionTypeFunction>(
-                mainBase + Totk121Offsets::kRequestChangeMotionType.value),
+                at(Totk121Offsets::kRequestChangeMotionType)),
             reinterpret_cast<RequestLinearVelocityFunction>(
-                mainBase + Totk121Offsets::kRequestSetLinearVelocity.value),
+                at(Totk121Offsets::kRequestSetLinearVelocity)),
         };
     }
 };

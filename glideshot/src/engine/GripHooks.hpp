@@ -9,22 +9,29 @@ inline constexpr std::uintptr_t kGripController = 0x024789bc;
 inline constexpr std::uintptr_t kGripClimb = 0x01d56d50;
 inline constexpr std::uint32_t kGripControllerWord = 0x6db923e9;
 inline constexpr std::uint32_t kGripClimbWord = 0xa9be7bfd;
+// Offsets and original words for one build; defaults are 1.2.1.
+struct GripSites {
+    std::uintptr_t controller = kGripController;
+    std::uint32_t controllerWord = kGripControllerWord;
+    std::uintptr_t climb = kGripClimb;
+    std::uint32_t climbWord = kGripClimbWord;
+};
 using ClimbCallback = std::uint64_t (*)(void*, void*, void*);
 
-// Startup only. Keep the controller's pristine check; only the eight-byte
-// aligned climb entry admits known detours, using the tested branch decoder.
+// Startup only. Keep the controller's pristine check; only the climb entry
+// admits known detours, decoded for that entry's alignment.
 template<class InstallInput>
-bool installGripHooks(std::uintptr_t mainBase, ClimbCallback callback,
+bool installGripHooks(std::uintptr_t mainBase, const GripSites& sites, ClimbCallback callback,
                       ClimbCallback& previous, InstallInput installInput) {
     if (previous) return true;
-    const auto inputWord = *reinterpret_cast<const std::uint32_t*>(mainBase + kGripController);
-    const auto site = mainBase + kGripClimb;
+    const auto inputWord = *reinterpret_cast<const std::uint32_t*>(mainBase + sites.controller);
+    const auto site = mainBase + sites.climb;
     const auto* words = reinterpret_cast<const std::uint32_t*>(site);
-    const bool vanilla = words[0] == kGripClimbWord;
-    const auto entry = totk::render::decodePfxEntry(site, words);
+    const bool vanilla = words[0] == sites.climbWord;
+    const auto entry = totk::render::decodeDetour(site, words);
     const bool detour = entry.kind == totk::render::PfxEntryKind::Branch ||
                         entry.kind == totk::render::PfxEntryKind::Absolute;
-    if (inputWord != kGripControllerWord || (!vanilla && !detour)) {
+    if (inputWord != sites.controllerWord || (!vanilla && !detour)) {
         Logging.Log("[glideshot] GRIP refused input=%08x climb=%08x,%08x",
                     inputWord, words[0], words[1]);
         return false;
@@ -49,5 +56,11 @@ bool installGripHooks(std::uintptr_t mainBase, ClimbCallback callback,
     Logging.Log("[glideshot] GRIP ready=1 chained=%u previous=%p input=installed",
                 unsigned(!vanilla), reinterpret_cast<void*>(previous));
     return true;
+}
+
+template<class InstallInput>
+bool installGripHooks(std::uintptr_t mainBase, ClimbCallback callback,
+                      ClimbCallback& previous, InstallInput installInput) {
+    return installGripHooks(mainBase, GripSites{}, callback, previous, installInput);
 }
 }

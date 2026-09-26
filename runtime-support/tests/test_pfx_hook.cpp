@@ -109,3 +109,40 @@ TEST_CASE("PFX installer refuses non-executable inaccessible and self targets wi
         CHECK(exl::hook::patchCount == 0);
     }
 }
+
+TEST_CASE("PFX decodes the NOP-led absolute form only at entries that are 4 mod 8") {
+    constexpr std::uintptr_t odd = site + 4;
+    const std::uint32_t nopForm[5]{0xd503201f, 0x58000051, 0xd61f0220, 0x00123450, 0x72};
+    CHECK(decodePfxEntry(odd, nopForm).kind == PfxEntryKind::Absolute);
+    CHECK(decodePfxEntry(odd, nopForm).previous == 0x7200123450);
+    CHECK(decodePfxEntry(site, nopForm).kind == PfxEntryKind::Unsupported);
+    CHECK(decodePfxEntry(odd, absolute(0x7200123450).data()).kind == PfxEntryKind::Unsupported);
+    const std::uint64_t target = odd + 16;
+    const std::uint32_t inside[5]{0xd503201f, 0x58000051, 0xd61f0220, std::uint32_t(target & 0xffffffffu),
+                                  std::uint32_t(target >> 32)};
+    CHECK(decodePfxEntry(odd, inside).kind == PfxEntryKind::Unsupported);
+}
+
+TEST_CASE("PFX installer chains at a 4 mod 8 entry with another build's prologue") {
+    constexpr PfxSite other{0x1234, 0xd10283ff, 0xa9017bfd};
+    for (bool surveyFirst : {false, true}) {
+        reset();
+        alignas(8) std::array<std::uint32_t, 6> words{0, other.first, other.second, 0, 0, 0};
+        const auto entry = reinterpret_cast<std::uintptr_t>(&words[1]);
+        REQUIRE((entry & 7) == 4);
+        const auto base = entry - other.offset;
+        auto first = surveyFirst ? survey : glideshot;
+        auto second = surveyFirst ? glideshot : survey;
+        auto& firstPrevious = surveyFirst ? beforeSurvey : beforeGlideshot;
+        auto& secondPrevious = surveyFirst ? beforeGlideshot : beforeSurvey;
+        REQUIRE(installPfxHook(base, other, first, firstPrevious, "first"));
+        CHECK(words[1] == 0xd503201f);
+        REQUIRE(installPfxHook(base, other, second, secondPrevious, "second"));
+        CHECK(exl::hook::trampolineCount == 1);
+        expectedExtension = &words[0]; expectedArgs = &words[2];
+        const auto top = decodePfxEntry(entry, &words[1], other.first, other.second).previous;
+        CHECK(reinterpret_cast<PfxCallback>(top)(expectedExtension, expectedArgs) == 0xabcdef1234567890);
+        const std::vector<int> expected{0, surveyFirst ? 1 : 2, surveyFirst ? 2 : 1};
+        CHECK(draws == expected);
+    }
+}
