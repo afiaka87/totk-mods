@@ -13,15 +13,13 @@ EXPECTED_UAM = "2bf51f6713b0219cdfbee6b8ab3c7b87169b85a001e1466129e44359f13aa6fb
 EXPECTED_NVDISASM = "1138409fc6d4202c533e357a55668e11186a114b84d345a8438a84e6216d58c0"
 
 def validate_bindings(name: str, ir: str) -> None:
-    if name in ("vert", "calibration"):
+    if name == "vert":
         if re.search(r"\bDCL\s+(?:CONST|SAMP|SVIEW|IMAGE|BUFFER)\[", ir):
             raise ValueError(f"{name} must have no external shader resources")
-    elif name in ("frag", "uniformCheck", "rawDepth", "labelVert", "labelFrag"):
+    elif name in ("frag", "labelVert", "labelFrag"):
         resources = re.findall(r"^\s*(DCL\s+(?:CONST|SAMP|SVIEW|IMAGE|BUFFER)\[[^\r\n]*)", ir, re.MULTILINE)
         expected = {
             "frag": {"DCL CONST[2][0..13]", "DCL SAMP[0]", "DCL SVIEW[0], 2D, FLOAT"},
-            "uniformCheck": {"DCL CONST[2][0]"},
-            "rawDepth": {"DCL SAMP[0]", "DCL SVIEW[0], 2D, FLOAT"},
             "labelVert": {"DCL CONST[2][0..255]"},
             "labelFrag": {"DCL CONST[2][0..3391]"},
         }[name]
@@ -80,7 +78,7 @@ def disassemble_shader(name: str, code: Path, nvdisasm: Path) -> Path:
     validate_gpu_assembly(name, result.stdout)
     return assembly_path
 
-def compile_shaders(uam: Path, nvdisasm: Path, runtime: str, source: Path, output: Path, production: bool = False, constrained: bool = False, atlas: bool = False) -> None:
+def compile_shaders(uam: Path, nvdisasm: Path, runtime: str, source: Path, output: Path, constrained: bool = False) -> None:
     uam = uam.resolve(strict=True)
     if hashlib.sha256(uam.read_bytes()).hexdigest() != EXPECTED_UAM:
         raise ValueError("Unreviewed compiler binary: update provenance deliberately before use")
@@ -92,16 +90,11 @@ def compile_shaders(uam: Path, nvdisasm: Path, runtime: str, source: Path, outpu
     if runtime:
         env["PATH"] = str(Path(runtime).resolve(strict=True)) + os.pathsep + env.get("PATH", "")
     arrays = ["// Generated from first-party GPLv2 GLSL by an external compiler.",
-              "#pragma once", "namespace survey_fidelity::shaders {"]
+              "#pragma once", "namespace zonai_survey::shaders {"]
     receipt = {"compiler_sha256": EXPECTED_UAM, "disassembler_sha256": EXPECTED_NVDISASM,
-               "profile": "production" if production else "playground", "constrained": constrained, "stages": {}}
-    stages = [("vert", "vert", "diagnostic.vert"),
-                                  ("frag", "frag", "diagnostic.frag"),
-                                  ("calibration", "frag", "calibration.frag"),
-                                  ("uniformCheck", "frag", "uniform_check.frag"),
-                                  ("rawDepth", "frag", "raw_depth.frag")]
-    if atlas:
-        stages += [("labelVert", "vert", "labels.vert"), ("labelFrag", "frag", "labels.frag")]
+               "constrained": constrained, "stages": {}}
+    stages = [("vert", "vert", "scan.vert"), ("frag", "frag", "scan.frag"),
+              ("labelVert", "vert", "labels.vert"), ("labelFrag", "frag", "labels.frag")]
     for name, stage, filename in stages:
         shader = (source / filename).resolve(strict=True)
 
@@ -110,8 +103,6 @@ def compile_shaders(uam: Path, nvdisasm: Path, runtime: str, source: Path, outpu
         if name == "frag":
             if constrained:
                 shader_text = shader_text.replace("#version 450", "#version 450\n#define SF_CONSTRAINED 1")
-            if production:
-                shader_text = shader_text.replace("#version 450", "#version 450\n#define SF_DIAGNOSTICS 0")
             shared = (source / "aesthetic_math.inl").read_text(encoding="utf-8")
             if shader_text.count("// @include aesthetic_math.inl") != 1:
                 raise ValueError("Missing unique shared aesthetic math include")
@@ -148,7 +139,7 @@ def compile_shaders(uam: Path, nvdisasm: Path, runtime: str, source: Path, outpu
                                      "sass_sha256": hashlib.sha256(assembly.read_bytes()).hexdigest(),
                                      "outputs": outputs}
     arrays.append("}")
-    (output / "FidelityShaders.hpp").write_text("\n".join(arrays) + "\n", encoding="utf-8")
+    (output / "SurveyShaders.hpp").write_text("\n".join(arrays) + "\n", encoding="utf-8")
     (output / "shader-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     print("NVN shader compilation/bindings/PRET checks passed; external tools, no tool sources embedded")
 
@@ -159,8 +150,6 @@ if __name__ == "__main__":
     parser.add_argument("--runtime-dir", default="")
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--production", action="store_true")
     parser.add_argument("--constrained", action="store_true")
-    parser.add_argument("--atlas", action="store_true")
     args = parser.parse_args()
-    compile_shaders(args.uam, args.nvdisasm, args.runtime_dir, args.source, args.output, args.production, args.constrained, args.atlas)
+    compile_shaders(args.uam, args.nvdisasm, args.runtime_dir, args.source, args.output, args.constrained)

@@ -2,16 +2,14 @@
 #include <lib.hpp>
 #include "AtlasGpu.hpp"
 #include "AtlasRenderer.hpp"
-#include "FidelityShaders.hpp"
+#include "SurveyShaders.hpp"
 #include "LabelAtlas.hpp"
-#if SURVEY_STARTUP_DIAGNOSTIC
-#include "SurveyStartupDiagnostic.hpp"
-#endif
+#include "SurveyGameProfiles.hpp"
 #include <cstring>
 
 namespace zonai_survey::atlas_gpu {
 namespace {
-namespace shader=survey_fidelity::shaders;
+namespace shader=zonai_survey::shaders;
 constexpr std::size_t align(std::size_t n,std::size_t a) { return (n+a-1)&~(a-1); }
 constexpr auto kFragment=align(sizeof(shader::labelVertCode),256);
 constexpr auto kCodeEnd=kFragment+sizeof(shader::labelFragCode);
@@ -27,8 +25,7 @@ bool g_pending[atlas::kSlotCount]{};
 bool g_ready{}, g_attempted{};
 NVNbufferAddress g_address{};
 NVNbufferAddress g_atlasAddress{};
-unsigned g_next{},g_refusal{},g_peakQuads{},g_busy{};
-std::uint64_t g_frames{},g_lastReport{},g_cpuTicks{},g_completed{};
+unsigned g_next{},g_refusal{};
 PFNNVNMEMORYPOOLFLUSHMAPPEDRANGEPROC g_flush{};
 PFNNVNCOMMANDBUFFERBINDPROGRAMPROC g_bind{};
 PFNNVNCOMMANDBUFFERBINDUNIFORMBUFFERPROC g_uniform{};
@@ -37,13 +34,9 @@ PFNNVNCOMMANDBUFFERFENCESYNCPROC g_fence{};
 PFNNVNCOMMANDBUFFERBARRIERPROC g_barrier{};
 PFNNVNSYNCWAITPROC g_wait{};
 template<class T> T read(const void* p,std::size_t offset) { T v; std::memcpy(&v,static_cast<const unsigned char*>(p)+offset,sizeof(v)); return v; }
-void mark(const char* event,std::uint64_t a=0,std::uint64_t b=0) {
-    Logging.Log("[survey-atlas] %s a=%llu b=%llu\n",event,a,b);
-#if SURVEY_STARTUP_DIAGNOSTIC
-    engine::startup_diagnostic::mark(event,a,b);
-#endif
+void refuse(unsigned why,unsigned detail=0) {
+    if(g_refusal!=why) { g_refusal=why; Logging.Log("[survey-atlas] refused reason=%u detail=%u\n",why,detail); }
 }
-void refuse(unsigned why,unsigned detail=0) { if(g_refusal!=why) { g_refusal=why; mark("atlas-refused",why,detail); } }
 template<class F> bool resolve(F& target,NVNdevice* d,PFNNVNDEVICEGETPROCADDRESSPROC get,const char* name) {
     target=reinterpret_cast<F>(get(d,name));
     if(!target) Logging.Log("[survey-atlas] missing %s\n",name);
@@ -53,7 +46,6 @@ bool initialize(NVNdevice* device,PFNNVNDEVICEGETPROCADDRESSPROC get) {
     if(g_ready) return true;
     if(g_attempted) return false;
     g_attempted=true;
-    mark("atlas-init-begin",atlas::kPixelBytes,kPoolBytes+atlas::kPixelPoolBytes);
     PFNNVNMEMORYPOOLBUILDERSETDEFAULTSPROC defaults{};
     PFNNVNMEMORYPOOLBUILDERSETDEVICEPROC setDevice{};
     PFNNVNMEMORYPOOLBUILDERSETSTORAGEPROC storage{};
@@ -86,7 +78,6 @@ bool initialize(NVNdevice* device,PFNNVNDEVICEGETPROCADDRESSPROC get) {
     int padding=-1,limit=0;
     integer(device,NVN_DEVICE_INFO_SHADER_CODE_MEMORY_POOL_PADDING_SIZE,&padding);
     integer(device,NVN_DEVICE_INFO_MAX_UNIFORM_BUFFER_SIZE,&limit);
-    mark("atlas-driver-limits",padding,limit);
     if(padding<0 || kCodeEnd+padding>kSlots || limit<int(atlas::kFontBankBytes)) { refuse(2,limit); return false; }
     std::memcpy(g_storage,shader::labelVertCode,sizeof(shader::labelVertCode));
     std::memcpy(g_storage+kFragment,shader::labelFragCode,sizeof(shader::labelFragCode));
@@ -108,16 +99,13 @@ bool initialize(NVNdevice* device,PFNNVNDEVICEGETPROCADDRESSPROC get) {
     if(!shaders(&g_program,2,stages)) { refuse(6); return false; }
     for(unsigned i=0;i<atlas::kSlotCount;++i) if(!initSync(&g_fences[i],device)) { refuse(7,i); return false; }
     g_ready=true;
-    mark("atlas-ready",kPoolBytes+atlas::kPixelPoolBytes,atlas::kSlotCount*atlas::kSlotBytes);
-    u64 used{},total{};
-    const auto a=svcGetInfo(&used,InfoType_UsedMemorySize,CUR_PROCESS_HANDLE,0);
-    const auto b=svcGetInfo(&total,InfoType_TotalMemorySize,CUR_PROCESS_HANDLE,0);
-    mark("atlas-process-memory",total,used); mark("atlas-memory-results",a,b);
+    Logging.Log("[survey-atlas] ready\n");
     return true;
 }
 }
 void draw(std::uintptr_t base,NVNdevice* device,PFNNVNDEVICEGETPROCADDRESSPROC get,
           void* drawContext,void* context,const float* view,const float* projection) {
+    const auto& game = *profiles::active;
     auto* command=read<NVNcommandBuffer*>(drawContext,0xb8);
     if(!command) { refuse(8); return; }
     if(!initialize(device,get)) return;
@@ -128,21 +116,20 @@ void draw(std::uintptr_t base,NVNdevice* device,PFNNVNDEVICEGETPROCADDRESSPROC g
             const auto result=g_wait(&g_fences[candidate],0);
             if(result==NVN_SYNC_WAIT_RESULT_FAILED) { refuse(9,candidate); return; }
             if(result==NVN_SYNC_WAIT_RESULT_TIMEOUT_EXPIRED) continue;
-            g_pending[candidate]=false; ++g_completed;
+            g_pending[candidate]=false;
         }
         slot=candidate; break;
     }
-    if(slot==atlas::kSlotCount) { ++g_busy; if(g_busy==1 || g_busy%300==0) mark("atlas-slots-busy",g_busy,g_frames); return; }
-    const auto start=svcGetSystemTick();
+    // Every slot is still on the GPU; skip this frame's labels.
+    if(slot==atlas::kSlotCount) return;
     const auto offset=kSlots+slot*atlas::kSlotBytes;
     auto* quads=reinterpret_cast<atlas::Quad*>(g_storage+offset);
     const unsigned count=render::buildAtlasQuads(view,projection,quads);
     if(!count) return;
-    if(count>g_peakQuads) g_peakQuads=count;
     g_flush(&g_pool,offset,align(count*sizeof(atlas::Quad),256));
     alignas(8) unsigned char state[128]{};
-    const auto defaults=reinterpret_cast<void(*)(void*)>(base+0x74c19c);
-    const auto apply=reinterpret_cast<void(*)(void*,void*)>(base+0x756a08);
+    const auto defaults=reinterpret_cast<void(*)(void*)>(base+game.calls.contextCtor);
+    const auto apply=reinterpret_cast<void(*)(void*,void*)>(base+game.calls.contextApply);
     defaults(state); state[0]=state[1]=0;
     // GraphicsContext::apply reads cull face at +101; screen-space quads are two-sided.
     state[101]=NVN_FACE_NONE;
@@ -151,7 +138,7 @@ void draw(std::uintptr_t base,NVNdevice* device,PFNNVNDEVICEGETPROCADDRESSPROC g
     state[41]=NVN_BLEND_FUNC_ZERO; state[43]=NVN_BLEND_FUNC_ONE;
     state[44]=state[45]=NVN_BLEND_EQUATION_ADD;
     apply(state,drawContext);
-    reinterpret_cast<void(*)(void*,void*)>(base+0xc5a6fc)(context,drawContext);
+    reinterpret_cast<void(*)(void*,void*)>(base+game.calls.bind)(context,drawContext);
     g_barrier(command,NVN_BARRIER_INVALIDATE_SHADER_BIT);
     g_bind(command,&g_program,63);
     g_uniform(command,NVN_SHADER_STAGE_FRAGMENT,0,g_atlasAddress,atlas::kFontBankBytes);
@@ -162,22 +149,10 @@ void draw(std::uintptr_t base,NVNdevice* device,PFNNVNDEVICEGETPROCADDRESSPROC g
     }
     g_fence(command,&g_fences[slot],NVN_SYNC_CONDITION_ALL_GPU_COMMANDS_COMPLETE,0);
     g_pending[slot]=true; g_next=(slot+1)%atlas::kSlotCount;
-    reinterpret_cast<void(*)(void*,void*)>(base+0x962c18)(context,drawContext);
-    reinterpret_cast<void(*)(void*,void*)>(base+0xc4b7ac)(read<void*>(context,0x540),drawContext);
+    reinterpret_cast<void(*)(void*,void*)>(base+game.calls.unbind)(context,drawContext);
+    reinterpret_cast<void(*)(void*,void*)>(base+game.calls.barrier)(
+        read<void*>(context,game.layout.contextTarget),drawContext);
     defaults(state); apply(state,drawContext);
-    ++g_frames; g_cpuTicks+=svcGetSystemTick()-start;
-    if(!g_lastReport || start-g_lastReport>=19200000*5ull) {
-        mark("atlas-frame-quads",g_frames,count); mark("atlas-cost",g_cpuTicks,g_peakQuads*sizeof(atlas::Quad));
-        mark("atlas-markers",render::lastGlyphsDrawn(),render::lastNamesDropped());
-        mark("atlas-fence-reuse",g_busy,g_completed);
-        unsigned letters=0,icons=0;
-        for(unsigned i=0;i<count;++i) {
-            if(quads[i].tile[1]==16) ++letters;
-            else if(quads[i].tile[1]==32) ++icons;
-        }
-        mark("atlas-letter-icon-quads",letters,icons);
-        g_lastReport=start;
-    }
     g_refusal=0;
 }
 }

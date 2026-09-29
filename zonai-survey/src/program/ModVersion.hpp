@@ -6,6 +6,6 @@
 
 namespace zonai_survey {
 
-inline constexpr const char* kModVersion = "v0.1.5";
+inline constexpr const char* kModVersion = "v0.2.0";
 
 }

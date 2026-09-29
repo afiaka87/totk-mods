@@ -13,27 +13,6 @@
 
 namespace zonai_survey::feature {
 
-struct GlyphFilterCounts {
-    std::uint32_t outsideCone = 0;
-    std::uint32_t beyondRange = 0;
-    std::uint32_t lostToCap = 0;
-    std::uint32_t onPlayer = 0;
-    std::uint32_t overridden = 0;
-};
-
-struct GlyphDiagnostics {
-    std::uint32_t published = 0;
-    std::uint32_t fromMap = 0;
-    std::uint32_t fromRoster = 0;
-    std::uint32_t rosterWalked = 0;
-    std::uint32_t rosterHits = 0;
-    bool rosterAvailable = false;
-
-    float farthestLiveMeters = 0.0f;
-
-    GlyphFilterCounts filtered{};
-};
-
 class GlyphController {
   public:
     void initialize(std::uintptr_t mainBase);
@@ -44,15 +23,15 @@ class GlyphController {
     void tick();
     void clear();
 
-    const GlyphDiagnostics& diagnostics() const { return diagnostics_; }
-
   private:
-#if SURVEY_CONSTRAINED || SURVEY_TUNING
+#if SURVEY_CONSTRAINED
     float range_{options::nextRange()};
     float scanRange() const { return range_; }
 #else
     static constexpr float scanRange() { return pure::kMaxRange; }
 #endif
+    void forget();
+    std::uint32_t revealTick(const pure::Glyph& glyph) const;
     void gatherFromMap();
     void rebuildRosterCandidates();
     void refreshLivePositions();
@@ -87,8 +66,6 @@ class GlyphController {
 
     pure::Glyph live_[pure::kMaxGlyphs]{};
     std::uint32_t liveCount_ = 0;
-
-    GlyphDiagnostics diagnostics_{};
 };
 
 }

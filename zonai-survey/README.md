@@ -1,4 +1,4 @@
-# Zonai Survey v0.1.5
+# Zonai Survey v0.2.0
 
 Press **ZL + D-pad Up** to send a scan across the visible landscape and reveal collectible names and icons.
 
@@ -13,15 +13,23 @@ The surface lines follow the scene depth. Names and icons stay visible over fore
 
 ## Installation
 
-Requires Tears of the Kingdom 1.2.1, build `9B4E43650501A4D4`. Close the game first.
+Supports Tears of the Kingdom 1.0.0, 1.1.0, 1.1.2, 1.2.0, 1.2.1 and 1.4.0–1.4.3. Each archive covers every supported version; Survey detects the version at startup and stays inactive on any other. Close the game first.
 
-For an emulator, extract `zonai-survey-emulator-regular-v0.1.5-subsdk9.zip` or `zonai-survey-emulator-constrained-v0.1.5-subsdk9.zip` into the game's mod directory and enable **zonai-survey**.
+For an emulator, extract `zonai-survey-emulator-regular-v0.2.0-subsdk9.zip` or `zonai-survey-emulator-constrained-v0.2.0-subsdk9.zip` into the game's mod directory and enable **zonai-survey**.
 
-For Switch, extract `zonai-survey-switch-regular-v0.1.5-subsdk9.zip` or `zonai-survey-switch-constrained-v0.1.5-subsdk9.zip` under `atmosphere/contents/`. Merge the included `0100F2C0115B6000` directory; do not replace other mods' files.
+For Switch, extract `zonai-survey-switch-regular-v0.2.0-subsdk9.zip` or `zonai-survey-switch-constrained-v0.2.0-subsdk9.zip` under `atmosphere/contents/`. Merge the included `0100F2C0115B6000` directory; do not replace other mods' files.
 
 Each archive contains `exefs/subsdk9` and `exefs/main.npdm`. Emulator and Switch packages use the same executable for each flavor. Only one mod may occupy subsdk9.
 
 This version needs no separate font files or ROMFS assets. Remove only Survey's obsolete font/primitive files when upgrading, and only if no other mod uses them. Back up the previous installation.
+
+## Changes in v0.2.0
+
+- Supports Tears of the Kingdom 1.0.0, 1.1.0, 1.1.2, 1.2.0, 1.2.1 and 1.4.0–1.4.3. v0.1.5 required 1.2.1.
+- On 1.4.x, the game no longer closes at launch with the mod installed: the module header now names the SDK version that the 1.4.x game's loader reads.
+- Removes diagnostic logging and startup diagnostics.
+
+The version port passed combined sessions with Self Recall and Phantom Foothold on a physical Switch running each of the nine supported versions. The final v0.2.0 Regular build passed on a physical Switch running 1.4.3 and in Eden on 1.2.1. Constrained differs only in its range and cooldown settings and was not booted separately.
 
 ## Changes in v0.1.5
 
@@ -38,6 +46,7 @@ The atlas and combined-mod fixes were accepted on physical Switch; the atlas vis
 - Surface lines use visible scene depth, not hidden or off-screen surfaces.
 - Low surfaces remain blue by height rather than material.
 - Dense grass may briefly cost about 3-4 fps on Switch; a locked 30 fps is not guaranteed.
+- Collectible names and positions come from the 1.2.1 data; exact placement on other versions has not been compared.
 - A smoke test does not establish exhaustive scene-transition or long-session compatibility.
 
 ## Source and tests

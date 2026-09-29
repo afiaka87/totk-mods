@@ -23,17 +23,9 @@ option(SURVEY_TEST_GAME_DATA "Validate locally generated collectible tables" ${S
 add_executable(zonai_survey_pure_tests
     test_main.cpp
     test_pulse_lattice.cpp
-    test_scan_batching.cpp
-    test_scan_reduction.cpp
     test_scan_verdicts.cpp
-    test_wall_incidence.cpp
-    test_wall_slope.cpp
-    test_wall_survey.cpp
-    test_survey_composition.cpp
     test_survey_sweep.cpp
     test_survey_cue.cpp
-    test_depth_lift.cpp
-    test_perf_report.cpp
     test_atlas_layout.cpp
 )
 if(SURVEY_TEST_GAME_DATA)

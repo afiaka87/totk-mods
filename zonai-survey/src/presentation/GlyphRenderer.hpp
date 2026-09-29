@@ -29,12 +29,4 @@ struct GlyphFrame {
 void publishGlyphs(const GlyphFrame& frame);
 void clearGlyphs();
 
-void setSymbolProbeVisible(bool visible);
-bool symbolProbeVisible();
-
-std::uint32_t lastGlyphsDrawn();
-std::uint32_t lastGlyphsOffscreen();
-
-std::uint32_t lastNamesDropped();
-
 }

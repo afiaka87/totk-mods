@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 #include <doctest.h>
 #include <cstdio>
-#include "FidelityPolicy.hpp"
+#include "PulsePolicy.hpp"
 #include "../../src/pure/PulseLattice.hpp"
-using namespace survey_fidelity;
+using namespace zonai_survey::pulse;
 namespace {
 #include "reference_fit.inl"
+constexpr float kTestContourRise = 4.0f;
 constexpr float offsets[9][2]{{0,0},{-6,-6},{6,-6},{6,6},{-6,6},{-6,0},{0,-6},{6,0},{0,6}};
 SfSample groundSample(int i,float range,float height=0) {
     const float u=offsets[i][0],v=offsets[i][1],rayY=-2.f/range+v/800.f;
@@ -95,16 +96,7 @@ TEST_CASE("orthographic fit uses affine distance rather than reciprocal distance
     CHECK(p.c==doctest::Approx(20));
     CHECK(p.b==doctest::Approx(.3));
 }
-TEST_CASE("motion trail bridges adjacent frames and remains bounded after a stall") {
-    for (float fps : {20.f,30.f,60.f,120.f}) {
-        const float advance=57.6f/fps, trail=trailLength(1/fps);
-        CHECK(trail>=advance);
-        CHECK(sfCoverage(-advance,0.18f,0.1f,trail)>0.01f);
-        CHECK(sfCoverage(advance,0.18f,0.1f,trail)==0);
-        CHECK(sfCoverage(-trail-1,0.18f,0.1f,trail)==0);
-    }
-    CHECK(trailLength(10)==doctest::Approx(3.6));
-    CHECK(trailLength(0)==doctest::Approx(.6));
+TEST_CASE("motion trail coverage is symmetric and bounded") {
     for (float distance : {-5.f,-2.f,-.2f,0.f,.2f,2.f,5.f}) {
         CHECK(sfCoverage(distance,.18f,.3f,0)==doctest::Approx(sfCoverage(-distance,.18f,.3f,0)));
         CHECK(sfCoverage(distance,.18f,.3f,2.4f)>=0);
@@ -132,55 +124,22 @@ TEST_CASE("distant subpixel bands fade together instead of forming a bright shee
 }
 TEST_CASE("height phase leaves level ground unchanged and moves continuously along vertical faces") {
     for (float radius : {0.f,18.f,100.f,450.f}) {
-        CHECK(sfPhase(radius,0,kContourRise)==doctest::Approx(radius));
+        CHECK(sfPhase(radius,0,kTestContourRise)==doctest::Approx(radius));
         float previous=radius;
         for (int i=1;i<=200;++i) {
-            const float h=i*.1f, phase=sfPhase(radius,h,kContourRise);
+            const float h=i*.1f, phase=sfPhase(radius,h,kTestContourRise);
             CHECK(phase>previous);
-            CHECK(phase-previous<=kContourRise*.1f+.0001f);
-            CHECK(sfPhase(radius,-h,kContourRise)==doctest::Approx(phase));
+            CHECK(phase-previous<=kTestContourRise*.1f+.0001f);
+            CHECK(sfPhase(radius,-h,kTestContourRise)==doctest::Approx(phase));
             CHECK(sfPhase(radius,h,0)==doctest::Approx(radius));
             previous=phase;
         }
-        CHECK(sfPhase(radius,.8f,kContourRise)-radius<.62f);
+        CHECK(sfPhase(radius,.8f,kTestContourRise)-radius<.62f);
     }
 
-    const float atJoin=sfPhase(40,3,kContourRise);
-    CHECK(sfPhase(40.001f,3,kContourRise)-atJoin<.002f);
-    CHECK(sfPhase(40,3.001f,kContourRise)-atJoin<.004f);
-}
-TEST_CASE("eight height-delayed bands avoid illuminating a whole tall wall together") {
-    for (float radius : {10.f,60.f,150.f,300.f}) for (float fps : {20.f,30.f,60.f,120.f}) {
-        int peakContour=0, peakRadial=0;
-        float energyContour=0, energyRadial=0;
-        for (int frame=0;frame<=int(10*fps);++frame) {
-            int litContour=0, litRadial=0;
-            float frameContour=0, frameRadial=0;
-            const float front=pulseFront(frame/fps), pixelHeight=radius/800.f;
-            for (int sample=0;sample<=120;++sample) {
-                const float h=sample*.1f;
-                const float phase=sfPhase(radius,h,kContourRise);
-                const float footprint=std::max(.025f,sfPhase(radius,h+pixelHeight*.5f,kContourRise)-
-                                                         sfPhase(radius,h-pixelHeight*.5f,kContourRise));
-                float contour=0,radial=0;
-                for (int band=0;band<8;++band) {
-                    const float center=front-band*18.f;
-                    if (center<=0 || center>450) continue;
-                    contour=std::max(contour,sfCoverage(phase-center,.18f,footprint,trailLength(1/fps)));
-                    radial=std::max(radial,sfCoverage(radius-center,.18f,.025f,trailLength(1/fps)));
-                }
-                litContour+=contour>.2f; litRadial+=radial>.2f;
-                frameContour+=contour; frameRadial+=radial;
-            }
-            peakContour=std::max(peakContour,litContour); peakRadial=std::max(peakRadial,litRadial);
-            energyContour=std::max(energyContour,frameContour); energyRadial=std::max(energyRadial,frameRadial);
-        }
-        CAPTURE(radius); CAPTURE(fps); CAPTURE(peakContour); CAPTURE(peakRadial);
-        CHECK(peakRadial==121);
-        CHECK(peakContour>0);
-        CHECK(peakContour<55);
-        CHECK(energyContour<energyRadial*.6f);
-    }
+    const float atJoin=sfPhase(40,3,kTestContourRise);
+    CHECK(sfPhase(40.001f,3,kTestContourRise)-atJoin<.002f);
+    CHECK(sfPhase(40,3.001f,kTestContourRise)-atJoin<.004f);
 }
 TEST_CASE("dense grass counterexample demonstrates that plane support is not terrain identity") {
     SfSample s[9]; ground(s,10);
@@ -206,7 +165,6 @@ TEST_CASE("stationary shader rings match the existing Survey lattice without ray
     CHECK(sfStationaryRing(0,.025f,.08f)==0);
     CHECK(sfRingCoordinate(2.5f)==doctest::Approx(4));
     CHECK(sfRingCoordinate(25.f)==doctest::Approx(13));
-    CHECK(old::kMaxRange<kScanRange);
     for (float radius : {2.5f,25.f}) {
         CHECK(sfRingCoordinate(radius+.001f)>sfRingCoordinate(radius-.001f));
         CHECK(sfRingCoordinate(radius+.001f)-sfRingCoordinate(radius-.001f)<.004f);

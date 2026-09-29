@@ -15,8 +15,6 @@ struct Banner { char lines[2][96]{}; std::uint64_t until{}; };
 atlas::Mailbox<Banner> g_banners;
 const GlyphFrame* g_frame{};
 const Banner* g_banner{};
-std::atomic<unsigned> g_drawn{}, g_offscreen{}, g_dropped{};
-std::atomic<bool> g_probe{};
 static_assert(pure::kMaxGlyphs*(atlas::kLongestName+1)+190 <= atlas::kMaxQuads);
 struct Box { float x0,y0,x1,y1; };
 bool overlap(const Box& a,const Box& b) { return !(a.x1<b.x0 || b.x1<a.x0 || a.y1<b.y0 || b.y1<a.y0); }
@@ -37,11 +35,6 @@ void text(atlas::Quad* out,unsigned& n,float x,float y,const char* p,unsigned co
 }
 void publishGlyphs(const GlyphFrame& frame) { g_frames.publish(frame); }
 void clearGlyphs() { g_frames.publish(GlyphFrame{}); }
-void setSymbolProbeVisible(bool value) { g_probe.store(value); }
-bool symbolProbeVisible() { return g_probe.load(); }
-std::uint32_t lastGlyphsDrawn() { return g_drawn.load(); }
-std::uint32_t lastGlyphsOffscreen() { return g_offscreen.load(); }
-std::uint32_t lastNamesDropped() { return g_dropped.load(); }
 void atlasBanner(const char* first,const char* second,unsigned ticks) {
     Banner b;
     if(first) nn::util::SNPrintf(b.lines[0],sizeof(b.lines[0]),"%s",first);
@@ -51,12 +44,10 @@ void atlasBanner(const char* first,const char* second,unsigned ticks) {
 }
 bool atlasHasContent() {
     g_frame=&g_frames.consume(); g_banner=&g_banners.consume();
-    const bool content=g_frame->count || g_banner->until>svcGetSystemTick() || symbolProbeVisible();
-    if(!content) { g_drawn=0; g_offscreen=0; g_dropped=0; }
-    return content;
+    return g_frame->count || g_banner->until>svcGetSystemTick();
 }
 unsigned buildAtlasQuads(const float* view,const float* proj,atlas::Quad* out) {
-    unsigned n=0, drawn=0, offscreen=0, dropped=0;
+    unsigned n=0;
     const auto& frame=*g_frame;
     const unsigned count=frame.count<pure::kMaxGlyphs ? frame.count : pure::kMaxGlyphs;
     unsigned order[pure::kMaxGlyphs];
@@ -71,10 +62,10 @@ unsigned buildAtlasQuads(const float* view,const float* proj,atlas::Quad* out) {
         const auto& g=frame.glyphs[order[i]];
         if(!(g.alpha>0)) continue;
         float x{},y{};
-        if(!atlas::project(view,proj,g.x,g.y+0.9f,g.z,x,y) || x<24 || x>1256 || y<16 || y>704) { ++offscreen; continue; }
+        if(!atlas::project(view,proj,g.x,g.y+0.9f,g.z,x,y) || x<24 || x>1256 || y<16 || y>704) continue;
         const char* name=pure::glyphDisplayName(g.name);
         Box b{x,y,x+16+(name ? 3+textWidth(name) : 0),y+20};
-        for(unsigned j=0;name && j<boxCount;++j) if(overlap(b,boxes[j])) { name=nullptr; ++dropped; b.x1=x+16; }
+        for(unsigned j=0;name && j<boxCount;++j) if(overlap(b,boxes[j])) { name=nullptr; b.x1=x+16; }
         const float distance=__builtin_sqrtf(g.distanceSq);
         const float dim=distance<=40 ? 1 : distance>=300 ? 0.35f : 1-(distance-40)/260*0.65f;
         const float alpha=g.alpha*dim;
@@ -82,7 +73,7 @@ unsigned buildAtlasQuads(const float* view,const float* proj,atlas::Quad* out) {
         const auto tint=pure::glyphTint(icon);
         quad(out,n,x,y,atlas::iconOffset(icon),32,atlas::rgba(tint.r,tint.g,tint.b,alpha));
         if(name) text(out,n,x+19,y,name,atlas::rgba(0.96f,0.97f,1,alpha));
-        boxes[boxCount++]=b; ++drawn;
+        boxes[boxCount++]=b;
     }
     if(g_banner->until>svcGetSystemTick()) {
         const auto width=std::max(textWidth(g_banner->lines[0]),textWidth(g_banner->lines[1]));
@@ -90,7 +81,6 @@ unsigned buildAtlasQuads(const float* view,const float* proj,atlas::Quad* out) {
         text(out,n,x,40,g_banner->lines[0],0xffffffff);
         text(out,n,x,60,g_banner->lines[1],0xffffffff);
     }
-    g_drawn=drawn; g_offscreen=offscreen; g_dropped=dropped;
     return n;
 }
 }

@@ -1,15 +1,12 @@
 // SPDX-License-Identifier: MIT
 #version 450
-#ifndef SF_DIAGNOSTICS
-#define SF_DIAGNOSTICS 1
-#endif
 #ifndef SF_CONSTRAINED
 #define SF_CONSTRAINED 0
 #endif
 layout(location=0) in vec2 screenUv;
 layout(location=0) out vec4 outColor;
 layout(binding=0) uniform sampler2D sceneDepth;
-layout(std140,binding=0) uniform Diagnostic {
+layout(std140,binding=0) uniform ScanUniforms {
     vec4 inverseProjection[4];
     vec4 inverseView[3];
     vec4 settings;
@@ -48,10 +45,6 @@ vec3 worldAt(vec2 uv,float distance) {
     vec3 p=viewAt(uv,distance);
     return vec3(dot(inverseView[0],vec4(p,1.0)),dot(inverseView[1],vec4(p,1.0)),
                 dot(inverseView[2],vec4(p,1.0)));
-}
-float radiusAt(vec3 p) {
-    vec3 delta=p-scanOrigin.xyz;
-    return sfPhase(length(delta.xz),delta.y,scanMotion.w);
 }
 SfSample sampleAt(ivec2 pixel,vec2 offset) {
     SfSample s;
@@ -95,16 +88,6 @@ vec3 localAxis(SfSample center,SfSample before,SfSample after,float stride) {
     if (after.valid>0.5 && (before.valid<0.5 || dot(hi,hi)<dot(lo,lo))) result=hi;
     return result/stride;
 }
-float bands(float radius,float footprint,float direction) {
-    float result=0.0;
-    for (int i=0; i<8; ++i) {
-        float center=scanHeading.w-float(i)*scanStyle.x;
-        if (center>0.0 && center<=450.0)
-            result=max(result,sfCoverage(radius-center,scanStyle.z,footprint,scanMotion.x));
-    }
-    return result*sfDensity(footprint,scanStyle.x)*
-           (1.0-smoothstep(420.0,450.0,radius))*smoothstep(scanHeading.z,scanHeading.z+0.015,direction);
-}
 void main() {
     vec2 texel=vec2(screenUv.x,1.0-screenUv.y)*dimensions.xy;
     ivec2 pixel=clamp(ivec2(texel),ivec2(0),ivec2(dimensions.xy)-ivec2(1));
@@ -114,12 +97,7 @@ void main() {
     if (settings.w<0.5) {
         outColor=vec4(0.7,0.12,0.0,1.0);
     } else if (center.valid<0.5) {
-        if (SF_DIAGNOSTICS!=0 && settings.x<2.5) outColor=vec4(0.08,0.04,0.18,1.0);
-        else discard;
-    } else if (SF_DIAGNOSTICS!=0 && settings.x<2.5) {
-        float distance=settings.z>0.5 ? 1.0/center.q : center.q;
-        float shade=screenUv.x<0.5 ? clamp(distance/100.0,0.0,1.0) : fract(distance/20.0);
-        outColor=vec4(vec3(shade),1.0);
+        discard;
     } else {
         float groundRadius=length((world-scanOrigin.xyz).xz);
         float direction=dot((world-scanOrigin.xyz).xz,scanHeading.xy)/max(groundRadius,0.001);
@@ -144,7 +122,7 @@ void main() {
             samples[8]=sampleAt(pixel+ivec2(0,step),vec2(0,stride));
             vec2 subpixel=texel-(vec2(pixel)+vec2(0.5));
             bool mayDraw=true;
-            if ((SF_DIAGNOSTICS==0 || surfaceStyle.y>0.5) && surfaceStyle.x>=0.0) {
+            if (surfaceStyle.x>=0.0) {
                 SfRange q=sfFitQBounds(samples,stride);
                 float nearDistance=settings.z>0.5 ? 1.0/q.hi : max(q.lo,0.001);
                 float farDistance=settings.z>0.5 ? 1.0/q.lo : max(q.hi,0.001);
@@ -164,15 +142,6 @@ void main() {
                 vec3 rawDx=localAxis(center,samples[5],samples[7],stride);
                 vec3 rawDy=localAxis(center,samples[6],samples[8],stride);
                 SfPlane plane=sfFit(samples,int(scanStyle.y),settings.z>0.5 ? -1.0 : 1.0);
-                float rawLine=0.0;
-                if (SF_DIAGNOSTICS!=0 && surfaceStyle.y<0.5) {
-                    float distance=settings.z>0.5 ? 1.0/center.q : center.q;
-                    float rawRadius=radiusAt(world);
-                    float gx=radiusAt(worldAt(pixelUv(vec2(pixel)+vec2(1,0)),distance))-rawRadius;
-                    float gy=radiusAt(worldAt(pixelUv(vec2(pixel)+vec2(0,1)),distance))-rawRadius;
-                    rawLine=bands(rawRadius,clamp(abs(gx)+abs(gy),0.025,1.0),direction);
-                }
-                float line=rawLine;
                 vec3 normal=cross(rawDx,rawDy);
                 float normalLength=length(normal);
                 normal=normalLength>0.000001 ? normal/normalLength : vec3(0,1,0);
@@ -185,30 +154,22 @@ void main() {
                     vec3 ym=planeWorld(plane,vec2(pixel),subpixel-vec2(0,0.5));
                     fittedDx=xp-xm; fittedDy=yp-ym;
                     normal=vec3(plane.nx,plane.ny,plane.nz);
-                    if (SF_DIAGNOSTICS!=0 && surfaceStyle.y<0.5) {
-                        float dx=radiusAt(xp)-radiusAt(xm), dy=radiusAt(yp)-radiusAt(ym);
-                        line=max(bands(radiusAt(fittedWorld),max(abs(dx)+abs(dy),0.025),direction),rawLine*scanMotion.y);
-                    }
                 }
-                vec3 radiance=vec3(0.10,0.78,1.0)*line;
-                if (SF_DIAGNOSTICS==0 || surfaceStyle.y>0.5) {
-                    radiance=imprintAt(fittedWorld,fittedDx,fittedDy,normal,sfGridConfidence(plane.score));
-                    float residual=dot(normal,world)-plane.offset;
-                    if (plane.score>0.0 && abs(residual)>0.04) {
-
-                        vec3 p=world-scanOrigin.xyz;
-                        float forward=sfForward(p.x,p.z,scanHeading.x,scanHeading.y);
-                        float footprint=abs(dot(rawDx.xz,scanHeading.xy))+abs(dot(rawDy.xz,scanHeading.xy));
-                        float detail=sfStationaryRing(forward,max(footprint,0.025),surfaceStyle.w)*
-                            sfImprintEnvelope(forward,world.y-scanOrigin.y,surfaceStyle.x)*scanMotion.y;
-                        detail*=1.0-smoothstep(420.0,450.0,groundRadius);
+                vec3 radiance=imprintAt(fittedWorld,fittedDx,fittedDy,normal,sfGridConfidence(plane.score));
+                float residual=dot(normal,world)-plane.offset;
+                if (plane.score>0.0 && abs(residual)>0.04) {
+                    vec3 p=world-scanOrigin.xyz;
+                    float forward=sfForward(p.x,p.z,scanHeading.x,scanHeading.y);
+                    float footprint=abs(dot(rawDx.xz,scanHeading.xy))+abs(dot(rawDy.xz,scanHeading.xy));
+                    float detail=sfStationaryRing(forward,max(footprint,0.025),surfaceStyle.w)*
+                        sfImprintEnvelope(forward,world.y-scanOrigin.y,surfaceStyle.x)*scanMotion.y;
+                    detail*=1.0-smoothstep(420.0,450.0,groundRadius);
 #if SF_CONSTRAINED
-                        detail*=1.0-smoothstep(settings.y-min(8.0,settings.y*0.05),settings.y,groundRadius);
+                    detail*=1.0-smoothstep(settings.y-min(8.0,settings.y*0.05),settings.y,groundRadius);
 #endif
-                        radiance=max(radiance,vec3(0.10,0.78,1.0)*detail);
-                    }
-                    radiance*=smoothstep(scanHeading.z,scanHeading.z+0.015,direction);
+                    radiance=max(radiance,vec3(0.10,0.78,1.0)*detail);
                 }
+                radiance*=smoothstep(scanHeading.z,scanHeading.z+0.015,direction);
                 if (max(radiance.r,max(radiance.g,radiance.b))*scanStyle.w<0.005) discard;
                 outColor=vec4(radiance,scanStyle.w);
             }
