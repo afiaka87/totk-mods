@@ -45,10 +45,6 @@ State prepare() {
                           sd_history::spill(), std::uint64_t{pure::kSdHistoryRamSeconds} * 1000000000ull);
     g_state.store(State::Ready, std::memory_order_release);
     sd_history::start();
-    Logging.Log("[self-recall] pose storage ready: owner=module_bss bytes=%llu frames=%u bone_limit=%u",
-                static_cast<unsigned long long>(kBytes),
-                static_cast<unsigned>(pure::kHistoryCapacity),
-                static_cast<unsigned>(pure::kPoseBoneLimit));
     return State::Ready;
 }
 
@@ -68,7 +64,6 @@ std::atomic<std::uint64_t> g_sessionSerial{0};
 std::atomic<bool> g_active{false};
 pure::AppliedClimbMailbox g_applied;
 std::atomic<bool> g_haveApplied{false};
-std::atomic<std::uint64_t> g_publishMisses{0};
 }
 
 void initialize() {
@@ -92,7 +87,6 @@ BeginResult begin(std::uint32_t world, const pure::GameTimeSnapshot& clock) {
     pose_render::begin();
     const auto anchor = g_playback->anchorKey();
     sd_history::playback(true, anchor.generation, anchor.serial);
-    sd_history::event("recall_begin", g_playback->count(), anchor.serial);
     const auto session = g_sessionSerial.fetch_add(1, std::memory_order_acq_rel) + 1;
     g_haveApplied.store(false, std::memory_order_release);
     const auto key = g_playback->presentation();
@@ -113,12 +107,8 @@ bool publishSelected() {
 void reset(bool clearHistory) {
     g_active.store(false, std::memory_order_release);
     g_haveApplied.store(false, std::memory_order_release);
-    g_publishMisses.store(0, std::memory_order_relaxed);
     pose_render::reset();
-    if (g_playback) {
-        if (g_playback->count()) sd_history::event("recall_end", g_playback->index(), g_playback->count());
-        g_playback->reset();
-    }
+    if (g_playback) g_playback->reset();
     sd_history::playback(false, 0, 0);
     pose_recorder::resume(clearHistory);
 }
@@ -155,16 +145,7 @@ void latchPresentation(const pure::GameTimeSnapshot& clock) {
     pure::PosePresentation sample;
     auto selected = acquireSelected(&sample);
     if (!active() || g_sessionSerial.load(std::memory_order_acquire) != session) return;
-    const auto key = selected ? g_presentation.publish(session, clock.serial, sample)
-                              : pure::PosePresentation{};
-    if (!key) {
-        const auto count = g_publishMisses.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (count <= 4 || count % 300 == 0)
-            Logging.Log("[self-recall] PRESENTATION_HELD count=%llu clock=%llu selected=%u",
-                static_cast<unsigned long long>(count), static_cast<unsigned long long>(clock.serial),
-                unsigned(bool(selected)));
-        return;
-    }
+    if (selected) (void)g_presentation.publish(session, clock.serial, sample);
 }
 
 bool publishApplied(std::uintptr_t player, std::uint32_t actorId, std::uint32_t world,

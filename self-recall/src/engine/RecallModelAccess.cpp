@@ -1,4 +1,5 @@
 #include "RecallModelEngine.hpp"
+#include "GameProfiles.hpp"
 
 #include <cstring>
 
@@ -7,17 +8,9 @@
 namespace self_recall::model {
 namespace {
 
-constexpr std::uintptr_t kModelNWVtable = 0x045C0570;
-constexpr std::uintptr_t kSearchBoneIndex = 0x02A40628;
 constexpr std::size_t kUnitFlags = 0x12;
-constexpr std::size_t kSkeleton = 0x170;
-constexpr std::size_t kRenderOrigin = 0x338;
-constexpr std::size_t kOriginFlags = 0x355;
 constexpr std::size_t kSkeletonWorldMatrices = 0x20;
 constexpr std::size_t kResourceBoneCount = 0x38;
-constexpr std::size_t kBoneVisibility = 0x140;
-constexpr std::size_t kMaterialVisibility = 0x148;
-constexpr std::size_t kMaterialCount = 0x16A;
 
 template <class T>
 T readViewField(const void* base, std::size_t offset) {
@@ -30,19 +23,21 @@ T readViewField(const void* base, std::size_t offset) {
 
 ViewStatus describe(std::uintptr_t mainBase, const void* unit, View& out) {
     out = {};
-    if (!unit || readViewField<std::uintptr_t>(unit, 0) != mainBase + kModelNWVtable)
+    const auto vtable = profiles::address(0x045C0570);
+    if (!unit || !vtable || readViewField<std::uintptr_t>(unit, 0) != mainBase + vtable)
         return ViewStatus::UnsupportedType;
-    const auto* skeleton = readViewField<const void*>(unit, kSkeleton);
+    const auto& layout = g_nativeModelLayout;
+    const auto* skeleton = readViewField<const void*>(unit, layout.skeleton);
     const auto* resource = skeleton ? readViewField<const void*>(skeleton, 0) : nullptr;
     const auto* matrices = skeleton ? readViewField<const void*>(skeleton, kSkeletonWorldMatrices) : nullptr;
     if (!resource || !matrices) return ViewStatus::MissingSkeleton;
     const auto boneCount = readViewField<std::uint16_t>(resource, kResourceBoneCount);
     if (!boneCount) return ViewStatus::MissingSkeleton;
     if (boneCount > pure::kPoseBoneLimit) return ViewStatus::BoneLimitExceeded;
-    const auto materialCount = readViewField<std::uint16_t>(unit, kMaterialCount);
+    const auto materialCount = readViewField<std::uint16_t>(unit, layout.materialCount);
     if (materialCount > pure::kPoseMaterialLimit) return ViewStatus::MaterialLimitExceeded;
-    out.boneVisibility = readViewField<const std::uint32_t*>(unit, kBoneVisibility);
-    out.materialVisibility = readViewField<const std::uint32_t*>(unit, kMaterialVisibility);
+    out.boneVisibility = readViewField<const std::uint32_t*>(unit, layout.boneVisibility);
+    out.materialVisibility = readViewField<const std::uint32_t*>(unit, layout.materialVisibility);
     if (!out.boneVisibility || (materialCount && !out.materialVisibility))
         return ViewStatus::MissingVisibility;
 
@@ -53,14 +48,16 @@ ViewStatus describe(std::uintptr_t mainBase, const void* unit, View& out) {
     out.pose.identity = {out.identity.unit, out.identity.skeleton,
                          out.identity.resource, 0, boneCount, 0, materialCount};
     out.pose.visibility = readViewField<std::uint32_t>(unit, kUnitFlags);
-    out.pose.originRelative = readViewField<std::uint8_t>(unit, kOriginFlags) & 1u;
+    out.pose.originRelative = readViewField<std::uint8_t>(unit, layout.originFlags) & 1u;
     std::memcpy(out.pose.renderOrigin,
-                static_cast<const std::uint8_t*>(unit) + kRenderOrigin,
+                static_cast<const std::uint8_t*>(unit) + layout.renderOrigin,
                 sizeof(out.pose.renderOrigin));
 
     const char* wristName = "Wrist_R";
     using SearchBone = std::uint32_t (*)(const void*, const char* const*);
-    const auto index = reinterpret_cast<SearchBone>(mainBase + kSearchBoneIndex)(unit, &wristName);
+    const auto searchBone = profiles::address(0x02A40628);
+    if (!searchBone) return ViewStatus::UnsupportedType;
+    const auto index = reinterpret_cast<SearchBone>(mainBase + searchBone)(unit, &wristName);
     if (index < boneCount) out.wristIndex = static_cast<std::int32_t>(index);
     return ViewStatus::Ready;
 }
@@ -154,13 +151,12 @@ CaptureReport recordCompleted(const pure::PoseFrameHeader& header,
 namespace self_recall::model {
 namespace {
 
-constexpr std::uintptr_t kActorLinkGetReference = 0x00753530;
-constexpr std::uintptr_t kBaseProcReferenceSetProc = 0x0086A288;
-
 detail::NativeActorReferenceResult resolve(std::uintptr_t mainBase, const void* link) {
     if (!mainBase || !link) return {};
+    const auto target = profiles::address(0x00753530);
+    if (!target) return {};
     using Resolve = detail::NativeActorReferenceResult (*)(const void*);
-    return reinterpret_cast<Resolve>(mainBase + kActorLinkGetReference)(link);
+    return reinterpret_cast<Resolve>(mainBase + target)(link);
 }
 
 }
@@ -170,8 +166,10 @@ ScopedActorReference::ScopedActorReference(std::uintptr_t mainBase, const void* 
 
 ScopedActorReference::~ScopedActorReference() {
     if (!mainBase_ || !reference_.actor) return;
+    const auto target = profiles::address(0x0086A288);
+    if (!target) return;
     using Clear = void (*)(detail::NativeActorReferenceResult*, const void*);
-    reinterpret_cast<Clear>(mainBase_ + kBaseProcReferenceSetProc)(&reference_, nullptr);
+    reinterpret_cast<Clear>(mainBase_ + target)(&reference_, nullptr);
 }
 
 }
@@ -198,18 +196,23 @@ static_assert(offsetof(BinderReferenceArgument, source) == 0x18);
 
 bool ResourceLease::retain(std::uintptr_t mainBase, const void* sourceBinder) {
     if (mainBase_ || !mainBase || !sourceBinder) return false;
+    const auto getResource = profiles::address(0x00B51804);
+    const auto construct = profiles::address(0x00BC7A48);
+    const auto vtable = profiles::address(0x045C80F0);
+    const auto retain = profiles::address(0x0076F8F0);
+    if (!getResource || !construct || !vtable || !retain) return false;
     using Get = const void* (*)(const void*);
-    const auto get = reinterpret_cast<Get>(mainBase + 0x00B51804);
+    const auto get = reinterpret_cast<Get>(mainBase + getResource);
     const auto* sourceResource = get(sourceBinder);
     if (!sourceResource || !readLeaseField<const void*>(sourceBinder, 8)) return false;
     using Construct = void (*)(void*);
-    reinterpret_cast<Construct>(mainBase + 0x00BC7A48)(binder_);
+    reinterpret_cast<Construct>(mainBase + construct)(binder_);
     mainBase_ = mainBase;
-    const BinderReferenceArgument argument{mainBase + 0x045C80F0, 3, 1, 1, {},
+    const BinderReferenceArgument argument{mainBase + vtable, 3, 1, 1, {},
                                           "SelfRecallEquipment", sourceBinder, 0};
     const char* empty = "";
     using Retain = const void* (*)(void*, const char* const*, const void*, int*);
-    resource_ = reinterpret_cast<Retain>(mainBase + 0x0076F8F0)(binder_, &empty, &argument, nullptr);
+    resource_ = reinterpret_cast<Retain>(mainBase + retain)(binder_, &empty, &argument, nullptr);
     if (resource_ != sourceResource ||
         readLeaseField<const void*>(binder_, 8) != readLeaseField<const void*>(sourceBinder, 8)) {
         release();
@@ -220,8 +223,10 @@ bool ResourceLease::retain(std::uintptr_t mainBase, const void* sourceBinder) {
 
 void ResourceLease::release() {
     if (!mainBase_) return;
+    const auto destroy = profiles::address(0x00770B8C);
+    if (!destroy) return;
     using Destroy = void (*)(void*);
-    reinterpret_cast<Destroy>(mainBase_ + 0x00770B8C)(binder_);
+    reinterpret_cast<Destroy>(mainBase_ + destroy)(binder_);
     resource_ = nullptr;
     mainBase_ = 0;
 }

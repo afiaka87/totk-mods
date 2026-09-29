@@ -50,6 +50,7 @@ set(SELF_RECALL_COMMON_TEST_SOURCES
     test_playback.cpp
     test_pose.cpp
     test_render.cpp
+    ../src/engine/GameProfiles.cpp
     ../src/engine/RecallModelAccess.cpp
 )
 
@@ -57,6 +58,7 @@ add_executable(self_recall_pure_tests ${SELF_RECALL_COMMON_TEST_SOURCES})
 configure_self_recall_target(self_recall_pure_tests 8)
 
 add_executable(self_recall_switch_tests test_profile.cpp test_model.cpp
+               ../src/engine/GameProfiles.cpp
                ../src/engine/RecallModelAccess.cpp)
 configure_self_recall_target(self_recall_switch_tests 7)
 

@@ -87,7 +87,7 @@ void finish(RecallRuntime& runtime, pure::PlaybackStop stop,
 
 void applyRecordedInput(const totk::engine::NpadFrame& frame);
 
-void clearVelocity(const char* reason);
+void clearVelocity();
 
 }
 
@@ -97,9 +97,7 @@ void buildRoute();
 
 bool startRewind();
 
-void stopForExit(const char* reason, bool emitEnd);
-
-void stop(const char* reason);
+void stop(bool emitEnd = false);
 
 }
 
@@ -111,7 +109,7 @@ namespace self_recall::presentation {
 
 void initialize(std::uintptr_t mainBase);
 bool start(void* playerActor, std::uint32_t historyGeneration);
-void stop(void* playerActor, const char* reason, bool emitEnd);
+void stop(void* playerActor, bool emitEnd);
 void service();
 
 }

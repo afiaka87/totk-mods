@@ -1,6 +1,5 @@
 #pragma once
 
-// Included by RecallPoseData.hpp after the payload store and chain decoder.
 
 namespace self_recall::pure {
 
@@ -65,7 +64,6 @@ class SpillFile {
 public:
     virtual bool write(std::uint64_t offset, std::span<const std::byte> bytes) = 0;
     virtual bool read(std::uint64_t offset, std::span<std::byte> bytes) = 0;
-    virtual std::uint64_t nanoseconds() = 0;
 protected:
     ~SpillFile() = default;
 };
@@ -74,21 +72,14 @@ enum class SpillIoKind : std::uint8_t { None, Write, Read, Evict, WriteFailed, R
 
 struct SpillIoReport {
     SpillIoKind kind = SpillIoKind::None;
-    std::uint32_t group = 0;
-    std::uint32_t bytes = 0;
-    std::uint64_t serial = 0;
-    std::uint64_t offset = 0;
-    std::uint64_t nanoseconds = 0;
-    std::uint32_t groups = 0;  // how many spill groups this one file write carried
+    std::uint32_t bytes = 0, groups = 0;  // file write size and how many spill groups it carried
     explicit operator bool() const { return kind != SpillIoKind::None; }
 };
 
 struct SpillStats {
-    std::atomic<std::uint64_t> writes{0}, writeBytes{0}, writeNanoseconds{0}, maxWriteNanoseconds{0};
-    std::atomic<std::uint64_t> reads{0}, readBytes{0}, readNanoseconds{0}, maxReadNanoseconds{0};
-    std::atomic<std::uint64_t> released{0}, ramOnly{0}, lost{0}, trimmedForSpace{0}, rejectedWhileWriting{0};
-    std::atomic<std::uint64_t> failures{0}, overwritten{0};
-    std::atomic<std::uint64_t> cacheBlocksUsed{0}, poolBlocksAvailable{0};
+    std::atomic<std::uint64_t> writes{0}, writeBytes{0}, reads{0};
+    std::atomic<std::uint64_t> released{0}, ramOnly{0}, lost{0}, trimmedForSpace{0};
+    std::atomic<std::uint64_t> failures{0}, overwritten{0}, cacheBlocksUsed{0};
 };
 
 class PoseSpill {
@@ -106,7 +97,6 @@ public:
     SpillStats& stats() { return stats_; }
     const SpillStats& stats() const { return stats_; }
 
-    // Worker publishes whether the SD file is usable; recorder treats disabled as RAM only.
     void setEnabled(bool enabled) { enabled_.store(enabled, std::memory_order_release); }
     bool enabled() const { return enabled_.load(std::memory_order_acquire); }
 
@@ -117,7 +107,6 @@ public:
     }
     std::uint32_t generation() const { return generation_.load(std::memory_order_acquire); }
 
-    // Returns the group index and token for a new anchor, or kNone when no entry is free.
     std::uint32_t openGroup(std::uint32_t slot, std::uint64_t serial, std::uint64_t nanoseconds,
                             std::uint64_t& token) {
         open_ = kNone;
@@ -158,7 +147,6 @@ public:
 
     std::uint32_t openIndex() const { return open_; }
 
-    // Copies a closed group's node bytes into the write ring. `load` fills one node.
     template<class LoadNode>
     bool enqueue(std::uint32_t index, LoadNode&& load) {
         const auto scratch = std::span{scratch_};
@@ -254,7 +242,6 @@ public:
         return ok;
     }
 
-    // Recorder release bookkeeping, used by PoseHistory.
     template<class Visit>
     void forEachLiveGroup(Visit&& visit) {
         for (auto index = tail_; index != head_; index = (index + 1) % groups_.size())
@@ -286,12 +273,6 @@ private:
         if (first < bytes.size()) std::memcpy(bytes.data() + first, ring_.data(), bytes.size() - first);
     }
 
-    static void recordMax(std::atomic<std::uint64_t>& target, std::uint64_t value) {
-        auto current = target.load(std::memory_order_relaxed);
-        while (value > current && !target.compare_exchange_weak(current, value, std::memory_order_relaxed)) {}
-    }
-
-    // True when the oldest queued job was left behind by a replaced history.
     bool queueIsStale() const {
         const auto read = readPos_.load(std::memory_order_acquire);
         if (writePos_.load(std::memory_order_acquire) == read) return false;
@@ -300,7 +281,6 @@ private:
         return header.magic != kSpillJobMagic || header.generation != generation();
     }
 
-    // Batches consecutive queued groups into one write; each keeps its own offset and length.
     SpillIoReport writeOne(SpillFile& file) {
         struct Batched {
             std::uint32_t group = 0, offset = 0, bytes = 0;
@@ -313,7 +293,6 @@ private:
         std::array<Batched, kSpillWriteBatchJobs> batched{};
         unsigned count = 0;
         std::uint32_t total = 0;
-        std::uint64_t firstSerial = 0;
         auto read = readPos_.load(std::memory_order_acquire);
 
         while (count < batched.size()) {
@@ -326,7 +305,7 @@ private:
                 // A corrupt job cannot be skipped safely; discard everything queued.
                 readPos_.store(writePos_.load(std::memory_order_acquire), std::memory_order_release);
                 stats_.failures.fetch_add(1, std::memory_order_relaxed);
-                return {SpillIoKind::WriteFailed, header.group, bytes, header.firstSerial, 0, 0, 1};
+                return {SpillIoKind::WriteFailed};
             }
             if (count && total + bytes > io_.size()) break;
             const auto& group = groups_[header.group];
@@ -335,12 +314,11 @@ private:
                 if (count) break;  // superseded by a history reset; reported on its own
                 read += bytes;
                 readPos_.store(read, std::memory_order_release);
-                return {SpillIoKind::Invalidated, header.group, bytes, header.firstSerial, 0, 0, 1};
+                return {SpillIoKind::Invalidated};
             }
             ringCopyOut(read, io_.subspan(total, bytes));
             read += bytes;
             readPos_.store(read, std::memory_order_release);
-            if (!count) firstSerial = header.firstSerial;
             batched[count++] = {header.group, total, bytes, header.state};
             total += bytes;
         }
@@ -348,10 +326,8 @@ private:
 
         if (filePos_ + total > kSpillFileBytes) filePos_ = 0;
         invalidateOverlaps(filePos_, total);
-        const auto start = file.nanoseconds();
         const bool ok = file.write(filePos_, io_.first(total));
-        SpillIoReport report{ok ? SpillIoKind::Write : SpillIoKind::WriteFailed, batched[0].group,
-                             total, firstSerial, filePos_, file.nanoseconds() - start, count};
+        const SpillIoReport report{ok ? SpillIoKind::Write : SpillIoKind::WriteFailed, total, count};
         for (unsigned i = 0; i < count; ++i) {
             auto& group = groups_[batched[i].group];
             const auto token = spillToken(batched[i].state);
@@ -380,8 +356,6 @@ private:
         filePos_ += total;
         stats_.writes.fetch_add(1, std::memory_order_relaxed);
         stats_.writeBytes.fetch_add(total, std::memory_order_relaxed);
-        stats_.writeNanoseconds.fetch_add(report.nanoseconds, std::memory_order_relaxed);
-        recordMax(stats_.maxWriteNanoseconds, report.nanoseconds);
         return report;
     }
 
@@ -411,7 +385,7 @@ private:
             group.cached.store(false, std::memory_order_release);
             releaseCached(group);
             group.claims.store(0, std::memory_order_release);
-            return {SpillIoKind::Evict, i, 0, group.firstSerial};
+            return {SpillIoKind::Evict};
         }
         return {};
     }
@@ -451,13 +425,10 @@ private:
         if (!group.claims.compare_exchange_strong(claims, kWriter, std::memory_order_acquire)) return {};
         struct Unclaim { SpillGroup& g; ~Unclaim() { g.claims.store(0, std::memory_order_release); } } unclaim{group};
         const auto state = group.state.load(std::memory_order_acquire);
-        SpillIoReport report{SpillIoKind::Read, best, group.fileBytes, group.firstSerial, group.fileOffset};
         if (spillState(state) != SpillState::Written || group.fileBytes > io_.size() ||
             group.fileBytes < sizeof(SpillJobHeader)) return {};
         std::uint32_t blocks = 0;
-        const auto start = file.nanoseconds();
         const bool ok = file.read(group.fileOffset, io_.first(group.fileBytes));
-        report.nanoseconds = file.nanoseconds() - start;
         SpillJobHeader header;
         if (ok) std::memcpy(&header, io_.data(), sizeof(header));
         const bool valid = ok && header.magic == kSpillJobMagic && header.state == spillStateValue(spillToken(state), SpillState::Pending) &&
@@ -471,8 +442,7 @@ private:
                                                     std::memory_order_acq_rel))
                 stats_.lost.fetch_add(1, std::memory_order_relaxed);
             stats_.failures.fetch_add(1, std::memory_order_relaxed);
-            report.kind = SpillIoKind::ReadFailed;
-            return report;
+            return {SpillIoKind::ReadFailed};
         }
         if (blocks > cacheAvailable()) return {};
         std::size_t offset = sizeof(header);
@@ -489,10 +459,7 @@ private:
         group.cached.store(true, std::memory_order_release);
         stats_.cacheBlocksUsed.store(cacheUsed(), std::memory_order_relaxed);
         stats_.reads.fetch_add(1, std::memory_order_relaxed);
-        stats_.readBytes.fetch_add(group.fileBytes, std::memory_order_relaxed);
-        stats_.readNanoseconds.fetch_add(report.nanoseconds, std::memory_order_relaxed);
-        recordMax(stats_.maxReadNanoseconds, report.nanoseconds);
-        return report;
+        return {SpillIoKind::Read};
     }
 
     std::uint64_t cacheAvailable() const { return cache_.availableBlocks(); }

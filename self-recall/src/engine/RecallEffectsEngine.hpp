@@ -1,5 +1,6 @@
 #pragma once
 
+#include "totk/engine/ReadGuard.hpp"
 #include <cstddef>
 #include <cstdint>
 #include "RecallBase.hpp"
@@ -7,6 +8,7 @@
 namespace self_recall::equipment {
 inline constexpr std::size_t kArchiveHeapBytes = pure::kArchiveHeapBytes;
 #if SELF_RECALL_STORAGE_PROFILE == 7
+inline bool sitesValid(std::uintptr_t, std::size_t) { return true; }
 inline void installHeap(std::uintptr_t) {}
 inline void* archiveHeap() { return nullptr; }
 inline std::size_t contiguousArchiveBytes() { return 0; }
@@ -14,6 +16,7 @@ inline bool archiveOwns(const void*) { return false; }
 inline void* allocateArchive(std::size_t) { return nullptr; }
 inline void freeArchive(void*) {}
 #else
+bool sitesValid(std::uintptr_t mainBase, std::size_t textSize);
 void installHeap(std::uintptr_t mainBase);
 void* archiveHeap();
 std::size_t contiguousArchiveBytes();
@@ -105,6 +108,7 @@ EffectMatrix copyMatrix(const void* executor, const void* descriptor, float out[
 namespace self_recall::equipment_effects::detail {
 inline constexpr unsigned kProperties = 128, kEnums = 512, kNames = 32768;
 template<class T> T read(const void* p, std::size_t offset) {
+    if (!totk::engine::read_guard::admit(p, offset, sizeof(T))) return T{};
     T v; std::memcpy(&v, static_cast<const std::byte*>(p) + offset, sizeof(v)); return v;
 }
 template<class T> void write(void* p, std::size_t offset, T v) {
@@ -254,6 +258,7 @@ namespace self_recall::wrist_effects {
 
 void install(std::uintptr_t mainBase);
 void begin(std::uint32_t historyGeneration, std::span<const pure::CompactEffectHandle> handles);
+void serviceBootstrap();
 void end();
 
 }

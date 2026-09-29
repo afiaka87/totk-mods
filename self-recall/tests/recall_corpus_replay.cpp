@@ -140,7 +140,6 @@ void compare(const RecordedPoseFrame& expected, const RecordedPoseFrame& actual)
 class MemoryFile final : public SpillFile {
 public:
     std::vector<std::byte> bytes = std::vector<std::byte>(kSpillFileBytes);
-    std::uint64_t clock = 0;
     bool write(std::uint64_t offset, std::span<const std::byte> data) override {
         if (offset + data.size() > bytes.size()) return false;
         std::memcpy(bytes.data() + offset, data.data(), data.size());
@@ -151,7 +150,6 @@ public:
         std::memcpy(data.data(), bytes.data() + offset, data.size());
         return true;
     }
-    std::uint64_t nanoseconds() override { return clock += 1000; }
 };
 #endif
 }

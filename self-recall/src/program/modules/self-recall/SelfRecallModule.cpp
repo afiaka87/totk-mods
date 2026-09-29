@@ -1,5 +1,4 @@
 #include "SelfRecallModule.hpp"
-#include "../../StartupTrace.hpp"
 
 #include <nn/util.h>
 
@@ -7,6 +6,7 @@
 #include "RecallGraphicsEngine.hpp"
 #include "RecallModelEngine.hpp"
 #include "RecallRuntimeEngine.hpp"
+#include "GameProfiles.hpp"
 
 namespace {
 
@@ -25,17 +25,13 @@ void updateOutfitSpeed(bool playerReady) {
         clock.status != pure::GameTimeStatus::Running ||
         !self_recall::world::readOutfit(pure::kRecallOutfitSpeed, outfit)) return;
     auto& rt = runtime();
-    if (!rt.session.speed.update(outfit)) return;
-    SRLOG("RECALL_OUTFIT set=%s count=%u mask=%u value=%s ids=%u/%u/%u rewinding=%u",
-          pure::kRecallOutfitSpeed.label, rt.session.speed.count(), rt.session.speed.mask(),
-          pure::playbackRateText(rt.session.speed.rate()), outfit.actorIds[0],
-          outfit.actorIds[1], outfit.actorIds[2], unsigned(rt.playback.rewinding));
+    (void)rt.session.speed.update(outfit);
 }
 
 void invalidateGeneration(const char* reason) {
     RecallRuntime& rt = runtime();
     self_recall::native_gameplay::reset();
-    self_recall::effects::stop(reason);
+    self_recall::effects::stop();
     self_recall::clearRoute(reason);
     self_recall::glider_release::resetWorld();
     self_recall::vehicle::resetWorld();
@@ -44,8 +40,6 @@ void invalidateGeneration(const char* reason) {
     self_recall::world::onGenerationInvalidated();
     rt.safety.lastClimbSeen = 0;
     rt.safety.climbActiveNow = false;
-    SRLOG("WORLD_RESET generation=%u reason=%s", rt.session.worldGeneration,
-          reason ? reason : "unspecified");
 }
 
 std::uint64_t historyDurationNanoseconds() {
@@ -123,7 +117,6 @@ void moduleTick(void* device) {
             self_recall::playback::finish(rt, self_recall::pure::PlaybackStop::PaletteFailed, true);
     }
     if (renderFailure) {
-        self_recall::startup_trace::mark("63 animation-failure", renderFailure, rt.playback.rewinding);
         SRLOG("ANIMATION_RENDER_FAILED code=%u detail=%u",
               static_cast<unsigned>(renderFailure >> 32), static_cast<unsigned>(renderFailure));
         if (rt.playback.rewinding)
@@ -204,27 +197,22 @@ void moduleInit(std::uintptr_t base) {
     self_recall::presentation::initialize(base);
 }
 
-void moduleEnter() {
+void resetSession(const char* reason, bool leavingGameplay) {
     self_recall::native_gameplay::reset();
     self_recall::vehicle::resetWorld();
     self_recall::pose_recorder::publishControl({});
+    self_recall::effects::stop();
+    if (leavingGameplay) self_recall::playback::clearVelocity();
+    self_recall::clearRoute(reason);
     RecallRuntime& rt = runtime();
-    self_recall::effects::stop("module enter");
-    self_recall::clearRoute("module enter");
     rt.playback.triggerHold = {};
     rt.session.speed.reset();
 }
 
+void moduleEnter() { resetSession("module enter", false); }
+
 bool moduleExit() {
-    self_recall::native_gameplay::reset();
-    self_recall::vehicle::resetWorld();
-    self_recall::pose_recorder::publishControl({});
-    RecallRuntime& rt = runtime();
-    self_recall::effects::stop("module exit");
-    self_recall::playback::clearVelocity("module exit");
-    self_recall::clearRoute("module exit");
-    rt.playback.triggerHold = {};
-    rt.session.speed.reset();
+    resetSession("module exit", true);
     return true;
 }
 
@@ -387,13 +375,7 @@ bool startRewind() {
     return presentation::start(player, generation);
 }
 
-void stopForExit(const char* reason, bool emitEnd) {
-    presentation::stop(world::playerActor(), reason, emitEnd);
-}
-
-void stop(const char* reason) {
-    presentation::stop(world::playerActor(), reason, false);
-}
+void stop(bool emitEnd) { presentation::stop(world::playerActor(), emitEnd); }
 
 }
 
@@ -478,12 +460,8 @@ void armProbe(RecallRuntime& runtime) {
     request.tick = runtime.session.tick;
     request.generation = runtime.session.worldGeneration;
     probe::arm(state, {samples, count}, request);
-    if (state.unavailable && count >= 2) {
-        SRLOG("ROUTE_SAMPLE_REFUSED index=%u flags=%u,%u upright=%.3f,%.3f live_climb=%u native_climb=%u ui=%u",
-            cursor->index(), samples[0].flags, samples[1].flags,
-            samples[0].pose.rotation.values[4], samples[1].pose.rotation.values[4],
-            request.climbActive, world::nativeClimbing(), runtime.safety.uiStateRaw);
-    }
+    if (state.unavailable && count >= 2)
+        SRLOG("ROUTE_SAMPLE_REFUSED index=%u flags=%u,%u", cursor->index(), samples[0].flags, samples[1].flags);
 }
 
 void observeRaycast(wwpg::RaycastFn original, const void* from,

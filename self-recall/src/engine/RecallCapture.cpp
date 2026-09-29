@@ -1,13 +1,15 @@
+#include "totk/engine/ReadGuard.hpp"
 #include "RecallRuntimeEngine.hpp"
+#include "GameProfiles.hpp"
 #include "RecallModelEngine.hpp"
 #include "RecallBase.hpp"
-#include "../program/StartupTrace.hpp"
 
 #include <array>
 #include <atomic>
 #include <cstring>
 #include <optional>
 #include <lib.hpp>
+#include "FloatHook.hpp"
 
 #include "RecallEffectsEngine.hpp"
 #include "RecallRender.hpp"
@@ -18,14 +20,41 @@
 namespace self_recall::frame {
 namespace {
 
-constexpr std::uintptr_t kModelFrameStart = 0x00973550;
-constexpr std::uintptr_t kInvokeModelCalcQueue = 0x00981248;
-constexpr std::uintptr_t kInvokeSingleModelQueue = 0x00970820;
-constexpr std::uintptr_t kSceneCalcFrame = 0x00974D9C;
-constexpr std::size_t kQueueOwner = 0x40;
-constexpr std::size_t kQueueGroupCount = 0x58;
-constexpr std::uintptr_t kSceneModelQueue = 0x42A0;
 constexpr std::size_t kContextCompleted = 8;
+
+struct FrameSites {
+    std::uintptr_t frameStart, groupInvoke, singleInvoke, sceneCalc;
+    std::uintptr_t frameRejoin, framePage, groupComplete, singleComplete;
+    std::size_t sceneQueue, queueOwner, groupCount, singleCount;
+    unsigned groupSceneRegister, singleSceneRegister;
+    bool singleRegisterHoldsQueue;
+};
+
+constexpr std::array<FrameSites, 9> kFrameSites{{
+    {0x93C3C4,0x94B248,0x94CAD8,0x93E068,0,0,0,0,0x42A0,0x40,0x58,0x20,0,0,false},
+    {0x940F44,0x95012C,0x951B40,0x942790,0,0,0,0,0x42A0,0x40,0x58,0x20,0,0,false},
+    {0x9120B4,0x9211F8,0x90F384,0x913900,0,0,0,0,0x42A0,0x40,0x58,0x20,0,0,false},
+    {0x9111A8,0x91C6DC,0x90E818,0x912D14,0,0,0,0,0x42A0,0x40,0x58,0x20,0,0,false},
+    {0x973550,0x981248,0x970820,0x974D9C,0,0,0,0,0x42A0,0x40,0x58,0x20,0,0,false},
+    // 1.4.x single lane: last finisher of the single-root queue (+0x20/+0x28), the queue 1.2.1 hooks.
+    {0,0,0,0x1B7C80,0x182064,0x3ABE000,0x16EA84,0x16E96C,0x3338,0x50,0x68,0x30,27,22,false},
+    {0,0,0,0x195F80,0x1688B8,0x3AB9000,0x158860,0x15873C,0x3338,0x50,0x68,0x30,27,22,false},
+    {0,0,0,0x108B50,0xDEB64,0x3ABB000,0xCB5BC,0xCB48C,0x3338,0x50,0x68,0x30,27,22,false},
+    {0,0,0,0xBE5B0,0x8D7C8,0x3ACD000,0x79A80,0x79968,0x3338,0x50,0x68,0x30,28,22,false},
+}};
+const FrameSites* g_sites = nullptr;
+std::uintptr_t g_frameMainBase = 0;
+constexpr std::array<std::array<std::uint32_t, 4>, 9> kFrameWords{{
+    {{0xD101C3FF,0x6DB923E9,0xFC190FE8,0xD101C3FF}},
+    {{0xD101C3FF,0x6DB923E9,0xFC190FE8,0xA9BA7BFD}},
+    {{0xD101C3FF,0x6DB923E9,0xD101C3FF,0xA9BA7BFD}},
+    {{0xD101C3FF,0x6DB923E9,0xD101C3FF,0xA9BA7BFD}},
+    {{0xD101C3FF,0x6DB923E9,0xD101C3FF,0xA9BA7BFD}},
+    {{0x9001C9F7,0xD5033BBF,0xD5033BBF,0xD106C3FF}},
+    {{0xB001CA97,0xD5033BBF,0xD5033BBF,0xD106C3FF}},
+    {{0xB001CEF7,0xD5033BBF,0xD5033BBF,0xD106C3FF}},
+    {{0x9001D217,0xD5033BBF,0xD5033BBF,0xD106C3FF}},
+}};
 
 Observers g_observers{};
 std::atomic<std::uint64_t> g_epoch{0};
@@ -36,31 +65,45 @@ static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
 
 template <class T>
 T read(const void* base, std::size_t offset) {
+    if (!totk::engine::read_guard::admit(base, offset, sizeof(T))) return T{};
     T value;
     std::memcpy(&value, static_cast<const std::uint8_t*>(base) + offset, sizeof(value));
     return value;
 }
 
+void beginFrame() {
+    const auto epoch = g_epoch.fetch_add(1, std::memory_order_acq_rel) + 1;
+    g_join.beginFrame(epoch);
+    if (g_observers.beginFrame) g_observers.beginFrame(epoch);
+}
+
 HOOK_DEFINE_TRAMPOLINE(ModelFrameStartHook) {
     static void Callback(void* manager) {
         Orig(manager);
-        const auto epoch = g_epoch.fetch_add(1, std::memory_order_acq_rel) + 1;
-        g_join.beginFrame(epoch);
-        if (g_observers.beginFrame) g_observers.beginFrame(epoch);
+        beginFrame();
+    }
+};
+
+HOOK_DEFINE_INLINE(ModelFrameRejoinHook) {
+    static void Callback(exl::hook::InlineCtx* ctx) {
+        const auto sitePage = g_sites->frameRejoin & ~std::uintptr_t{0xFFF};
+        const auto livePage = (g_frameMainBase + g_sites->frameRejoin) & ~std::uintptr_t{0xFFF};
+        ctx->X[23] = livePage + (g_sites->framePage - sitePage);
+        if (ctx->X[20]) beginFrame();
     }
 };
 
 void queueComplete(void* queue, void* context, pure::ModelQueueLane lane) {
-    if (!read<std::uint8_t>(context, kContextCompleted)) return;
+    if (!g_sites || !queue || (context && !read<std::uint8_t>(context, kContextCompleted))) return;
 
     std::atomic_thread_fence(std::memory_order_acquire);
-    auto* scene = read<void*>(queue, kQueueOwner);
-    if (!scene || reinterpret_cast<std::uintptr_t>(scene) + kSceneModelQueue !=
+    auto* scene = read<void*>(queue, g_sites->queueOwner);
+    if (!scene || reinterpret_cast<std::uintptr_t>(scene) + g_sites->sceneQueue !=
                       reinterpret_cast<std::uintptr_t>(queue)) {
         const auto count = g_rejectedOwners.fetch_add(1, std::memory_order_relaxed) + 1;
         if (count <= 4 || count % 1800 == 0)
-            Logging.Log("[self-recall] model queue owner rejected: queue=%p scene=%p total=%llu",
-                queue, scene, static_cast<unsigned long long>(count));
+            Logging.Log("[self-recall] model queue owner rejected total=%llu",
+                static_cast<unsigned long long>(count));
         return;
     }
     const auto epoch = g_epoch.load(std::memory_order_acquire);
@@ -70,16 +113,16 @@ void queueComplete(void* queue, void* context, pure::ModelQueueLane lane) {
         if (joined != pure::ModelJoinStatus::Waiting) {
             const auto count = g_joinFailures.fetch_add(1, std::memory_order_relaxed) + 1;
             if (count <= 4 || count % 1800 == 0)
-                Logging.Log("[self-recall] model join rejected: status=%u queue=%p lane=%u epoch=%llu total=%llu",
-                    static_cast<unsigned>(joined), queue, static_cast<unsigned>(lane),
+                Logging.Log("[self-recall] model join rejected: status=%u lane=%u epoch=%llu total=%llu",
+                    static_cast<unsigned>(joined), static_cast<unsigned>(lane),
                     static_cast<unsigned long long>(epoch), static_cast<unsigned long long>(count));
         }
         return;
     }
     if (g_observers.modelsComplete) {
         const CompletedModelPhase phase{scene, queue, epoch,
-                                         read<std::uint32_t>(queue, kQueueGroupCount),
-                                         read<std::uint32_t>(queue, 0x20)};
+                                         read<std::uint32_t>(queue, g_sites->groupCount),
+                                         read<std::uint32_t>(queue, g_sites->singleCount)};
         g_observers.modelsComplete(phase);
     }
 }
@@ -99,13 +142,33 @@ HOOK_DEFINE_TRAMPOLINE(ModelCalcQueueHook) {
     }
 };
 
+HOOK_DEFINE_INLINE(ModelSingleCompleteHook) {
+    static void Callback(exl::hook::InlineCtx* ctx) {
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        auto* sceneOrQueue = reinterpret_cast<std::byte*>(ctx->X[g_sites->singleSceneRegister]);
+        if (!sceneOrQueue) return;
+        auto* queue = g_sites->singleRegisterHoldsQueue
+            ? sceneOrQueue : sceneOrQueue + g_sites->sceneQueue;
+        queueComplete(queue, nullptr, pure::ModelQueueLane::Single);
+    }
+};
+
+HOOK_DEFINE_INLINE(ModelGroupCompleteHook) {
+    static void Callback(exl::hook::InlineCtx* ctx) {
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        auto* scene = reinterpret_cast<std::byte*>(ctx->X[g_sites->groupSceneRegister]);
+        if (scene)
+            queueComplete(scene + g_sites->sceneQueue, nullptr, pure::ModelQueueLane::Multi);
+    }
+};
+
 HOOK_DEFINE_TRAMPOLINE(SceneCalcFrameHook) {
     static std::uintptr_t Callback(void* scene) {
         const auto epoch = g_epoch.load(std::memory_order_acquire);
-        if (epoch && !g_join.registerScene(reinterpret_cast<std::uintptr_t>(scene) + kSceneModelQueue, epoch)) {
+        if (epoch && !g_join.registerScene(reinterpret_cast<std::uintptr_t>(scene) + g_sites->sceneQueue, epoch)) {
             const auto count = g_joinFailures.fetch_add(1, std::memory_order_relaxed) + 1;
             if (count <= 4 || count % 1800 == 0)
-                Logging.Log("[self-recall] model join scene limit: scene=%p epoch=%llu total=%llu", scene,
+                Logging.Log("[self-recall] model join scene limit: epoch=%llu total=%llu",
                     static_cast<unsigned long long>(epoch), static_cast<unsigned long long>(count));
         }
         if (epoch && g_observers.prepareScene) g_observers.prepareScene(scene, epoch);
@@ -115,12 +178,30 @@ HOOK_DEFINE_TRAMPOLINE(SceneCalcFrameHook) {
 
 }
 
+bool sitesValid(std::uintptr_t mainBase, std::size_t textSize) {
+    const auto& sites = profiles::row(kFrameSites);
+    const std::array<std::uintptr_t, 4> offsets{
+        sites.frameStart ? sites.frameStart : sites.frameRejoin,
+        sites.groupInvoke ? sites.groupInvoke : sites.groupComplete,
+        sites.singleInvoke ? sites.singleInvoke : sites.singleComplete,
+        sites.sceneCalc};
+    return profiles::holds(mainBase, textSize, offsets, profiles::row(kFrameWords));
+}
+
 void install(Observers observers) {
     g_observers = observers;
-    ModelFrameStartHook::InstallAtOffset(kModelFrameStart);
-    ModelCalcQueueHook::InstallAtOffset(kInvokeModelCalcQueue);
-    ModelSingleQueueHook::InstallAtOffset(kInvokeSingleModelQueue);
-    SceneCalcFrameHook::InstallAtOffset(kSceneCalcFrame);
+    g_sites = &profiles::row(kFrameSites);
+    g_frameMainBase = exl::util::modules::GetTargetStart();
+    if (g_sites->frameStart) {
+        ModelFrameStartHook::InstallAtOffset(g_sites->frameStart);
+        ModelCalcQueueHook::InstallAtOffset(g_sites->groupInvoke);
+        ModelSingleQueueHook::InstallAtOffset(g_sites->singleInvoke);
+    } else {
+        ModelFrameRejoinHook::InstallAtOffset(g_sites->frameRejoin);
+        ModelGroupCompleteHook::InstallAtOffset(g_sites->groupComplete);
+        ModelSingleCompleteHook::InstallAtOffset(g_sites->singleComplete);
+    }
+    SceneCalcFrameHook::InstallAtOffset(g_sites->sceneCalc);
 }
 
 std::uint64_t epoch() { return g_epoch.load(std::memory_order_acquire); }
@@ -150,27 +231,11 @@ model::CaptureWorkspace g_workspace{};
 std::uint64_t g_lastEpoch = 0;
 std::uint64_t g_lastTimeSerial = 0;
 std::atomic<std::uint64_t> g_rejections{0};
-#if SELF_RECALL_ROMFS_DIAGNOSTIC
-std::atomic<std::uint64_t> g_lastRejection{0};
-#endif
 std::uint32_t g_world = 0;
-
-enum class Gate : unsigned {
-    Disabled, Suspended, Storage, Busy, FrameTime, Clock, Control, Scene,
-    OtherModelScene, Duplicate, FinalControl, Count,
-};
-constexpr const char* kGateNames[]{"disabled", "suspended", "storage", "busy", "frame_time",
-    "clock", "control", "scene", "other_model_scene", "duplicate", "final_control"};
-struct GateState {
-    std::atomic<std::uint64_t> count{0}, detail{0}, epoch{0};
-    std::atomic<unsigned> reason{0};
-} g_gate;
-void skipped(Gate gate, std::uint64_t epoch, std::uint64_t detail = 0) {
-    g_gate.reason.store(static_cast<unsigned>(gate), std::memory_order_relaxed);
-    g_gate.detail.store(detail, std::memory_order_relaxed);
-    g_gate.epoch.store(epoch, std::memory_order_relaxed);
-    g_gate.count.fetch_add(1, std::memory_order_relaxed);
-}
+// 1.4.3's inlined matrix update ends at this store with the actor in X19.
+constexpr std::array<std::uintptr_t, 9> kFoldedMatrixSites{0, 0, 0, 0, 0, 0, 0, 0, 0x24720C};
+constexpr std::uint32_t kFoldedMatrixWord = 0xB905AE68;
+std::uintptr_t g_foldedMatrixSite = 0;
 
 bool appliedPlayerPose(void* actor, pure::Pose& applied) {
     const auto player = reinterpret_cast<std::uintptr_t>(actor);
@@ -191,7 +256,8 @@ HOOK_DEFINE_TRAMPOLINE(ControllerMatrixHook) {
         const auto result = Orig(controller, matrix, linear, angular, previousLinear, previousAngular);
         const auto player = g_player.load(std::memory_order_acquire);
         const pure::ControllerPoseOutput output{matrix, {linear, angular, previousLinear, previousAngular}};
-        if (!(result & 1u) || !output.playerCommit(player)) return result;
+        if (!(result & 1u) ||
+            !output.playerCommit(player, totk::engine::layout::kActorLinearVelocity)) return result;
         auto* actor = reinterpret_cast<void*>(player);
         pure::Pose applied;
         if (!appliedPlayerPose(actor, applied)) return result;
@@ -204,6 +270,29 @@ HOOK_DEFINE_TRAMPOLINE(ControllerMatrixHook) {
         if (!physics || read<const void*>(physics, totk::engine::layout::kRigidBodySetFromPhysics) != controller)
             return result;
         (void)output.apply(applied);
+        return result;
+    }
+};
+
+HOOK_DEFINE_TRAMPOLINE(PositionRotationHook) {
+    static u64 Callback(void* actor, float* matrix, float frameScale) {
+        pure::Pose applied;
+        // A folded updateMatrix skips PlayerMatrixHook, so detach steering before the model update here.
+        if (g_foldedMatrixSite && appliedPlayerPose(actor, applied))
+            (void)vehicle::detachControlStick(g_mainBase, actor);
+        const auto result = Orig(actor, matrix, frameScale);
+        if (!(result & 1u) || !actor || !matrix || !appliedPlayerPose(actor, applied))
+            return result;
+        auto* bytes = static_cast<std::byte*>(actor);
+        auto* velocity = reinterpret_cast<float*>(
+            bytes + totk::engine::layout::kActorLinearVelocity);
+        const pure::ControllerPoseOutput output{
+            matrix, {velocity, velocity + 3, velocity + 6, velocity + 9}};
+        if (!output.apply(applied)) return result;
+        std::memcpy(bytes + totk::engine::layout::kActorPosition,
+                    &applied.position, sizeof(applied.position));
+        std::memcpy(bytes + totk::engine::layout::kActorRotation,
+                    &applied.rotation, sizeof(applied.rotation));
         return result;
     }
 };
@@ -249,10 +338,14 @@ HOOK_DEFINE_TRAMPOLINE(PlayerMatrixHook) {
     }
 };
 
+HOOK_DEFINE_INLINE(FoldedPlayerMatrixHook) {
+    static void Callback(exl::hook::InlineFloatCtx* ctx) {
+        auto* gp = integerRegisters(ctx);
+        recordCompletedPlayerMatrix(reinterpret_cast<void*>(gp->X[19]));
+    }
+};
+
 void reject(Rejection reason, std::uint64_t epoch, std::uint32_t detail = 0) {
-#if SELF_RECALL_ROMFS_DIAGNOSTIC
-    g_lastRejection.store((std::uint64_t{unsigned(reason)} << 32) | detail, std::memory_order_relaxed);
-#endif
     if (pose_session::active()) {
         pose_render::collectorFailed(static_cast<unsigned>(reason), detail);
     } else if (auto* history = pose_storage::history(); history && history->count()) {
@@ -376,8 +469,18 @@ void install(std::uintptr_t mainBase) {
     g_mainBase = mainBase;
     equipment::install(mainBase);
     if constexpr (!pure::kHistoricalEquipment) equipment_effects::install(mainBase);
-    PlayerMatrixHook::InstallAtOffset(kActorUpdateMatrix);
-    ControllerMatrixHook::InstallAtOffset(kControllerMatrixAndVelocity);
+    PlayerMatrixHook::InstallAtOffset(profiles::address(kActorUpdateMatrix));
+    g_foldedMatrixSite = profiles::row(kFoldedMatrixSites);
+    if (g_foldedMatrixSite) FoldedPlayerMatrixHook::InstallAtOffset(g_foldedMatrixSite);
+    if (profiles::newerRenderer())
+        PositionRotationHook::InstallAtOffset(profiles::address(kControllerMatrixAndVelocity));
+    else
+        ControllerMatrixHook::InstallAtOffset(profiles::address(kControllerMatrixAndVelocity));
+}
+
+bool sitesValid(std::uintptr_t mainBase, std::size_t textSize) {
+    const auto site = profiles::row(kFoldedMatrixSites);
+    return !site || profiles::holds(mainBase, textSize, site, kFoldedMatrixWord);
 }
 
 void publishControl(const Control& control) {
@@ -402,7 +505,7 @@ bool prepareCurrentEquipment(pure::RecordedPoseFrame& frame,
     const auto scene = totk::engine::resolveScene(g_mainBase);
     if (!scene || scene.value.token.value != control.scene) return false;
     using PlayerLink = const void* (*)(std::uintptr_t);
-    const auto* link = reinterpret_cast<PlayerLink>(g_mainBase + kResidentPlayerLink)(
+    const auto* link = reinterpret_cast<PlayerLink>(g_mainBase + profiles::address(kResidentPlayerLink))(
         scene.value.residentActorManager);
     if (!link) return false;
     OwnedModelCollection collection(g_mainBase);
@@ -454,7 +557,7 @@ void prepareScene(void* nativeScene, std::uint64_t epoch) {
     const auto scene = totk::engine::resolveScene(g_mainBase);
     if (!scene || scene.value.token.value != control.scene) return;
     using PlayerLink = const void* (*)(std::uintptr_t);
-    const auto* link = reinterpret_cast<PlayerLink>(g_mainBase + kResidentPlayerLink)(
+    const auto* link = reinterpret_cast<PlayerLink>(g_mainBase + profiles::address(kResidentPlayerLink))(
         scene.value.residentActorManager);
     if (!link) return;
     OwnedModelCollection collection(g_mainBase);
@@ -506,38 +609,22 @@ void resume(bool clearHistory) {
 
 void modelsComplete(const frame::CompletedModelPhase& phase) {
     const bool rendering = pose_session::active();
-    if (!rendering && !g_enabled.load(std::memory_order_acquire)) {
-        skipped(Gate::Disabled, phase.epoch); return;
-    }
-    if (!rendering && g_suspended.load(std::memory_order_acquire)) {
-        skipped(Gate::Suspended, phase.epoch); return;
-    }
+    if (!rendering && (!g_enabled.load(std::memory_order_acquire) ||
+                       g_suspended.load(std::memory_order_acquire))) return;
     auto* history = pose_storage::history();
-    if (!history) { skipped(Gate::Storage, phase.epoch); return; }
-    if (g_collecting.test_and_set(std::memory_order_acquire)) { skipped(Gate::Busy, phase.epoch); return; }
+    if (!history || g_collecting.test_and_set(std::memory_order_acquire)) return;
     struct Unlock { ~Unlock() { g_collecting.clear(std::memory_order_release); } } unlock;
-    if (!rendering && g_suspended.load(std::memory_order_acquire)) {
-        skipped(Gate::Suspended, phase.epoch); return;
-    }
+    if (!rendering && g_suspended.load(std::memory_order_acquire)) return;
     ModelFrameTime frameTime{};
-    if (!g_modelTime.snapshot(frameTime) || frameTime.epoch != phase.epoch) {
-        skipped(Gate::FrameTime, phase.epoch, frameTime.epoch); return;
-    }
+    if (!g_modelTime.snapshot(frameTime) || frameTime.epoch != phase.epoch) return;
     if (!rendering && (frameTime.time.status != pure::GameTimeStatus::Running ||
-                       frameTime.time.serial == g_lastTimeSerial)) {
-        skipped(Gate::Clock, phase.epoch, static_cast<unsigned>(frameTime.time.status) |
-            ((frameTime.time.serial == g_lastTimeSerial ? 1ull : 0ull) << 8)); return;
-    }
+                       frameTime.time.serial == g_lastTimeSerial)) return;
     Control control{};
-    if (!g_control.snapshot(control) || (!rendering && !control.enabled) || !control.worldGeneration) {
-        skipped(Gate::Control, phase.epoch, (std::uint64_t{control.worldGeneration} << 1) | control.enabled); return;
-    }
+    if (!g_control.snapshot(control) || (!rendering && !control.enabled) || !control.worldGeneration) return;
     const auto scene = totk::engine::resolveScene(g_mainBase);
-    if (!scene || scene.value.token.value != control.scene) {
-        skipped(Gate::Scene, phase.epoch, scene ? scene.value.token.value : 0); return;
-    }
+    if (!scene || scene.value.token.value != control.scene) return;
     using PlayerLink = const void* (*)(std::uintptr_t);
-    const auto* link = reinterpret_cast<PlayerLink>(g_mainBase + kResidentPlayerLink)(
+    const auto* link = reinterpret_cast<PlayerLink>(g_mainBase + profiles::address(kResidentPlayerLink))(
         scene.value.residentActorManager);
     if (!link) { reject(Rejection::MissingPlayer, phase.epoch); return; }
     OwnedModelCollection collection(g_mainBase);
@@ -548,13 +635,11 @@ void modelsComplete(const frame::CompletedModelPhase& phase) {
     }
     const auto* bodyRoot = actorModel(player);
     if (!bodyRoot) { reject(Rejection::MissingRoot, phase.epoch); return; }
-    if (read<const void*>(bodyRoot, 0x60) != phase.scene) {
-        skipped(Gate::OtherModelScene, phase.epoch, reinterpret_cast<std::uintptr_t>(phase.scene)); return;
-    }
+    if (read<const void*>(bodyRoot, 0x60) != phase.scene) return;
     collection.actors[0] = player;
     collection.actorCount = 1;
     if (!collection.appendModel(player, true)) { rejectCollection(collection, phase.epoch); return; }
-    if (!rendering && phase.epoch == g_lastEpoch) { skipped(Gate::Duplicate, phase.epoch); return; }
+    if (!rendering && phase.epoch == g_lastEpoch) return;
     pure::ActorFrameTicket ticket{};
     if (!rendering && !pairCompletedActorPose(control, player, history, phase.epoch, ticket)) return;
     if (!collection.appendOwnedModels(player, rendering)) {
@@ -584,45 +669,9 @@ void modelsComplete(const frame::CompletedModelPhase& phase) {
         return;
     }
     if (!g_enabled.load(std::memory_order_acquire) || !current.enabled ||
-        g_suspended.load(std::memory_order_acquire)) {
-        skipped(Gate::FinalControl, phase.epoch); return;
-    }
+        g_suspended.load(std::memory_order_acquire)) return;
     recordOwnedFrame(phase, control, frameTime, player, collection, ticket, history);
 }
 
-void logDiagnostics() {
-    const auto currentEpoch = frame::epoch();
-    static std::uint64_t lastReport = 0;
-    if (lastReport && currentEpoch - lastReport < 60) return;
-    lastReport = currentEpoch;
-    pure::GameTimeSnapshot clock{};
-    const bool haveClock = game_clock::snapshot(clock);
-    const auto* history = pose_storage::history();
-#if SELF_RECALL_ROMFS_DIAGNOSTIC
-    startup_trace::mark("60 capture-state",
-        (std::uint64_t{history ? history->count() : 0} << 32) |
-        ((haveClock ? unsigned(clock.status) : 255u) << 16) |
-        (unsigned(g_enabled.load()) << 2) | (unsigned(g_suspended.load()) << 1) | unsigned(g_clearRequested.load()),
-        g_lastRejection.load(std::memory_order_relaxed));
-    startup_trace::mark("60 capture-gate",
-        (std::uint64_t{g_gate.reason.load(std::memory_order_relaxed)} << 56) |
-        (g_gate.count.load(std::memory_order_relaxed) & 0x00FFFFFFFFFFFFFFull),
-        g_gate.detail.load(std::memory_order_relaxed));
-#endif
-    Logging.Log(
-        "[self-recall] CAPTURE_STATE epoch=%llu history=%u rejected=%llu "
-        "enabled=%u suspended=%u clear=%u clock=%u serial=%llu",
-        static_cast<unsigned long long>(currentEpoch), history ? history->count() : 0,
-        static_cast<unsigned long long>(g_rejections.load()),
-        unsigned(g_enabled.load()), unsigned(g_suspended.load()), unsigned(g_clearRequested.load()),
-        haveClock ? static_cast<unsigned>(clock.status) : 255u, static_cast<unsigned long long>(clock.serial));
-    const auto gateCount = g_gate.count.load(std::memory_order_relaxed);
-    const auto gateReason = g_gate.reason.load(std::memory_order_relaxed);
-    if (gateCount && gateReason < static_cast<unsigned>(Gate::Count))
-        Logging.Log("[self-recall] CAPTURE_GATE name=%s total=%llu detail=%llu epoch=%llu",
-            kGateNames[gateReason], static_cast<unsigned long long>(gateCount),
-            static_cast<unsigned long long>(g_gate.detail.load()),
-            static_cast<unsigned long long>(g_gate.epoch.load()));
-}
 
 }

@@ -611,7 +611,7 @@ void write(std::array<std::byte, N>& target, unsigned offset, T value) {
 
 struct AdmissionFixture {
     std::array<std::byte, 0x42D8> scene{};
-    std::array<std::byte, 0x244> body{}, glider{};
+    std::array<std::byte, 0x250> body{}, glider{};
     std::array<std::uintptr_t, 3> units{11, 22, 33};
     std::array<const void*, 1> bodyEntries{&units[0]};
     std::array<const void*, 2> gliderEntries{&units[1], &units[2]};
@@ -672,6 +672,31 @@ TEST_CASE("native admission rejects destroyed roots and exhausted or closed queu
     CHECK(fixture.plan().status == model::AdmissionStatus::Ready);
     write(fixture.scene, 0x42A8, std::uint8_t{0});
     CHECK(fixture.plan().status == model::AdmissionStatus::ClosedQueue);
+}
+
+TEST_CASE("new renderer admission follows the native three-lane queue layout") {
+    AdmissionFixture fixture;
+    CHECK(model::planNativeAdmission(fixture.scene.data(), fixture.roots, fixture.models,
+        model::kNewAdmissionLayout).status == model::AdmissionStatus::ClosedQueue);
+    write(fixture.scene, 0x3340, std::uint8_t{1});
+    write(fixture.scene, 0x335C, 1);
+    write(fixture.scene, 0x336C, 0);
+    write(fixture.scene, 0x337C, 1);
+    write(fixture.body, 0x24A, std::uint8_t{0});
+    write(fixture.glider, 0x24A, std::uint8_t{2});
+    const auto before = fixture.scene;
+    auto plan = model::planNativeAdmission(fixture.scene.data(), fixture.roots, fixture.models,
+        model::kNewAdmissionLayout);
+    REQUIRE(plan.status == model::AdmissionStatus::Ready);
+    CHECK(plan.count == 2);
+    CHECK(fixture.scene == before);
+    write(fixture.scene, 0x3378, 1);
+    CHECK(model::planNativeAdmission(fixture.scene.data(), fixture.roots, fixture.models,
+        model::kNewAdmissionLayout).status == model::AdmissionStatus::QueueFull);
+    write(fixture.scene, 0x3378, 0);
+    write(fixture.glider, 0x24A, std::uint8_t{3});
+    CHECK(model::planNativeAdmission(fixture.scene.data(), fixture.roots, fixture.models,
+        model::kNewAdmissionLayout).status == model::AdmissionStatus::InvalidRoster);
 }
 
 TEST_CASE("native admission requires current scene ownership and every recorded unit") {

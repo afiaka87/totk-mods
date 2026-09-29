@@ -144,11 +144,25 @@ public:
         return !failed_ && !activeDirect_ ? nextDirect_ : 0;
     }
 
+    struct SealProbe {
+        unsigned blocker = 0;
+        std::uint64_t priorSubmission = 0, completed = 0;
+    };
+    SealProbe inspectSeal(Address commandBuffer, std::uint64_t commandHandle) {
+        if (failed_) return {1, 0, completed_};
+        const auto* frame = recordingFrame(commandBuffer);
+        if (!frame) return {2, 0, completed_};
+        if (!commandHandle) return {3, 0, completed_};
+        for (const auto& prior : frames_) if (&prior != frame && prior.handle == commandHandle) {
+            if (prior.phase != Phase::Submitted) return {4, prior.submission, completed_};
+        }
+        return {0, 0, completed_};
+    }
     bool sealFrame(Address commandBuffer, std::uint64_t commandHandle) {
         auto* frame = recordingFrame(commandBuffer);
         if (failed_ || !frame || !commandHandle) return fail();
         for (auto& prior : frames_) if (&prior != frame && prior.handle == commandHandle) {
-            if (prior.phase != Phase::Submitted || prior.submission > completed_) return fail();
+            if (prior.phase != Phase::Submitted) return fail();
             prior = {};
         }
         frame->handle = commandHandle;
@@ -169,12 +183,16 @@ public:
     std::uint64_t submittedAndFenced(std::uint64_t commandHandle, Address queue, Address sync,
                                      std::uint64_t directTicket = 0) {
         if (failed_ || !queue || !sync || !commandHandle || nextSubmission_ == UINT64_MAX ||
-            directTicket > nextDirect_ ||
-            (queue_ && (queue_ != queue || sync_ != sync))) { fail(); return 0; }
+            directTicket > nextDirect_ || (queue_ && queue_ != queue)) { fail(); return 0; }
+        SyncReceipt* receipt = nullptr;
+        for (auto& item : syncs_) if (item.sync == sync) receipt = &item;
+        if (!receipt) for (auto& item : syncs_) if (!item.sync) { receipt = &item; break; }
+        if (!receipt) { fail(); return 0; }
         for (auto& frame : frames_) if (frame.handle == commandHandle && frame.phase == Phase::Sealed) {
             queue_ = queue;
-            sync_ = sync;
+            receipt->sync = sync;
             frame.submission = ++nextSubmission_;
+            receipt->submission = frame.submission;
             frame.phase = Phase::Submitted;
             for (unsigned slot = 0; slot < kSlots; ++slot) {
                 const bool directCovered = pendingDirect_[slot] && pendingDirect_[slot] <= directTicket;
@@ -187,7 +205,9 @@ public:
         return 0;
     }
     std::uint64_t captureWait(Address queue, Address sync) const {
-        return !failed_ && queue == queue_ && sync == sync_ ? nextSubmission_ : 0;
+        if (failed_ || queue != queue_) return 0;
+        for (const auto& item : syncs_) if (item.sync == sync) return item.submission;
+        return 0;
     }
     bool completeWait(std::uint64_t ticket, unsigned nativeResult) {
         if (failed_ || !ticket || ticket > nextSubmission_ || nativeResult > 1) return false;
@@ -223,6 +243,7 @@ private:
         std::uint8_t mask = 0;
     };
     struct Recorder { Address commandBuffer = 0, pool = 0; };
+    struct SyncReceipt { Address sync = 0; std::uint64_t submission = 0; };
     struct Frame {
         Address commandBuffer = 0;
         std::uint64_t handle = 0, serial = 0, submission = 0;
@@ -259,7 +280,8 @@ private:
     std::array<std::uint64_t, kSlots> pendingDirect_{};
     std::uint64_t nextDirect_ = 0;
     std::uint32_t activeDirect_ = 0;
-    Address queue_ = 0, sync_ = 0;
+    Address queue_ = 0;
+    std::array<SyncReceipt, 2> syncs_{};
     std::uint64_t nextFrame_ = 0, nextSubmission_ = 0, completed_ = 0;
     bool failed_ = false;
 };
@@ -349,6 +371,9 @@ public:
         bool uploaded(unsigned modelIndex) const {
             return slot_ && modelIndex < slot_->frame.animation.header.modelCount &&
                    slot_->uploaded[modelIndex].load(std::memory_order_acquire);
+        }
+        unsigned preparedState() const {
+            return slot_ ? slot_->prepared[model_].load(std::memory_order_acquire) : 0u;
         }
         void markBounded() const {
             if (slot_) slot_->bounded[model_].store(true, std::memory_order_release);
@@ -678,6 +703,20 @@ inline bool emitterMatrix(const float wrist[12], const float local[12],
         columns[col * 4 + 3] = 0;
     }
     return true;
+}
+
+inline bool effectRowsFromEmitterColumns(const float columns[16], const float origin[3],
+                                        float rows[12]) {
+    double axes = 0;
+    for (unsigned row = 0; row < 3; ++row)
+        for (unsigned column = 0; column < 4; ++column) {
+            const auto value = columns[column * 4 + row] -
+                (column == 3 ? origin[row] : 0.0f);
+            if (!std::isfinite(value)) return false;
+            rows[row * 4 + column] = value;
+            if (column < 3) axes += std::abs(double(value));
+        }
+    return axes >= 1e-5;
 }
 
 struct WristEmitterFrame {

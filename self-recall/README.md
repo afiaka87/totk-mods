@@ -1,4 +1,4 @@
-# Self Recall v1.0.15
+# Self Recall v1.1.0
 
 Recall Link through his recent movement and animation history. Both builds now
 retain 64 seconds. The regular build keeps the whole history in memory for
@@ -30,8 +30,10 @@ The current Glide set controls speed, including upgraded pieces:
 
 ## Requirements and installation
 
-Requires Tears of the Kingdom **1.2.1**, build `9B4E43650501A4D4`, and an
-executable-mod loader compatible with Atmosphere's contents layout.
+Supports Tears of the Kingdom **1.0.0, 1.1.0, 1.1.2, 1.2.0, 1.2.1 and 1.4.0–1.4.3**. Each download covers every
+supported version; Self Recall detects the version at startup and stays inactive on
+any other. Requires an executable-mod loader compatible with Atmosphere's contents
+layout.
 
 1. Close the game.
 2. Choose the regular archive for an emulator or the Switch archive for physical
@@ -50,11 +52,10 @@ The Switch build writes older Recall history to the SD card while you play and
 reads it back during Recall. It creates a `self-recall-alpha` folder at the root of
 the SD card containing:
 
-- `history.bin`, a reused history file of up to 16 MiB;
-- one timing log per game session, `log-<number>.txt`, of up to 8 MiB each. These
-  logs help diagnose slow cards. Each launch deletes the oldest logs until the
-  folder's logs total 16 MiB or less, so they no longer pile up. You can still
-  delete them yourself while the game is closed.
+- `history.bin`, a reused history file of up to 16 MiB.
+
+Earlier versions also wrote timing logs (`log-<number>.txt`) to this folder. v1.1.0
+no longer writes or deletes them; remove any leftover logs while the game is closed.
 
 This feature has been tested on one Switch with one SD card. Slower or nearly full
 cards have not been tested. If older history cannot be read back in time, Recall
@@ -66,7 +67,7 @@ Recording rewrites the same 16 MiB file continuously, roughly 350 MB per hour of
 play. A genuine card from a known brand spreads those writes across its flash and
 should last thousands of hours of play; a counterfeit card may not, and can wear
 out or fail. This is an estimate from how the feature writes, not a measurement of
-any particular card. The logs are small by comparison and are not a concern.
+any particular card.
 
 ## Known issues
 
@@ -78,6 +79,8 @@ any particular card. The logs are small by comparison and are not a concern.
 - The camera can lose Link during fast vertical Recall or enter terrain around
   climbing overhangs.
 - Historical pose markers along the ribbon are not included.
+- Aiming the Phrenic bow during Recall makes Link invisible below the head. Seen on
+  1.4.0 and 1.4.3; other bows were not affected, and other game versions were not checked.
 
 The regular and Switch builds passed their v1.0.10 boot sessions. The Switch build
 also passed with a verified eight-mod RomFS stress overlay. The v1.0.11 weapon-effect
@@ -99,6 +102,21 @@ The v1.0.15 changes passed an Eden session with Wolf Link and Airbender Glider i
 played the full 64 seconds with a top worn and through a glide with the custom glider. The Switch
 build passed a physical-Switch session with all seven of the author's published mods, Wolf Link
 and Airbender Glider installed together: the game loaded, and both Recall cases played in full.
+
+The v1.1.0 version port passed combined sessions with Zonai Survey and Phantom Foothold
+on a physical Switch running each of the nine supported versions, and in Eden on 1.2.1 and
+1.4.0–1.4.3. The final v1.1.0 builds, which remove the diagnostic code used in those sessions,
+passed on a physical Switch running 1.4.3 and in Eden on 1.2.1.
+
+## Changes in v1.1.0
+
+- Supports Tears of the Kingdom 1.0.0, 1.1.0, 1.1.2, 1.2.0, 1.2.1 and 1.4.0–1.4.3 in
+  each download. Earlier releases required 1.2.1. The mod detects the game version at
+  startup and stays inactive on any other version.
+- On 1.4.x, the game no longer closes at launch with the mod installed: the module
+  header now names the SDK version that the 1.4.x game's loader reads.
+- Removes diagnostic logging. The Switch build no longer writes timing logs to the SD
+  card.
 
 ## Changes in v1.0.15
 
@@ -178,13 +196,14 @@ and Airbender Glider installed together: the game loaded, and both Recall cases 
 The public source contains the mod-owned code and host tests under the MIT License.
 Build the regular profile with `SELF_RECALL_STORAGE_PROFILE=emulator-compressed`;
 build Switch with `SELF_RECALL_STORAGE_PROFILE=switch-compressed` and
-`SELF_RECALL_SD_HISTORY=10`.
+`SELF_RECALL_SD_HISTORY=10`. Both use `SELF_RECALL_SYSTEM_RESOURCE_SIZE=0x1000000`.
 
 The public repository is source only and is not a standalone Switch build tree.
-Native builds require Tears of the Kingdom 1.2.1 headers, devkitA64 and exlaunch
-configured for module name `self-recall`, fake heap enabled, no debug logging,
+Native builds require devkitA64 and exlaunch configured for module name `self-recall`, fake heap enabled, no debug logging,
 `HeapSize 0x10000`, `JitSize 0x4000`, `InlinePoolSize 0x1000`, `LogBufferSize 512`,
-an empty relocation table and subsdk slot 8.
+an empty relocation table and subsdk slot 8. The 1.4.x game's module loader reads an
+SDK version pointer at offset 8 of the module header; exlaunch must provide one there
+(this release uses 20.5.6), or the game closes at launch on 1.4.x.
 
 exlaunch, SDK headers, compression libraries and game assets are not included in
 the public source. Host tests use doctest 2.4.11 (MIT), Zstandard 1.5.7 (BSD) and

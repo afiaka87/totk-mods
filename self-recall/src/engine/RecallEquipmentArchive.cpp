@@ -1,8 +1,10 @@
+#include "totk/engine/ReadGuard.hpp"
 #include "RecallRuntimeEngine.hpp"
 #include "RecallModelEngine.hpp"
 #include "RecallEffectsEngine.hpp"
 #include "RecallRender.hpp"
 #include "RecallAppearance.hpp"
+#include "GameProfiles.hpp"
 
 #include <array>
 #include <atomic>
@@ -16,6 +18,31 @@
 
 namespace self_recall::equipment {
 namespace {
+struct ArchiveProfile {
+    std::ptrdiff_t findHeap, createHeap, heapSize, heapAllocate, heapFree;
+    std::ptrdiff_t markMaterialDirty, requestRetirement, gpuPoolSlot, calculateBufferSize;
+    std::ptrdiff_t memoryBufferVtable, initializeBuffer, createRoot, appendResource;
+    std::ptrdiff_t configureViews, configureDrawFlags, bindScene, destroyDependencies;
+    std::size_t gpuBlock;
+    bool directBufferVtable;
+};
+
+constexpr std::array<ArchiveProfile, 9> kArchiveProfiles{{
+    {0x783AC4,0xE9B968,0xD96C28,0xB21D50,0x29B72FC,0x21A35A4,0x13529C8,0x4558700,0x9EEF4C,0x4558630,0xED73B4,0x9ED554,0x9ED230,0x158A724,0x158A770,0xC6338C,0xFAE554,0x210,false},
+    {0x7612B0,0xEBB230,0xDCFDE0,0xB7BC5C,0x2A2F1BC,0x22232B4,0x138DD20,0x4638028,0x9C30A8,0x46317B8,0x100DCF0,0x9C16B8,0x9C1394,0x15C8DCC,0x15C8E18,0xCEA8AC,0x1000FF8,0x210,false},
+    {0x7FD7A8,0xEAA448,0xDA0014,0xB6971C,0x2A2633C,0x22181B0,0x137CAF0,0x4632398,0x99839C,0x462BB28,0xFF6ED4,0x9969A8,0x996684,0x15BED74,0x15BEDC0,0xCDD6BC,0x102F074,0x210,false},
+    {0x721560,0xEA09B4,0xDB3228,0xB42568,0x2A1A16C,0x220E6F4,0x1371410,0x4626740,0x9C22A8,0x461FED8,0xFFE4EC,0x9C08B8,0x9C0594,0x15AB460,0x15AB4AC,0xC3488C,0xFE2048,0x210,false},
+    {0x7FE124,0xE7CF70,0xD8A12C,0xB6E8E4,0x2A294DC,0x2218C1C,0x1376A2C,0x462EF98,0x93F79C,0x462EEC8,0xFE4D0C,0x93DDA8,0x93DA84,0x15B84E0,0x15B852C,0xCC423C,0x1020560,0x210,false},
+    {0x687ABC,0xBCF424,0x3FC014,0x217530,0x79D718,0x27D45EC,0x282DDF8,0x3957040,0x356490,0x38FA8B0,0xC86020,0x7F4720,0x7F4F5C,0x2B18DA4,0x2B18DEC,0x612D34,0xA01188,0x1B8,true},
+    {0x72913C,0xBC65A4,0x3A4930,0xF4E30,0x7BA484,0x27C8CCC,0x28228F8,0x3952020,0x288D30,0x38F58B0,0xC6B2B0,0x823920,0x824160,0x2B121BC,0x2B12204,0x6459CC,0x9D54B8,0x1B8,true},
+    {0x290468,0xBBC774,0x37A860,0x17C350,0x80CA6C,0x27C94AC,0x2823734,0x3954050,0x295F60,0x38F78B0,0xC71F00,0x852A80,0x853274,0x2B120F8,0x2B12140,0x5EC108,0x9E4068,0x1B8,true},
+    {0x6DA6CC,0xBDDBDC,0x2DC0BC,0x43FE0,0x68A6BC,0x27D9EAC,0x2834804,0x3966070,0x1F0344,0x39098B0,0xC591D0,0x7BD310,0x7BDBB0,0x2B24930,0x2B24978,0x585D58,0x993798,0x1B8,true},
+}};
+
+const ArchiveProfile& archiveProfile() {
+    return profiles::row(kArchiveProfiles);
+}
+
 alignas(4096) std::byte g_arena[kArchiveHeapBytes];
 std::atomic<void*> g_heap{nullptr};
 std::uintptr_t g_heapMainBase = 0;
@@ -34,9 +61,24 @@ bool archiveOwns(const void* address) {
     return g_heap.load(std::memory_order_acquire) && p >= start && p - start < sizeof(g_arena);
 }
 
+bool sitesValid(std::uintptr_t mainBase, std::size_t textSize) {
+    const auto& profile = archiveProfile();
+    const bool newer = profiles::newerRenderer();
+    const auto matches = [=](std::ptrdiff_t offset, std::array<std::uint32_t, 3> expected) {
+        if (offset < 0 || static_cast<std::size_t>(offset) + 12 > textSize) return false;
+        const auto* words = reinterpret_cast<const std::uint32_t*>(mainBase + offset);
+        return words[0] == expected[0] && words[1] == expected[1] && words[2] == expected[2];
+    };
+    const std::array<std::uint32_t, 3> newerEntry{0xA9BC7BFD, 0xA9015FF8, 0xA90257F6};
+    const std::array<std::uint32_t, 3> oldHeap{0xD101C3FF, 0xA9017BFD, 0x910043FD};
+    const std::array<std::uint32_t, 3> oldDestroy{0xA9BC7BFD, 0xA9015FF8, 0x910003FD};
+    return matches(profile.findHeap, newer ? newerEntry : oldHeap) &&
+           matches(profile.destroyDependencies, newer ? newerEntry : oldDestroy);
+}
+
 void installHeap(std::uintptr_t mainBase) {
     g_heapMainBase = mainBase;
-    FindArchiveHeapHook::InstallAtOffset(0x007FE124);
+    FindArchiveHeapHook::InstallAtOffset(archiveProfile().findHeap);
 }
 
 void* archiveHeap() {
@@ -44,10 +86,8 @@ void* archiveHeap() {
     if (heap || !g_heapMainBase) return heap;
     const char* name = "SelfRecallEquipment";
     using Create = void* (*)(void*, std::size_t, const char* const*, bool, void*);
-    heap = reinterpret_cast<Create>(g_heapMainBase + 0x00E7CF70)(g_arena, sizeof(g_arena), &name, true, nullptr);
+    heap = reinterpret_cast<Create>(g_heapMainBase + archiveProfile().createHeap)(g_arena, sizeof(g_arena), &name, true, nullptr);
     g_heap.store(heap, std::memory_order_release);
-    Logging.Log("[self-recall] EQUIPMENT_HEAP ready=%u bytes=%llu", unsigned(heap != nullptr),
-                static_cast<unsigned long long>(sizeof(g_arena)));
     return heap;
 }
 
@@ -55,25 +95,24 @@ std::size_t contiguousArchiveBytes() {
     const auto* heap = g_heap.load(std::memory_order_acquire);
     if (!heap) return 0;
     using Size = std::size_t (*)(const void*, int);
-    return reinterpret_cast<Size>(g_heapMainBase + 0x00D8A12C)(heap, 4096);
+    return reinterpret_cast<Size>(g_heapMainBase + archiveProfile().heapSize)(heap, 4096);
 }
 
 void* allocateArchive(std::size_t bytes) {
     auto* heap = archiveHeap();
     if (!heap || !bytes) return nullptr;
     using Allocate = void* (*)(void*, std::size_t, int);
-    return reinterpret_cast<Allocate>(g_heapMainBase + 0x00B6E8E4)(heap, bytes, 8);
+    return reinterpret_cast<Allocate>(g_heapMainBase + archiveProfile().heapAllocate)(heap, bytes, 8);
 }
 
 void freeArchive(void* address) {
     if (!address || !archiveOwns(address)) return;
     using Free = void (*)(void*, void*);
-    reinterpret_cast<Free>(g_heapMainBase + 0x02A294DC)(g_heap.load(std::memory_order_acquire), address);
+    reinterpret_cast<Free>(g_heapMainBase + archiveProfile().heapFree)(g_heap.load(std::memory_order_acquire), address);
 }
 }
 namespace self_recall::equipment {
 using namespace detail;
-using namespace offsets121::equipment_archive;
 namespace {
 std::uintptr_t g_appearanceMainBase = 0;
 pure::CompressedAppearanceBlobs<pure::kAppearanceBlockCount, pure::kAppearanceStateCapacity> g_appearance;
@@ -119,6 +158,7 @@ bool bodyIdentity(model::Identity& identity, AppearanceIO& io) {
 }
 
 template<class T> T readAppearance(const void* p, std::size_t offset) {
+    if (!totk::engine::read_guard::admit(p, offset, sizeof(T))) return T{};
     T value;
     std::memcpy(&value, static_cast<const std::byte*>(p) + offset, sizeof(value));
     return value;
@@ -126,7 +166,8 @@ template<class T> T readAppearance(const void* p, std::size_t offset) {
 enum class Parameters { Copy, Validate, Exchange };
 bool materialParameters(const model::Identity& model, AppearanceIO& io,
                         Parameters mode = Parameters::Copy) {
-    auto* materials = readAppearance<std::byte*>(reinterpret_cast<const void*>(model.unit), 0x180);
+    auto* materials = readAppearance<std::byte*>(reinterpret_cast<const void*>(model.unit),
+                                                  model::g_nativeModelLayout.materialArray);
     if (model.materialCount && !materials) return false;
     for (unsigned i = 0; i < model.materialCount; ++i) {
         auto* material = materials + i * 128;
@@ -149,7 +190,7 @@ bool materialParameters(const model::Identity& model, AppearanceIO& io,
         else if (!io.transfer(parameters, bytes)) return false;
         if (io.loading && bytes && mode != Parameters::Validate) {
             using Dirty = void (*)(void*);
-            reinterpret_cast<Dirty>(g_appearanceMainBase + kMarkMaterialParametersDirty)(material);
+            reinterpret_cast<Dirty>(g_appearanceMainBase + archiveProfile().markMaterialDirty)(material);
         }
     }
     return true;
@@ -243,9 +284,6 @@ bool captureAppearance(Asset& asset, unsigned assetIndex, std::span<const model:
     if (g_appearance.equal(asset.appearance, bytes)) return true;
     const auto snapshot = g_appearance.create(bytes);
     if (!snapshot) return refuseAppearance("appearance_capacity", io.offset, g_appearance.availableBytes());
-    if (!asset.appearance)
-        Logging.Log("[self-recall] EQUIPMENT_APPEARANCE asset=%u bytes=%u properties=%u free=%u",
-            index, io.offset, effects.count, g_appearance.availableBytes());
     g_appearance.release(asset.appearance);
     asset.appearance = snapshot;
     return true;
@@ -293,11 +331,11 @@ unsigned appearanceToken(pure::PoseFrameKey key, unsigned model) {
 
 namespace self_recall::equipment {
 using namespace detail;
-using namespace offsets121::equipment_archive;
 namespace {
 std::array<Asset, kAssetLimit> g_assets;
 std::uintptr_t g_archiveMainBase = 0;
 template<class T> T readArchive(const void* p, std::size_t offset) {
+    if (!totk::engine::read_guard::admit(p, offset, sizeof(T))) return T{};
     T value;
     std::memcpy(&value, static_cast<const std::byte*>(p) + offset, sizeof(value));
     return value;
@@ -316,6 +354,16 @@ bool refuse(const char* reason, std::uint64_t a = 0, std::uint64_t b = 0) {
             reason, static_cast<unsigned long long>(a), static_cast<unsigned long long>(b),
             static_cast<unsigned long long>(count));
     return false;
+}
+std::size_t rejectBudget(unsigned gate, std::uint64_t a = 0, std::uint64_t b = 0,
+                         std::uint64_t c = 0, std::uint64_t d = 0) {
+    static std::atomic<std::uint32_t> seen{0};
+    const auto bit = 1u << gate;
+    if (!(seen.fetch_or(bit, std::memory_order_relaxed) & bit))
+        Logging.Log("[self-recall] ARCHIVE_BUDGET_ZERO gate=%u a=%llu b=%llu c=%llu d=%llu",
+                    gate, static_cast<unsigned long long>(a), static_cast<unsigned long long>(b),
+                    static_cast<unsigned long long>(c), static_cast<unsigned long long>(d));
+    return 0;
 }
 
 Asset* prepareModelDestruction(void* root) {
@@ -349,28 +397,33 @@ void retire(Asset& asset) {
     asset.appearance = 0;
     equipment_effects::retire(static_cast<unsigned>(&asset - g_assets.data()));
     using Request = void (*)(const void*);
-    reinterpret_cast<Request>(g_archiveMainBase + kRequestModelRetirement)(asset.root.load(std::memory_order_acquire));
+    reinterpret_cast<Request>(g_archiveMainBase + archiveProfile().requestRetirement)(asset.root.load(std::memory_order_acquire));
 }
 
 std::size_t cloneBudget(const void* root, std::span<const model::View> source) {
     const auto views = readArchive<std::uint8_t>(root, 0x242);
-    if (!views || views > 8) return 0;
+    if (!views || views > 8) return rejectBudget(1, views, source.size());
     std::size_t total = 600 + source.size() * 72;
     constexpr std::size_t kPerUnitReserve = 256u * 1024u;
-    const auto* poolSlot = readArchive<const void*>(reinterpret_cast<const void*>(g_archiveMainBase), kGpuPoolManagerSlot);
+    const auto* poolSlot = readArchive<const void*>(reinterpret_cast<const void*>(g_archiveMainBase),
+                                                    archiveProfile().gpuPoolSlot);
     const auto* pools = poolSlot ? readArchive<const void*>(poolSlot, 0) : nullptr;
-    if (!pools) return 0;
+    if (!pools) return rejectBudget(2, poolSlot != nullptr);
     const auto minimumPool = readArchive<std::size_t>(pools, 0x38);
-    for (const auto& view : source) {
+    for (unsigned viewIndex = 0; viewIndex < source.size(); ++viewIndex) {
+        const auto& view = source[viewIndex];
         const auto* unit = reinterpret_cast<const void*>(view.identity.unit);
-        const auto* resource = readArchive<const void*>(unit, 0x138);
-        if (!resource) return 0;
+        const auto* resource = readArchive<const void*>(unit, model::g_nativeModelLayout.embeddedModel);
+        if (!resource) return rejectBudget(3, viewIndex, source.size());
         const auto shapes = readArchive<std::uint16_t>(resource, 0x6A);
         const auto materials = readArchive<std::uint16_t>(resource, 0x6C);
-        if (shapes > 512 || materials > pure::kPoseMaterialLimit) return 0;
+        if (shapes > 512 || materials > pure::kPoseMaterialLimit)
+            return rejectBudget(4, viewIndex, shapes, materials, pure::kPoseMaterialLimit);
         const auto* shapeData = readArchive<const std::byte*>(resource, 0x28);
         const auto* materialData = readArchive<const std::byte*>(resource, 0x38);
-        if ((shapes && !shapeData) || (materials && !materialData)) return 0;
+        if ((shapes && !shapeData) || (materials && !materialData))
+            return rejectBudget(5, viewIndex, shapes, materials,
+                                unsigned(shapeData != nullptr) | (unsigned(materialData != nullptr) << 1));
         alignas(8) std::byte argument[360]{};
         writeArchive(argument, 0, resource);
         writeArchive<std::uint32_t>(argument, 0x10, 2);
@@ -385,7 +438,7 @@ std::size_t cloneBudget(const void* root, std::span<const model::View> source) {
         writeArchive(argument, 0x20, meshCount);
         writeArchive<std::uint8_t>(argument, 0x30, 1);
         using Calculate = void (*)(void*);
-        reinterpret_cast<Calculate>(g_archiveMainBase + kCalculateModelBufferSize)(argument);
+        reinterpret_cast<Calculate>(g_archiveMainBase + archiveProfile().calculateBufferSize)(argument);
         const auto baseBytes = readArchive<std::size_t>(argument, 0x38);
         std::size_t textures = 0;
         for (unsigned i = 0; i < materials; ++i)
@@ -393,14 +446,15 @@ std::size_t cloneBudget(const void* root, std::span<const model::View> source) {
         const auto cpu = baseBytes + 40u * shapes + 40u * textures + 40u * materials +
             ((12u * materials * views + 7u) & ~std::size_t{7}) +
             (112u * shapes + 104u) * views + ((20u * materials + 55u) & 0x3FFFF8u) + 72u * views;
-        const auto* block = readArchive<const void*>(unit, 0x210);
+        const auto* block = readArchive<const void*>(unit, archiveProfile().gpuBlock);
         auto gpu = block ? readArchive<std::size_t>(block, 0x30) : 0;
         if (baseBytes > kArchiveHeapBytes || cpu > kArchiveHeapBytes ||
-            gpu > kArchiveHeapBytes / 3 || minimumPool > kArchiveHeapBytes) return 0;
+            gpu > kArchiveHeapBytes / 3 || minimumPool > kArchiveHeapBytes)
+            return rejectBudget(6, baseBytes, cpu, gpu, minimumPool);
         gpu *= 3;
         if (gpu < minimumPool) gpu = minimumPool;
         total += cpu * 2 + gpu + kPerUnitReserve;
-        if (total > kArchiveHeapBytes) return 0;
+        if (total > kArchiveHeapBytes) return rejectBudget(7, viewIndex, total, cpu, gpu);
     }
     return total;
 }
@@ -444,14 +498,17 @@ bool create(Asset& asset, const void* component, const void* root,
     } argument{static_cast<std::uint32_t>(source.size()), readArchive<std::uint8_t>(root, 0x242)};
     static_assert(sizeof(CreateArgument) == 24);
     struct MemBuffer { std::uintptr_t vtable; void* cpu; void* gpu; void* extra; };
-    const auto bufferVtable = readArchive<std::uintptr_t>(reinterpret_cast<const void*>(g_archiveMainBase), kMemoryBufferVtableSlot) + 16;
+    const auto bufferVtable = (archiveProfile().directBufferVtable
+        ? g_archiveMainBase + archiveProfile().memoryBufferVtable
+        : readArchive<std::uintptr_t>(reinterpret_cast<const void*>(g_archiveMainBase),
+                                      archiveProfile().memoryBufferVtable)) + 16;
     MemBuffer buffer{bufferVtable, nullptr, nullptr, nullptr};
     using Initialize = void (*)(void*, void*, void*, void*);
-    const auto initialize = reinterpret_cast<Initialize>(g_archiveMainBase + kInitializeMemoryBuffer);
+    const auto initialize = reinterpret_cast<Initialize>(g_archiveMainBase + archiveProfile().initializeBuffer);
     initialize(&buffer, heap, heap, nullptr);
     const char* name = "SelfRecallEquipment";
     using Create = void* (*)(const char* const*, const void*, void*);
-    auto* copy = reinterpret_cast<Create>(g_archiveMainBase + kCreateModelRoot)(&name, &argument, &buffer);
+    auto* copy = reinterpret_cast<Create>(g_archiveMainBase + archiveProfile().createRoot)(&name, &argument, &buffer);
     if (!copy) {
         releaseResources(asset);
         asset.life.store(Life::Empty, std::memory_order_release);
@@ -472,7 +529,7 @@ bool create(Asset& asset, const void* component, const void* root,
         const auto getName = readArchive<Name>(reinterpret_cast<const void*>(vtable), 0x28);
         const auto* modelName = getName(unit);
         initialize(&buffer, heap, heap, nullptr);
-        const auto* cloned = reinterpret_cast<Push>(g_archiveMainBase + kAppendModelResource)(copy, resources[i], &modelName, &buffer);
+        const auto* cloned = reinterpret_cast<Push>(g_archiveMainBase + archiveProfile().appendResource)(copy, resources[i], &modelName, &buffer);
         model::View view;
         complete = model::describe(g_archiveMainBase, cloned, view) == model::ViewStatus::Ready &&
             view.identity.resource == source[i].identity.resource &&
@@ -484,15 +541,12 @@ bool create(Asset& asset, const void* component, const void* root,
     using Configure = void (*)(const void*, void*);
     using Bind = void (*)(void*, const void*);
     if (complete) {
-        reinterpret_cast<Configure>(g_archiveMainBase + kConfigureModelViews)(playerComponent, copy);
-        reinterpret_cast<Configure>(g_archiveMainBase + kConfigureModelDrawFlags)(playerComponent, copy);
-        reinterpret_cast<Bind>(g_archiveMainBase + kBindModelScene)(copy, readArchive<const void*>(root, 0x60));
+        reinterpret_cast<Configure>(g_archiveMainBase + archiveProfile().configureViews)(playerComponent, copy);
+        reinterpret_cast<Configure>(g_archiveMainBase + archiveProfile().configureDrawFlags)(playerComponent, copy);
+        reinterpret_cast<Bind>(g_archiveMainBase + archiveProfile().bindScene)(copy, readArchive<const void*>(root, 0x60));
     }
     asset.life.store(Life::Ready, std::memory_order_release);
     if (!complete) { retire(asset); return refuse("clone_identity", actorId, source.size()); }
-    Logging.Log("[self-recall] EQUIPMENT_ARCHIVED actor=%u models=%u budget=%llu consumed=%llu",
-        actorId, asset.count, static_cast<unsigned long long>(budget),
-        static_cast<unsigned long long>(available - contiguousArchiveBytes()));
     return true;
 }
 }
@@ -506,7 +560,7 @@ void install(std::uintptr_t mainBase) {
     initializeAppearance(mainBase);
     installHeap(mainBase);
     equipment_effects::install(mainBase);
-    ModelDestroyedHook::InstallAtOffset(kDestroyModelDependencies);
+    ModelDestroyedHook::InstallAtOffset(archiveProfile().destroyDependencies);
 }
 
 bool publishedModel(const void* unit) {
@@ -628,7 +682,7 @@ bool resolve(const pure::RecordedModelIdentity& token, const void* scene,
                 token.materialCount != view.identity.materialCount)
                 return refuse("identity", token.unit, i);
             using Configure = void (*)(const void*, const void*);
-            reinterpret_cast<Configure>(g_archiveMainBase + kConfigureModelViews)(playerComponent, ownedRoot);
+            reinterpret_cast<Configure>(g_archiveMainBase + archiveProfile().configureViews)(playerComponent, ownedRoot);
             root = ownedRoot;
             return true;
         }

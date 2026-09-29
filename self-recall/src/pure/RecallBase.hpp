@@ -13,7 +13,7 @@ inline constexpr unsigned kMiB = 1024u * 1024u;
 
 #if SELF_RECALL_STORAGE_PROFILE == 7
 inline constexpr const char* kStorageProfileName = "switch-compressed";
-// SD alpha pools: measured 10 s and 30 s corpus minimums plus 768 KiB of write backlog.
+// SD history pools: measured 10 s and 30 s corpus minimums plus 768 KiB of write backlog.
 inline constexpr unsigned kPosePayloadArenaBytes = SELF_RECALL_SD_HISTORY == 30 ? 7424u * 1024u
     : SELF_RECALL_SD_HISTORY == 10 ? 3072u * 1024u : 13u * kMiB / 2;
 inline constexpr unsigned kPoseReadBufferCount = 4u;
@@ -309,10 +309,11 @@ struct ControllerPoseOutput {
     float* matrix = nullptr;
     std::array<float*, 4> velocities{};
 
-    bool playerCommit(std::uintptr_t player) const {
+    bool playerCommit(std::uintptr_t player, std::ptrdiff_t velocityOffset = 0x320) const {
         if (!player || !matrix) return false;
         for (unsigned i = 0; i < velocities.size(); ++i)
-            if (reinterpret_cast<std::uintptr_t>(velocities[i]) != player + 0x320u + 12u * i)
+            if (reinterpret_cast<std::uintptr_t>(velocities[i]) !=
+                player + velocityOffset + 12u * i)
                 return false;
         return true;
     }

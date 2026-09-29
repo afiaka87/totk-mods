@@ -555,12 +555,10 @@ public:
         if (spill_) {
             releaseAgedSpill(h.elapsedNanoseconds);
             spill_->advanceTail(oldestSerial_.load(std::memory_order_acquire));
-            spill_->stats().poolBlocksAvailable.store(payload_.availableBlocks(), std::memory_order_relaxed);
         }
         return {PoseRecordStatus::Recorded, key};
     }
 
-    // Highest frames-back index from `from` through `limit` whose payloads can be decoded now.
     SpillProbe spillAvailableThrough(PoseFrameKey anchor, std::uint32_t from, std::uint32_t limit) const {
         SpillProbe probe{from, SpillAvailability::Available};
         if (!spill_) { probe.through = limit; return probe; }
@@ -795,10 +793,7 @@ private:
                 (void)releaseSpillGroup(index, group);
             return true;
         });
-        if (!payload_.canStore(bytes) && spill_->enabled() && writesQueued) {
-            spill_->stats().rejectedWhileWriting.fetch_add(1, std::memory_order_relaxed);
-            return;
-        }
+        if (!payload_.canStore(bytes) && spill_->enabled() && writesQueued) return;
         auto count = count_.load(std::memory_order_relaxed);
         while (!payload_.canStore(bytes) && count > 1) {
             const auto oldest = (head_ + capacity_ - count) % capacity_;

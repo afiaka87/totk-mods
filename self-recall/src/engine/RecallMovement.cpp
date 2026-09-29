@@ -1,4 +1,6 @@
+#include "totk/engine/ReadGuard.hpp"
 #include "RecallRuntimeEngine.hpp"
+#include "GameProfiles.hpp"
 #include "RecallModelEngine.hpp"
 #include "RecallVisual.hpp"
 #include "RecallBase.hpp"
@@ -11,6 +13,7 @@ namespace self_recall::camera {
 namespace {
 template <class T>
 T read(const void* base, std::size_t offset) {
+    if (!totk::engine::read_guard::admit(base, offset, sizeof(T))) return T{};
     T value;
     std::memcpy(&value, static_cast<const std::byte*>(base) + offset, sizeof(value));
     return value;
@@ -70,9 +73,9 @@ HOOK_DEFINE_TRAMPOLINE(FinalTargetHook) {
 };
 }
 void install() {
-    FollowTargetHook::InstallAtOffset(0x00AE59C8);
-    FinalTargetHook::InstallAtOffset(0x00AE675C);
-    ResolveCameraHook::InstallAtOffset(0x00A6DF60);
+    FollowTargetHook::InstallAtOffset(profiles::address(0x00AE59C8));
+    FinalTargetHook::InstallAtOffset(profiles::address(0x00AE675C));
+    ResolveCameraHook::InstallAtOffset(profiles::address(0x00A6DF60));
 }
 }
 
@@ -84,7 +87,7 @@ pure::NativeVehicleState g_native;
 std::uint32_t actorId(const void* actor) { return actor ? read<std::uint32_t>(actor, 0x10) : 0; }
 void* actionActor(void* action) {
     using GetActor = void* (*)(void*);
-    return action ? reinterpret_cast<GetActor>(g_mainBase + 0x00BC7610)(action) : nullptr;
+    return action ? reinterpret_cast<GetActor>(g_mainBase + profiles::address(0x00BC7610))(action) : nullptr;
 }
 void* rider(const void* player) {
     const auto* registry = player ? actor_model::registry(player) : nullptr;
@@ -99,7 +102,7 @@ bool isControlStick(std::uintptr_t base, const void* component) {
     const auto* ridable = registry ? read<const void*>(registry, 0x408) : nullptr;
     if (!ridable) return false;
     using SeatType = unsigned (*)(const void*, unsigned);
-    return reinterpret_cast<SeatType>(base + 0x01370680)(ridable,
+    return reinterpret_cast<SeatType>(base + profiles::address(0x01370680))(ridable,
         read<unsigned>(component, 0x3C)) == 5;
 }
 #define RECALL_VEHICLE_HOOK(Name, Leaving) \
@@ -119,9 +122,9 @@ RECALL_VEHICLE_HOOK(ManipulateLeaveHook, true);
 }
 void install(std::uintptr_t mainBase) {
     g_mainBase = mainBase;
-    ManipulateEnterHook::InstallAtOffset(0x01D6A1CC);
-    ManipulateUpdateHook::InstallAtOffset(0x01D6A280);
-    ManipulateLeaveHook::InstallAtOffset(0x01D6A710);
+    ManipulateEnterHook::InstallAtOffset(profiles::address(0x01D6A1CC));
+    ManipulateUpdateHook::InstallAtOffset(profiles::address(0x01D6A280));
+    ManipulateLeaveHook::InstallAtOffset(profiles::address(0x01D6A710));
 }
 void resetWorld() { g_native.clear(); }
 bool controlStickActive(std::uintptr_t base, const void* player) {
@@ -145,7 +148,7 @@ bool detachControlStick(std::uintptr_t base, void* player) {
     }
     if (read<std::uint32_t>(component, 0x38) == 0) return true;
     using Unride = std::uint64_t (*)(void*, unsigned, bool);
-    const auto result = reinterpret_cast<Unride>(base + 0x008096A8)(component, 1, true);
+    const auto result = reinterpret_cast<Unride>(base + profiles::address(0x008096A8))(component, 1, true);
     const bool detached = read<std::uint32_t>(component, 0x38) == 0;
     if (!detached) {
         static std::atomic<unsigned> failures{0};
@@ -174,7 +177,7 @@ ActorIdentity identify(void* actor) {
 }
 ActorIdentity actionActor(void* action) {
     using GetActor = void* (*)(void*);
-    return g_mainBase && action ? identify(reinterpret_cast<GetActor>(g_mainBase + 0x00BC7610)(action))
+    return g_mainBase && action ? identify(reinterpret_cast<GetActor>(g_mainBase + profiles::address(0x00BC7610))(action))
                                 : ActorIdentity{};
 }
 pure::GliderReleaseContext context(void* actor, std::uint32_t generation,
@@ -186,8 +189,8 @@ void report() {
     const auto outcome = g_release.result();
     if (!outcome.serial || outcome.serial <= g_reported) return;
     g_reported = outcome.serial;
-    Logging.Log("[self-recall] GLIDE_HANDOFF_END serial=%llu reason=%u forced=%u",
-        static_cast<unsigned long long>(outcome.serial), static_cast<unsigned>(outcome.reason), outcome.forcedCalls);
+    if (outcome.reason == pure::GliderReleaseEnd::TimedOut || outcome.reason == pure::GliderReleaseEnd::Unavailable)
+        Logging.Log("[self-recall] GLIDE_HANDOFF_FAILED reason=%u", static_cast<unsigned>(outcome.reason));
 }
 
 #define RECALL_TRAVERSAL_HOOK(Name, Method) \
@@ -219,7 +222,7 @@ HOOK_DEFINE_TRAMPOLINE(GlideEntryPredicateHook) {
         const auto ticket = g_release.forceTicket(identity.actor, identity.id, g_native);
         if (!ticket) return original;
         using CheckIsGet = u64 (*)(std::uint32_t);
-        if (!(reinterpret_cast<CheckIsGet>(g_mainBase + 0x00B60C00)(1274277390u) & 1u)) {
+        if (!(reinterpret_cast<CheckIsGet>(g_mainBase + profiles::address(0x00B60C00))(1274277390u) & 1u)) {
             g_release.cancelTicket(ticket, pure::GliderReleaseEnd::Unavailable);
             return original;
         }
@@ -232,24 +235,22 @@ HOOK_DEFINE_TRAMPOLINE(GlideEntryPredicateHook) {
 
 void install(std::uintptr_t mainBase) {
     g_mainBase = mainBase;
-    FallEnterHook::InstallAtOffset(0x01D61428);
-    FallUpdateHook::InstallAtOffset(0x01D61790);
-    FallLeaveHook::InstallAtOffset(0x01D61988);
-    GlideEnterHook::InstallAtOffset(0x01D6E54C);
-    GlideUpdateHook::InstallAtOffset(0x01D6E810);
-    GlideLeaveHook::InstallAtOffset(0x01D6F2A0);
-    ClimbEnterHook::InstallAtOffset(0x01D565E4);
-    ClimbUpdateHook::InstallAtOffset(0x01D56D50);
-    ClimbLeaveHook::InstallAtOffset(0x01D58970);
-    GlideEntryPredicateHook::InstallAtOffset(0x01722210);
+    FallEnterHook::InstallAtOffset(profiles::address(0x01D61428));
+    FallUpdateHook::InstallAtOffset(profiles::address(0x01D61790));
+    FallLeaveHook::InstallAtOffset(profiles::address(0x01D61988));
+    GlideEnterHook::InstallAtOffset(profiles::address(0x01D6E54C));
+    GlideUpdateHook::InstallAtOffset(profiles::address(0x01D6E810));
+    GlideLeaveHook::InstallAtOffset(profiles::address(0x01D6F2A0));
+    ClimbEnterHook::InstallAtOffset(profiles::address(0x01D565E4));
+    ClimbUpdateHook::InstallAtOffset(profiles::address(0x01D56D50));
+    ClimbLeaveHook::InstallAtOffset(profiles::address(0x01D58970));
+    GlideEntryPredicateHook::InstallAtOffset(profiles::address(0x01722210));
 }
 bool nativeGliding(std::uint32_t actorId) { return g_native.gliding(actorId); }
 bool nativeClimbing(std::uint32_t actorId) { return g_native.climbing(actorId); }
 void request(void* player, std::uint32_t generation, std::uint64_t tick, bool recordedNativeGlide) {
     report();
-    const auto serial = g_release.arm(context(player, generation, tick, true), recordedNativeGlide, g_native);
-    if (serial) Logging.Log("[self-recall] GLIDE_HANDOFF_ARM serial=%llu generation=%u ticks=%u",
-        static_cast<unsigned long long>(serial), generation, static_cast<unsigned>(pure::GliderRelease::kAcquireTicks));
+    (void)g_release.arm(context(player, generation, tick, true), recordedNativeGlide, g_native);
 }
 void service(void* player, std::uint32_t generation, std::uint64_t tick, bool allowed, bool userCancelled) {
     g_release.service(context(player, generation, tick, allowed), userCancelled);
@@ -262,7 +263,11 @@ void resetWorld() { cancel(pure::GliderReleaseEnd::ContextChanged); g_native.cle
 namespace self_recall::native_gameplay {
 namespace {
 using actor_model::read;
-constexpr std::size_t kStaminaCalculator = 0x1388;
+std::size_t staminaCalculatorOffset() {
+    const auto version = profiles::active()->version;
+    if (version == profiles::Version::V100) return 0x1358;
+    return profiles::newerRenderer() ? 0x1390 : 0x1388;
+}
 struct Owner {
     const void* actor = nullptr;
     const void* component = nullptr;
@@ -314,7 +319,7 @@ HOOK_DEFINE_TRAMPOLINE(StaminaUpdateHook) {
     static std::uintptr_t Callback(void* calculator, const StaminaRequest* request) {
         Owner owner;
         if (request && request->rate > 0 && activeOwner(owner) &&
-            calculator == static_cast<const std::byte*>(owner.component) + kStaminaCalculator)
+            calculator == static_cast<const std::byte*>(owner.component) + staminaCalculatorOffset())
             return reinterpret_cast<std::uintptr_t>(calculator);
         return Orig(calculator, request);
     }
@@ -330,7 +335,7 @@ HOOK_DEFINE_TRAMPOLINE(PlayerStaminaHook) {
             game_clock::snapshot(clock) && clock.status == pure::GameTimeStatus::Running &&
             g_lastDrainSerial.exchange(clock.serial) != clock.serial) {
             const StaminaRequest request{pure::kRecallStaminaPerSecond, 0};
-            StaminaUpdateHook::Orig(static_cast<std::byte*>(component) + kStaminaCalculator, &request);
+            StaminaUpdateHook::Orig(static_cast<std::byte*>(component) + staminaCalculatorOffset(), &request);
         }
         return Orig(component);
     }
@@ -351,10 +356,28 @@ HOOK_DEFINE_TRAMPOLINE(FallHeightHook) {
     static void Callback(void* calculator) {
         const auto* actor = read<const void*>(calculator, 8);
         if (!protectedActor(actor)) { Orig(calculator); return; }
-        const float height = read<float>(actor, 0x2B8);
+        const float height = read<float>(actor, totk::engine::layout::kActorPosition + sizeof(float));
         const float zero = 0;
         std::memcpy(static_cast<std::byte*>(calculator) + 0x560, &height, sizeof(height));
         std::memcpy(static_cast<std::byte*>(calculator) + 0x564, &zero, sizeof(zero));
+    }
+};
+
+HOOK_DEFINE_TRAMPOLINE(FallHeightUpdateHook) {
+    static void Callback(void* calculator) {
+        const auto* actor = read<const void*>(calculator, 8);
+        const bool protectedNow = protectedActor(actor);
+        if (protectedNow) {
+            const float height = read<float>(actor, totk::engine::layout::kActorPosition + sizeof(float));
+            const float zero = 0;
+            std::memcpy(static_cast<std::byte*>(calculator) + 0x560, &height, sizeof(height));
+            std::memcpy(static_cast<std::byte*>(calculator) + 0x564, &zero, sizeof(zero));
+        }
+        Orig(calculator);
+        if (protectedNow) {
+            const float zero = 0;
+            std::memcpy(static_cast<std::byte*>(calculator) + 0x564, &zero, sizeof(zero));
+        }
     }
 };
 
@@ -372,8 +395,8 @@ HOOK_DEFINE_TRAMPOLINE(RegisterInternalDamageHook) {
 pure::StaminaStatus stamina(const void* player) {
     const auto* component = playerComponent(player);
     if (!component) return pure::StaminaStatus::Unavailable;
-    return pure::staminaStatus(read<float>(component, kStaminaCalculator + 0x5C),
-                               read<float>(component, kStaminaCalculator + 0x60));
+    return pure::staminaStatus(read<float>(component, staminaCalculatorOffset() + 0x5C),
+                               read<float>(component, staminaCalculatorOffset() + 0x60));
 }
 
 bool begin(const void* player) {
@@ -381,7 +404,7 @@ bool begin(const void* player) {
     const auto* component = playerComponent(player);
     if (!component || !g_owner.publish({player, component,
             read<std::uint32_t>(player, actor_model::kActorId)})) {
-        Logging.Log("[self-recall] RECALL_GAMEPLAY_OWNER_UNAVAILABLE player=%p component=%p", player, component);
+        Logging.Log("[self-recall] RECALL_GAMEPLAY_OWNER_UNAVAILABLE component=%u", unsigned(component != nullptr));
         return false;
     }
     return true;
@@ -400,10 +423,13 @@ void reset() {
 }
 
 void install() {
-    StaminaUpdateHook::InstallAtOffset(0x01623C14);
-    PlayerStaminaHook::InstallAtOffset(0x009E6484);
-    PlayerVelocityHook::InstallAtOffset(0x01621CBC);
-    FallHeightHook::InstallAtOffset(0x009DF480);
-    RegisterInternalDamageHook::InstallAtOffset(0x009E4838);
+    StaminaUpdateHook::InstallAtOffset(profiles::address(0x01623C14));
+    PlayerStaminaHook::InstallAtOffset(profiles::address(0x009E6484));
+    PlayerVelocityHook::InstallAtOffset(profiles::address(0x01621CBC));
+    if (profiles::newerRenderer())
+        FallHeightUpdateHook::InstallAtOffset(profiles::address(0x009DF480));
+    else
+        FallHeightHook::InstallAtOffset(profiles::address(0x009DF480));
+    RegisterInternalDamageHook::InstallAtOffset(profiles::address(0x009E4838));
 }
 }

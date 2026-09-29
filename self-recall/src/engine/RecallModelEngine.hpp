@@ -1,5 +1,7 @@
 #pragma once
 
+#include "totk/engine/ReadGuard.hpp"
+#include <cstddef>
 #include <cstdint>
 #include <span>
 
@@ -7,6 +9,21 @@
 #include "RecallGear.hpp"
 
 namespace self_recall::model {
+
+struct NativeModelLayout {
+    std::size_t embeddedModel = 0x138;
+    std::size_t skeleton = 0x170;
+    std::size_t shapeCount = 0x168;
+    std::size_t materialCount = 0x16A;
+    std::size_t shapeArray = 0x178;
+    std::size_t materialArray = 0x180;
+    std::size_t boneVisibility = 0x140;
+    std::size_t materialVisibility = 0x148;
+    std::size_t renderOrigin = 0x338;
+    std::size_t originFlags = 0x355;
+};
+
+inline NativeModelLayout g_nativeModelLayout{};
 
 struct Identity {
     std::uintptr_t unit = 0;
@@ -112,19 +129,21 @@ private:
 namespace self_recall::model {
 
 enum class CompletedQueueStatus { Ready, MissingBody, MissingQueue, Limit };
+// 1.4.x moved the multi-group list; its +0x58/+0x60 hold other data, which faulted on Switch.
 inline CompletedQueueStatus inspectCompletedQueue(const void* queue, std::span<View> views,
-                                                   unsigned bodyModels) {
+                                                   unsigned bodyModels, bool groupQueue = true) {
     if (!queue || !bodyModels || bodyModels > views.size()) return CompletedQueueStatus::MissingQueue;
     const auto read = []<class T>(const void* p, std::size_t offset) {
+        if (!totk::engine::read_guard::admit(p, offset, sizeof(T))) return T{};
         T value;
         std::memcpy(&value, static_cast<const std::byte*>(p) + offset, sizeof(value));
         return value;
     };
     const auto singlesCount = read.operator()<std::uint32_t>(queue, 0x20);
-    const auto groupsCount = read.operator()<std::uint32_t>(queue, 0x58);
+    const auto groupsCount = groupQueue ? read.operator()<std::uint32_t>(queue, 0x58) : 0u;
     if (singlesCount > 16384 || groupsCount > 16384) return CompletedQueueStatus::Limit;
     const auto* singles = read.operator()<const void* const*>(queue, 0x28);
-    const auto* groups = read.operator()<const void* const*>(queue, 0x60);
+    const auto* groups = groupQueue ? read.operator()<const void* const*>(queue, 0x60) : nullptr;
     if ((!singles && singlesCount) || (!groups && groupsCount)) return CompletedQueueStatus::MissingQueue;
     for (auto& view : views) view.pose.queueAdmission = 0;
     bool bodyPresent = false;
@@ -297,6 +316,7 @@ constexpr std::size_t kActorId = 0x10;
 
 template <class T>
 T read(const void* base, std::size_t offset) {
+    if (!totk::engine::read_guard::admit(base, offset, sizeof(T))) return T{};
     T value;
     std::memcpy(&value, static_cast<const std::uint8_t*>(base) + offset, sizeof(value));
     return value;
@@ -323,6 +343,7 @@ inline pure::Pose actorPose(const void* actor) {
 
 #include <optional>
 #include "RecallRuntimeEngine.hpp"
+#include "GameProfiles.hpp"
 
 namespace self_recall::pose_recorder::detail {
 using namespace actor_model;
@@ -507,10 +528,12 @@ public:
         }
         if (requireParent) {
             const auto* components = registry(actor);
-            const auto* controller = components ? read<const void*>(components, kModelController) : nullptr;
             using ParentLink = const void* (*)(const void*);
-            const auto* parentLink = controller
-                ? reinterpret_cast<ParentLink>(mainBase_ + kModelControllerGetParent)(controller) : nullptr;
+            const auto getter = profiles::address(kModelControllerGetParent);
+            const auto* controller = getter && components
+                ? read<const void*>(components, kModelController) : nullptr;
+            const auto* parentLink = controller && getter
+                ? reinterpret_cast<ParentLink>(mainBase_ + getter)(controller) : nullptr;
             const auto matchesParent = [&](const void* candidate) {
                 if (!candidate) return false;
                 model::ScopedActorReference parent(mainBase_, candidate);
@@ -549,7 +572,7 @@ public:
 
     bool belongsToQueue(const frame::CompletedModelPhase& phase) {
         const auto inspected = model::inspectCompletedQueue(phase.queue,
-            {views.data(), modelCount}, bodyModels);
+            {views.data(), modelCount}, bodyModels, !profiles::newerRenderer());
         error = inspected == model::CompletedQueueStatus::Limit
             ? Rejection::QueueLimit : Rejection::MissingQueue;
         return inspected == model::CompletedQueueStatus::Ready;
@@ -652,8 +675,19 @@ struct NativeAdmissionPlan {
     unsigned count = 0;
 };
 
+struct AdmissionLayout {
+    std::size_t queueFlags;
+    std::size_t queueBase;
+    std::size_t rootLane;
+    unsigned laneCount;
+};
+
+inline constexpr AdmissionLayout kLegacyAdmissionLayout{0x42A8, 0x42C0, 0, 2};
+inline constexpr AdmissionLayout kNewAdmissionLayout{0x3340, 0x3358, 0x24A, 3};
+
 inline NativeAdmissionPlan planNativeAdmission(const void* scene, std::span<const void* const> roots,
-        std::span<const pure::RecordedModelPose> models) {
+        std::span<const pure::RecordedModelPose> models,
+        AdmissionLayout layout = kLegacyAdmissionLayout) {
     NativeAdmissionPlan plan;
     if (!scene || roots.empty() || roots.size() > NativeAdmissionPlan::kRootLimit ||
         models.empty() || models.size() > pure::kPoseModelLimit) return plan;
@@ -661,10 +695,10 @@ inline NativeAdmissionPlan planNativeAdmission(const void* scene, std::span<cons
         std::memcpy(&out, static_cast<const std::byte*>(p) + offset, sizeof(out));
     };
     std::uint8_t queueFlags;
-    read(scene, 0x42A8, queueFlags);
+    read(scene, layout.queueFlags, queueFlags);
     if (!(queueFlags & 1u)) { plan.status = AdmissionStatus::ClosedQueue; return plan; }
     std::array<bool, pure::kPoseModelLimit> found{};
-    unsigned required[2]{};
+    std::array<unsigned, 3> required{};
     for (unsigned r = 0; r < roots.size(); ++r) {
         const auto* root = roots[r];
         if (!root) return plan;
@@ -701,16 +735,19 @@ inline NativeAdmissionPlan planNativeAdmission(const void* scene, std::span<cons
             return plan;
         }
         if (!(state & 2u)) {
+            std::uint8_t lane = count != 1;
+            if (layout.rootLane) read(root, layout.rootLane, lane);
+            if (lane >= layout.laneCount || lane >= required.size()) return plan;
             plan.request[plan.count++] = root;
-            ++required[count != 1];
+            ++required[lane];
         }
     }
     for (unsigned m = 0; m < models.size(); ++m)
         if (!found[m]) { plan.status = AdmissionStatus::MissingUnit; return plan; }
-    for (unsigned lane = 0; lane < 2; ++lane) {
+    for (unsigned lane = 0; lane < layout.laneCount; ++lane) {
         int used, capacity;
-        read(scene, 0x42C0 + lane * 0x10, used);
-        read(scene, 0x42C4 + lane * 0x10, capacity);
+        read(scene, layout.queueBase + lane * 0x10, used);
+        read(scene, layout.queueBase + lane * 0x10 + 4, capacity);
         if (used < 0 || capacity < used || required[lane] > static_cast<unsigned>(capacity - used)) {
             plan.status = AdmissionStatus::QueueFull;
             return plan;
@@ -958,7 +995,7 @@ struct NativeRenderInput {
         const auto* originalSkeleton = reinterpret_cast<const std::byte*>(a.skeleton);
         const std::byte* metadata;
         std::memcpy(&metadata, originalSkeleton + 0x10, sizeof(metadata));
-        if (!metadata) return RenderInputStatus::MissingBoneMetadata;
+        if (!metadata || !totk::engine::read_guard::admit(metadata, 0, std::size_t{a.boneCount} * 0x58)) return RenderInputStatus::MissingBoneMetadata;
         for (unsigned i = 0; i < a.boneCount; ++i) {
             std::uint32_t flags;
             std::memcpy(&flags, metadata + i * 0x58 + 0x2C, sizeof(flags));
@@ -967,18 +1004,19 @@ struct NativeRenderInput {
         const auto* unit = reinterpret_cast<const std::byte*>(a.unit);
         std::uint16_t shapeCount;
         const std::byte* shapes;
-        std::memcpy(&shapeCount, unit + 0x168, sizeof(shapeCount));
-        std::memcpy(&shapes, unit + 0x178, sizeof(shapes));
-        if (shapeCount && !shapes) return RenderInputStatus::MissingShapeMetadata;
+        std::memcpy(&shapeCount, unit + g_nativeModelLayout.shapeCount, sizeof(shapeCount));
+        std::memcpy(&shapes, unit + g_nativeModelLayout.shapeArray, sizeof(shapes));
+        if (shapeCount && (!shapes || !totk::engine::read_guard::admit(shapes, 0, std::size_t{shapeCount} * 0x70)))
+            return RenderInputStatus::MissingShapeMetadata;
         for (unsigned i = 0; i < shapeCount; ++i) {
             const std::byte* resource;
             std::memcpy(&resource, shapes + i * 0x70, sizeof(resource));
-            if (!resource) return RenderInputStatus::MissingShapeMetadata;
+            if (!resource || !totk::engine::read_guard::admit(resource, 0x5C, 1)) return RenderInputStatus::MissingShapeMetadata;
             if (resource[0x5C] != std::byte{0}) return RenderInputStatus::RequiresShapeAnimation;
         }
         std::memcpy(skeleton, originalSkeleton, sizeof(skeleton));
         std::memcpy(skeleton + 0x20, &bones, sizeof(bones));
-        std::memcpy(model, unit + 0x138, sizeof(model));
+        std::memcpy(model, unit + g_nativeModelLayout.embeddedModel, sizeof(model));
         const void* privateSkeleton = skeleton;
         std::memcpy(model + 0x38, &privateSkeleton, sizeof(privateSkeleton));
         return RenderInputStatus::Ready;
@@ -994,15 +1032,17 @@ struct NativeBoundingInput {
     void prepare(const void* liveUnit, const NativeRenderInput& animation) {
         std::memcpy(unit, liveUnit, sizeof(unit));
         const void* skeleton = animation.skeleton;
-        std::memcpy(unit + 0x170, &skeleton, sizeof(skeleton));
+        std::memcpy(unit + g_nativeModelLayout.skeleton, &skeleton, sizeof(skeleton));
     }
 
     void prepareHistorical(const void* liveUnit, const NativeRenderInput& animation,
                            const pure::RecordedModelPose& historical) {
         prepare(liveUnit, animation);
-        std::memcpy(unit + 0x338, historical.renderOrigin, sizeof(historical.renderOrigin));
-        const auto flags = std::to_integer<unsigned>(unit[0x355]);
-        unit[0x355] = static_cast<std::byte>((flags & ~1u) | historical.originRelative);
+        std::memcpy(unit + g_nativeModelLayout.renderOrigin, historical.renderOrigin,
+                    sizeof(historical.renderOrigin));
+        const auto flags = std::to_integer<unsigned>(unit[g_nativeModelLayout.originFlags]);
+        unit[g_nativeModelLayout.originFlags] =
+            static_cast<std::byte>((flags & ~1u) | historical.originRelative);
     }
 };
 
@@ -1023,7 +1063,7 @@ inline pure::AnimationVisibility nativeShapeVisibility(const void* nativeUnit, u
         std::memcpy(&out, static_cast<const std::byte*>(base) + offset, sizeof(T));
     };
     const void* skeleton;
-    read(nativeUnit, 0x170, skeleton);
+    read(nativeUnit, g_nativeModelLayout.skeleton, skeleton);
     if (!skeleton || expected.skeleton != reinterpret_cast<std::uintptr_t>(skeleton))
         return pure::AnimationVisibility::Invalid;
     const void* resource;
@@ -1032,12 +1072,12 @@ inline pure::AnimationVisibility nativeShapeVisibility(const void* nativeUnit, u
         return pure::AnimationVisibility::Invalid;
     std::uint16_t bones, materials, shapes;
     read(resource, 0x38, bones);
-    read(nativeUnit, 0x16A, materials);
-    read(nativeUnit, 0x168, shapes);
+    read(nativeUnit, g_nativeModelLayout.materialCount, materials);
+    read(nativeUnit, g_nativeModelLayout.shapeCount, shapes);
     if (bones != expected.boneCount || materials != expected.materialCount || shapeIndex >= shapes)
         return pure::AnimationVisibility::Invalid;
     const std::byte* shapeArray;
-    read(nativeUnit, 0x178, shapeArray);
+    read(nativeUnit, g_nativeModelLayout.shapeArray, shapeArray);
     if (!shapeArray) return pure::AnimationVisibility::Invalid;
     const void* shape;
     read(shapeArray, shapeIndex * 0x70, shape);
@@ -1055,7 +1095,8 @@ inline pure::AnimationVisibility nativeModelVisibility(const void* unit,
         frame.models[modelIndex].identity.unit != reinterpret_cast<std::uintptr_t>(unit))
         return pure::AnimationVisibility::Invalid;
     std::uint16_t shapes;
-    std::memcpy(&shapes, static_cast<const std::byte*>(unit) + 0x168, sizeof(shapes));
+    std::memcpy(&shapes, static_cast<const std::byte*>(unit) + g_nativeModelLayout.shapeCount,
+                sizeof(shapes));
     bool visible = false;
     for (unsigned i = 0; i < shapes; ++i) {
         const auto shape = nativeShapeVisibility(unit, i, frame, modelIndex);
@@ -1080,6 +1121,7 @@ struct Control {
 };
 
 void install(std::uintptr_t mainBase);
+bool sitesValid(std::uintptr_t mainBase, std::size_t textSize);
 void publishControl(const Control& control);
 bool prepareCurrentEquipment(pure::RecordedPoseFrame& frame,
                              const pure::RecordedPoseFrame& recorded, std::uint64_t& report);
@@ -1092,14 +1134,13 @@ bool presentationPose(void* actor, pure::Pose& out);
 bool trySuspend();
 bool clearPending();
 void resume(bool clearHistory);
-void logDiagnostics();
 
 }
 
 namespace self_recall::pose_render {
-std::uint64_t clothingReport();
 bool copyBone(const void* unit, unsigned bone, float out[12]);
 
+bool sitesValid(std::uintptr_t mainBase, std::size_t textSize);
 void install(std::uintptr_t mainBase);
 void beginFrame(std::uint64_t epoch);
 std::uint32_t latchedGeneration(std::uint64_t epoch);
@@ -1114,7 +1155,7 @@ void suppressEquipment(std::uint64_t epoch, std::span<const model::View> live);
 void admitModels(void* scene, std::uint64_t epoch, std::span<const model::View> current,
                  std::span<const void* const> roots);
 void verifyComplete(std::uint64_t epoch, const pure::RecordedPoseFrame& recorded,
-             std::span<const model::View> current);
+                    std::span<const model::View> current);
 void collectorFailed(unsigned reason, unsigned detail);
 void begin();
 bool ready(std::uint32_t generation);
@@ -1163,12 +1204,10 @@ namespace self_recall::sd_history {
 std::uint64_t nowNanoseconds();
 pure::PoseSpill* spill();
 void start();
-void event(const char* name, std::uint64_t a = 0, std::uint64_t b = 0);
 void playback(bool active, std::uint32_t generation, std::uint64_t serial);
 #else
 inline pure::PoseSpill* spill() { return nullptr; }
 inline void start() {}
-inline void event(const char*, std::uint64_t = 0, std::uint64_t = 0) {}
 inline void playback(bool, std::uint32_t, std::uint64_t) {}
 #endif
 

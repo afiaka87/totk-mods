@@ -1,4 +1,6 @@
+#include "totk/engine/ReadGuard.hpp"
 #include "RecallRuntimeEngine.hpp"
+#include "GameProfiles.hpp"
 #include "RecallModelEngine.hpp"
 
 #include <lib.hpp>
@@ -29,7 +31,6 @@ constexpr std::ptrdiff_t kFlags = 0x294;
 constexpr std::uint32_t kClimbEngaged = 0x08;
 }
 
-constexpr std::ptrdiff_t kUiPlayerState = 1692;
 
 PlayerBridgeState g_state{};
 
@@ -157,7 +158,8 @@ bool readOutfit(const pure::OutfitSpeedProfile& profile, pure::OutfitSnapshot& o
     for (unsigned slot = 0; slot < 3; ++slot) before[slot] = linkId(slot);
     pure::OutfitSnapshot next{};
     using CheckSeries = std::uint64_t (*)(std::uintptr_t, unsigned, const char* const*);
-    const auto check = reinterpret_cast<CheckSeries>(g_state.mainBase + off::kCheckArmorSeries);
+    const auto check = reinterpret_cast<CheckSeries>(
+        g_state.mainBase + profiles::address(off::kCheckArmorSeries));
     for (unsigned slot = 0; slot < 3; ++slot) {
         const char* series = profile.seriesBySlot[slot];
         if (series && (check(equipment, slot, &series) & 1)) {
@@ -208,7 +210,7 @@ bool clearLinearVelocity() {
     const float zero[3] = {0.0f, 0.0f, 0.0f};
     const auto setVelocity =
         reinterpret_cast<void (*)(std::uintptr_t, const float*, bool)>(
-            g_state.mainBase + off::kPlayerSetLinearVelocity);
+            g_state.mainBase + profiles::address(off::kPlayerSetLinearVelocity));
     setVelocity(playerComponent, zero, false);
     return true;
 }
@@ -230,13 +232,16 @@ bool nativeClimbing() {
 }
 
 bool readUiPlayerState(std::uint32_t& out) {
-    const auto holder = totk::engine::readMemory<std::uintptr_t>(
-        g_state.mainBase + off::kGameUIModuleIndirect);
-    const auto module = totk::engine::isPlausibleAddress(holder)
-                            ? totk::engine::readMemory<std::uintptr_t>(holder)
-                            : 0;
+    const auto first = totk::engine::readMemory<std::uintptr_t>(
+        g_state.mainBase + profiles::address(off::kGameUIModuleIndirect));
+    const auto module = profiles::newerRenderer() ? first :
+        totk::engine::isPlausibleAddress(first)
+            ? totk::engine::readMemory<std::uintptr_t>(first) : 0;
     if (!totk::engine::isPlausibleAddress(module)) return false;
-    out = totk::engine::readMemory<std::uint32_t>(module + kUiPlayerState);
+    const auto version = profiles::active()->version;
+    const auto field = version == profiles::Version::V100 ? 0x6B8 :
+        (profiles::newerRenderer() ? 0x6E4 : 0x69C);
+    out = totk::engine::readMemory<std::uint32_t>(module + field);
     return true;
 }
 
@@ -262,26 +267,23 @@ totk::engine::NpadFrame read(void* device) { return g_reader.read(device); }
 namespace self_recall::game_clock {
 namespace {
 
-constexpr std::uintptr_t kPhysicsUpdateDeltaFrame = 0x007EDC00;
-constexpr std::uintptr_t kPhysicsSystemIndirect = 0x0462E038;
 std::uintptr_t g_mainBase = 0;
+std::ptrdiff_t g_physicsVariable = 0;
 pure::GameTime g_time;
 pure::FrameMailbox<pure::GameTimeSnapshot> g_published;
 std::uint64_t g_faults = 0;
 
 template <class T>
 T read(const void* base, std::size_t offset = 0) {
+    if (!totk::engine::read_guard::admit(base, offset, sizeof(T))) return T{};
     T value;
     std::memcpy(&value, static_cast<const std::uint8_t*>(base) + offset, sizeof(value));
     return value;
 }
 
-HOOK_DEFINE_TRAMPOLINE(PhysicsFrameTimeHook) {
-    static void Callback(void* module, const void* pauseContext, float frameScale) {
-        Orig(module, pauseContext, frameScale);
-        const auto* holder = read<const void*>(reinterpret_cast<const void*>(
-            g_mainBase + kPhysicsSystemIndirect));
-        const auto* system = holder ? read<const void*>(holder) : nullptr;
+void publishFrame(float frameScale) {
+        const auto* system = read<const void*>(reinterpret_cast<const void*>(
+            g_mainBase + g_physicsVariable));
         const auto* timeState = system ? read<const void*>(system, 0xC8) : nullptr;
         const bool paused = timeState && (read<std::uint32_t>(timeState, 0x18) & 1u);
         const auto value = g_time.update(frameScale, paused, timeState != nullptr);
@@ -295,6 +297,19 @@ HOOK_DEFINE_TRAMPOLINE(PhysicsFrameTimeHook) {
                             static_cast<unsigned>(value.status), static_cast<unsigned>(published),
                             static_cast<double>(frameScale), static_cast<unsigned long long>(g_faults));
         }
+}
+
+HOOK_DEFINE_TRAMPOLINE(PhysicsFrameTimeHook) {
+    static void Callback(void* module, const void* pauseContext, float frameScale) {
+        Orig(module, pauseContext, frameScale);
+        publishFrame(frameScale);
+    }
+};
+
+HOOK_DEFINE_TRAMPOLINE(FrameRateHook) {
+    static void Callback(void* rate, float frames) {
+        Orig(rate, frames);
+        publishFrame(read<float>(rate, 0x10));
     }
 };
 
@@ -302,7 +317,13 @@ HOOK_DEFINE_TRAMPOLINE(PhysicsFrameTimeHook) {
 
 void install(std::uintptr_t mainBase) {
     g_mainBase = mainBase;
-    PhysicsFrameTimeHook::InstallAtOffset(kPhysicsUpdateDeltaFrame);
+    const auto* game = profiles::active();
+    if (!game) return;
+    g_physicsVariable = game->physicsVariable;
+    if (game->frameRate.offset)
+        FrameRateHook::InstallAtOffset(game->frameRate.offset);
+    else
+        PhysicsFrameTimeHook::InstallAtOffset(profiles::address(0x007EDC00));
 }
 
 bool snapshot(pure::GameTimeSnapshot& out) { return g_published.snapshot(out); }

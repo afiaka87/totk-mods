@@ -558,6 +558,40 @@ TEST_CASE("native shape lookup uses recorded visibility and verifies current ske
     CHECK(nativeModelVisibility(unit.data(), *frame, 0) == AnimationVisibility::Invalid);
 }
 
+TEST_CASE("new renderer model visibility reads its profiled shape count") {
+    using namespace self_recall::model;
+    struct RestoreLayout {
+        NativeModelLayout saved;
+        ~RestoreLayout() { g_nativeModelLayout = saved; }
+    } restore{g_nativeModelLayout};
+    g_nativeModelLayout = {0xD8, 0x110, 0x108, 0x10A, 0x118, 0x120,
+                           0xE0, 0xE8, 0x2E0, 0x2FD};
+    std::array<std::byte, 0x170> unit{};
+    std::array<std::byte, 0x40> skeleton{}, resource{};
+    std::array<std::byte, 0x70> shapes{};
+    std::array<std::byte, 0x60> shape{};
+    const auto write = []<class T>(auto& destination, unsigned offset, T value) {
+        std::memcpy(destination.data() + offset, &value, sizeof(value));
+    };
+    write(unit, 0x110, skeleton.data());
+    write(unit, 0x118, shapes.data());
+    write(unit, 0x108, std::uint16_t{1});
+    write(unit, 0x10A, std::uint16_t{1});
+    write(unit, 0x168, std::uint16_t{0xFFFF});
+    write(skeleton, 0, resource.data());
+    write(resource, 0x38, std::uint16_t{1});
+    write(shapes, 0, shape.data());
+    auto frame = std::make_unique<self_recall::pure::RecordedPoseFrame>();
+    frame->header.modelCount = frame->header.boneCount = frame->header.materialCount = 1;
+    frame->models[0].identity = {reinterpret_cast<std::uintptr_t>(unit.data()),
+        reinterpret_cast<std::uintptr_t>(skeleton.data()),
+        reinterpret_cast<std::uintptr_t>(resource.data()), 0, 1, 0, 1};
+    frame->models[0].queueAdmission = 1;
+    frame->visible.bones[0] = frame->visible.materials[0] = 1;
+    CHECK(nativeModelVisibility(unit.data(), *frame, 0) ==
+          self_recall::pure::AnimationVisibility::Visible);
+}
+
 TEST_CASE("animation preparation cannot certify a GPU upload and completion expires each epoch") {
     auto frame = std::make_unique<RecordedPoseFrame>();
     auto store = std::make_unique<RenderFrameStore>();
@@ -618,6 +652,13 @@ TEST_CASE("native effect-local transform survives late wrist translation rotatio
     REQUIRE(emitterMatrix(current, local, origin, columns));
     const float expected[16]{0,-1,0,0, 1,0,0,0, 0,0,0.5f,0, 209.95f,-79.8f,50.4f,0};
     for (unsigned i = 0; i < 16; ++i) CHECK(columns[i] == doctest::Approx(expected[i]).epsilon(0.0001));
+    float initialColumns[16], restoredEffect[12];
+    REQUIRE(emitterMatrix(wrist, local, origin, initialColumns));
+    REQUIRE(effectRowsFromEmitterColumns(initialColumns, origin, restoredEffect));
+    for (unsigned i = 0; i < 12; ++i)
+        CHECK(restoredEffect[i] == doctest::Approx(effect[i]).epsilon(0.0001));
+    initialColumns[0] = std::numeric_limits<float>::infinity();
+    CHECK_FALSE(effectRowsFromEmitterColumns(initialColumns, origin, restoredEffect));
     float singular[12]{};
     CHECK_FALSE(relativeEffectMatrix(singular, effect, local));
     singular[0] = std::numeric_limits<float>::infinity();

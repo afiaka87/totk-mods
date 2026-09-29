@@ -1,4 +1,6 @@
+#include "totk/engine/ReadGuard.hpp"
 #include "RecallRuntimeEngine.hpp"
+#include "GameProfiles.hpp"
 #include "RecallEffectsEngine.hpp"
 #include "RecallModelEngine.hpp"
 #include "RecallRender.hpp"
@@ -8,16 +10,74 @@
 #include <optional>
 #include <lib.hpp>
 
+namespace self_recall::equipment_effects {
+namespace {
+struct EffectProfile {
+    std::uintptr_t getXLinkComponent, actorGetModel, isEventHandleValid;
+    std::uintptr_t eventPoolBasesSlot, eventPoolStridesSlot;
+    std::uintptr_t bindIndirectProperty, isLoopingExecutor, preActorUserVtable;
+    std::uintptr_t createUser, calculateEffect, destroyExecutor;
+    std::uintptr_t constructPreActorUser, initializePreActorUser, resetPreActorUser;
+    std::uintptr_t effectExecutorVtable, setBoneMatrix, finalizePreActorUser;
+    std::uintptr_t destroyPreActorUser, killEvent, emitEvent, requestUserCalculation;
+};
+
+constexpr EffectProfile kProfiles[] = {
+    {0x1203CEC, 0xAF74D8, 0xCB9B78, 0x4558A98, 0x4558AA0,
+      0xD92B28, 0x22172BC, 0x45387B8, 0xD93250, 0x72F34C, 0x29EC884,
+      0x15BD77C, 0xCFED6C, 0xCFE904, 0x44F7C28, 0x2221254,
+      0x87BD20, 0x243E7D4, 0xB5C2F8, 0xCB99A4, 0xE8217C},
+    {0x10F0D34, 0xB6D154, 0xD1B63C, 0x4631B80, 0x4631B88,
+      0xDB6244, 0x2298BB8, 0x46116D8, 0xDB694C, 0x7AB068, 0x2A64EC4,
+      0x1600870, 0xD6BE74, 0xD6BA08, 0x45D0518, 0x22A2D5C,
+      0x8A4430, 0x24C491C, 0xBB332C, 0xD1B3A4, 0xEC445C},
+    {0x10E7F14, 0xB5FAD4, 0xD8A388, 0x462BEE8, 0x462BEF0,
+      0xD90DAC, 0x22902A0, 0x460BA48, 0xD914B4, 0x7B0B80, 0x2A5C044,
+      0x15F7780, 0xD4AD44, 0xD4A8D8, 0x45CA888, 0x229A79C,
+      0x8B368C, 0x24BC088, 0xB90BD4, 0xD8A284, 0xEB21C8},
+    {0xF615F8, 0xB98068, 0xDAE878, 0x46202B8, 0x46202C0,
+      0xDA20E8, 0x2286C90, 0x45FFDF8, 0xDA27F0, 0x78713C, 0x2A4FE04,
+      0x15E4514, 0xD3DE74, 0xD3DA08, 0x45BEC38, 0x22902FC,
+      0x8802B8, 0x24AF37C, 0x8AFBC0, 0xDAE774, 0xEEA0F0},
+    {0x1066DA0, 0xBADE58, 0xD17C80, 0x462F290, 0x462F298,
+      0xD76F94, 0x2290B00, 0x460EDE0, 0xD7769C, 0x7C7104, 0x2A5F1E4,
+      0x15F154C, 0xD1C7F4, 0xD1C388, 0x45CDC38, 0x229A2FC,
+      0x8CB400, 0x24BEEEC, 0xBBCCAC, 0xD179E8, 0xEA4958},
+    {0x2AE9458, 0xB93318, 0xD38D4, 0x3950388, 0x3950390,
+      0x2651D4, 0x28D1BC4, 0x3947CA0, 0x264520, 0x3A676C, 0x28D3824,
+      0x2B6CDA8, 0x35C708, 0x2B6CFB0, 0x3908A90, 0x28E09AC,
+      0x2B6CE44, 0x2B6CDF8, 0xCA03D8, 0xA9636C, 0x44F604},
+    {0x2AE2B78, 0xB8DE58, 0x54564C, 0x394B388, 0x394B390,
+      0x2961E4, 0x28C9924, 0x3942CA0, 0x295520, 0x36B708, 0x28CB584,
+      0x2B67A58, 0x869A80, 0x2B67C60, 0x3903A90, 0x28D8A30,
+      0x2B67AF4, 0x2B67AA8, 0xC8B170, 0xA89848, 0x3519D4},
+    {0x2AE313C, 0xB89A90, 0x55F048, 0x394D388, 0x394D390,
+      0x2596E4, 0x28C96C0, 0x3944CA0, 0x258A30, 0x1CB280, 0x28CB320,
+      0x2B683C8, 0x29C2B8, 0x2B685D0, 0x3905A90, 0x28D8890,
+      0x2B68464, 0x2B68418, 0xC985E8, 0xAC1D50, 0x369230},
+    {0x2AF5338, 0xBA8854, 0x481918, 0x395F388, 0x395F390,
+      0x36E224, 0x28D9B68, 0x3956CA0, 0x36DCF0, 0x395500, 0x28DB7C8,
+      0x2B7BBE8, 0x889858, 0x2B7BDF0, 0x3917A90, 0x28E8BC8,
+      0x2B7BC84, 0x2B7BC38, 0xC89FB4, 0xA98CF8, 0x340AD8},
+};
+
+const EffectProfile* g_profile = nullptr;
+void selectProfile() {
+    g_profile = &profiles::row(kProfiles);
+}
+}
+}
+
 #if SELF_RECALL_STORAGE_PROFILE == 8
 
 namespace self_recall::equipment_effects {
-using namespace offsets121::equipment_effects;
 namespace {
 constexpr unsigned kAssets = 64, kMasks = 256;
 using detail::kProperties;
 using detail::copySchema;
 std::uintptr_t g_main = 0;
 template<class T> T read(const void* p, std::size_t offset) {
+    if (!totk::engine::read_guard::admit(p, offset, sizeof(T))) return T{};
     T v; std::memcpy(&v, static_cast<const std::byte*>(p) + offset, sizeof(v)); return v;
 }
 template<class T> void write(void* p, std::size_t offset, T v) {
@@ -64,16 +124,16 @@ bool refuse(const char* why, unsigned value = 0) {
 }
 const void* elink(const void* actor) {
     if (!actor) return nullptr;
-    const auto* component = native<const void* (*)(const void*)>(kGetXLinkComponent)(actor);
+    const auto* component = native<const void* (*)(const void*)>(g_profile->getXLinkComponent)(actor);
     return component ? read<const void*>(component, 0x70) : nullptr;
 }
 bool valid(const pure::CompactEffectHandle& handle) {
     return handle.type == 0 && handle.poolIndex >= 0 &&
-        native<bool (*)(const void*)>(kIsEventHandleValid)(&handle);
+        native<bool (*)(const void*)>(g_profile->isEventHandleValid)(&handle);
 }
 pure::CompactEffectHandle handleOf(const void* event) {
-    const auto* bases = read<const std::uintptr_t*>(reinterpret_cast<const void*>(g_main), kEventPoolBasesSlot);
-    const auto* strides = read<const std::uintptr_t*>(reinterpret_cast<const void*>(g_main), kEventPoolStridesSlot);
+    const auto* bases = read<const std::uintptr_t*>(reinterpret_cast<const void*>(g_main), g_profile->eventPoolBasesSlot);
+    const auto* strides = read<const std::uintptr_t*>(reinterpret_cast<const void*>(g_main), g_profile->eventPoolStridesSlot);
     if (!event || !bases || !strides || !strides[0]) return {};
     const auto address = reinterpret_cast<std::uintptr_t>(event);
     if (address < bases[0] || (address - bases[0]) % strides[0]) return {};
@@ -161,7 +221,7 @@ bool snapshotValues(Asset& a, const void* source) {
             if (index >= indirectCount || !pointers) return false;
             const auto* input = pointers[index];
             a.values[i] = input ? (type == 3 ? read<std::uint8_t>(input, 0) : read<std::uint32_t>(input, 0)) : 0;
-            native<void (*)(void*, unsigned, const void*)>(kBindIndirectProperty)(target, i, &a.values[i]);
+            native<void (*)(void*, unsigned, const void*)>(g_profile->bindIndirectProperty)(target, i, &a.values[i]);
         }
     }
     return true;
@@ -177,7 +237,7 @@ void observe(void* executor) {
             break;
         }
     }
-    if (owner == kAssets || !native<bool (*)(const void*)>(kIsLoopingExecutor)(executor)) return;
+    if (owner == kAssets || !native<bool (*)(const void*)>(g_profile->isLoopingExecutor)(executor)) return;
     const auto state = read<unsigned>(executor, 0x30);
     const auto* event = read<const void*>(executor, 0x18);
     if (!event || (state != 3 && state != 4) || (read<unsigned>(event, 8) & 0x30)) return;
@@ -235,7 +295,7 @@ void synchronizeExistingLoops(const void* source) {
                     auto* executor = const_cast<std::byte*>(entry - executorOffset);
                     if (read<const void*>(executor, 0) ==
                         reinterpret_cast<const void*>(
-                            g_main + kEffectExecutorVtable)) {
+                            g_main + g_profile->effectExecutorVtable)) {
                         restore(executor);
                         observeAndHideEquipmentEffect(executor);
                     }
@@ -300,11 +360,13 @@ HOOK_DEFINE_TRAMPOLINE(ExecutorDestroyedHook) {
 
 void install(std::uintptr_t mainBase) {
     g_main = mainBase;
-    std::memcpy(g_vtable, reinterpret_cast<const void*>(g_main + kPreActorUserVtable), sizeof(g_vtable));
+    selectProfile();
+    if (!g_profile) return;
+    std::memcpy(g_vtable, reinterpret_cast<const void*>(g_main + g_profile->preActorUserVtable), sizeof(g_vtable));
     g_vtable[4] = reinterpret_cast<std::uintptr_t>(&getBone);
-    PrivateUserHook::InstallAtOffset(kCreateUser);
-    CalcHook::InstallAtOffset(kCalculateEffect);
-    ExecutorDestroyedHook::InstallAtOffset(kDestroyExecutor);
+    PrivateUserHook::InstallAtOffset(g_profile->createUser);
+    CalcHook::InstallAtOffset(g_profile->calculateEffect);
+    ExecutorDestroyedHook::InstallAtOffset(g_profile->destroyExecutor);
 }
 
 bool retain(unsigned asset, const void* actor, const void* copiedRoot) {
@@ -339,27 +401,25 @@ bool retain(unsigned asset, const void* actor, const void* copiedRoot) {
         return refuse("schema_copy", asset);
     }
     a.root = copiedRoot;
-    native<void (*)(void*)>(kConstructPreActorUser)(a.user);
+    native<void (*)(void*)>(g_profile->constructPreActorUser)(a.user);
     a.constructed = true;
     write<const void*>(a.user, 0, g_vtable);
     const char* empty = "";
     g_creating.store(a.user, std::memory_order_release);
-    native<void (*)(void*, const char* const*, const char* const*, void*, void*)>(kInitializePreActorUser)(
+    native<void (*)(void*, const char* const*, const char* const*, void*, void*)>(g_profile->initializePreActorUser)(
         a.user, &a.userName, &empty, a.table, equipment::archiveHeap());
     g_creating.store(nullptr, std::memory_order_release);
     const auto* instance = read<const void*>(a.user, 0x18);
     a.instance.store(instance, std::memory_order_release);
     if (!instance) { retire(asset); return refuse("create", asset); }
-    native<void (*)(void*)>(kResetPreActorUser)(a.user);
+    native<void (*)(void*)>(g_profile->resetPreActorUser)(a.user);
     if (!snapshotValues(a, source)) { retire(asset); return refuse("property_values", asset); }
     struct MatrixArgument { const void* root; std::uint64_t indices, unused; const float* scale; };
     const MatrixArgument matrix{copiedRoot, 0, 0, a.scale};
-    native<void (*)(const void*, const void*)>(kSetBoneMatrix)(instance, &matrix);
+    native<void (*)(const void*, const void*)>(g_profile->setBoneMatrix)(instance, &matrix);
     a.source.store(source, std::memory_order_release);
     a.ready.store(true, std::memory_order_release);
     synchronizeExistingLoops(source);
-    Logging.Log("[self-recall] EQUIPMENT_EFFECT_ARCHIVED asset=%u user=%s properties=%u",
-                asset, a.userName, a.propertyCount);
     return true;
 }
 
@@ -369,8 +429,8 @@ void retire(unsigned asset) {
     a.ready.store(false, std::memory_order_release);
     a.source.store(nullptr, std::memory_order_release);
     if (a.constructed) {
-        native<void (*)(void*, void*)>(kFinalizePreActorUser)(a.user, nullptr);
-        native<void (*)(void*)>(kDestroyPreActorUser)(a.user);
+        native<void (*)(void*, void*)>(g_profile->finalizePreActorUser)(a.user, nullptr);
+        native<void (*)(void*)>(g_profile->destroyPreActorUser)(a.user);
         a.constructed = false;
     }
     a.instance.store(nullptr, std::memory_order_release);
@@ -413,15 +473,15 @@ void selectFrame(const pure::RecordedPoseFrame* frame) {
         const auto action = pure::planEquipmentLoop(mask & (std::uint64_t{1} << i),
                                                      valid(replay), (flags & 2u) != 0);
         if (action == pure::EquipmentLoopAction::Kill) {
-            native<void (*)(void*)>(kKillEvent)(&replay);
+            native<void (*)(void*)>(g_profile->killEvent)(&replay);
             replay = {};
         } else if (action == pure::EquipmentLoopAction::Emit ||
                    action == pure::EquipmentLoopAction::WakeAndEmit) {
             if (action == pure::EquipmentLoopAction::WakeAndEmit) {
-                native<void (*)(void*)>(kResetPreActorUser)(asset.user);
+                native<void (*)(void*)>(g_profile->resetPreActorUser)(asset.user);
             }
             replay = {};
-            native<void (*)(void*, const char*, void*)>(kEmitEvent)(user, name, &replay);
+            native<void (*)(void*, const char*, void*)>(g_profile->emitEvent)(user, name, &replay);
             if (!valid(replay)) {
                 unsigned attempt;
                 {
@@ -443,7 +503,7 @@ void selectFrame(const pure::RecordedPoseFrame* frame) {
     }
     for (auto& asset : g_assets) {
         auto* user = const_cast<void*>(asset.instance.load(std::memory_order_acquire));
-        if (user && asset.ready.load()) native<void (*)(void*)>(kRequestUserCalculation)(user);
+        if (user && asset.ready.load()) native<void (*)(void*)>(g_profile->requestUserCalculation)(user);
     }
 }
 
@@ -498,10 +558,10 @@ EffectMatrix copyMatrix(const void*, const void* descriptor, float out[12], cons
 #else
 
 namespace self_recall::equipment_effects {
-using namespace offsets121::equipment_effects;
 namespace {
 std::uintptr_t g_main = 0;
 template<class T> T read(const void* p, std::size_t offset) {
+    if (!totk::engine::read_guard::admit(p, offset, sizeof(T))) return T{};
     T v; std::memcpy(&v, static_cast<const std::byte*>(p) + offset, sizeof(v)); return v;
 }
 // Switch keeps native gear effects: maps an effect user to its nameable model roots and unboned-cue model.
@@ -517,18 +577,18 @@ const void* firstUnit(const void* root) {
 }
 }
 
-void install(std::uintptr_t mainBase) { g_main = mainBase; }
+void install(std::uintptr_t mainBase) { g_main = mainBase; selectProfile(); }
 
 void publishLive(std::span<const void* const> actors) {
-    if (!g_main) return;
+    if (!g_main || !g_profile) return;
     for (unsigned i = 0; i < g_gear.size(); ++i) {
         const auto* actor = i < actors.size() ? actors[i] : nullptr;
         const auto* component = actor
-            ? reinterpret_cast<const void* (*)(const void*)>(g_main + kGetXLinkComponent)(actor) : nullptr;
+            ? reinterpret_cast<const void* (*)(const void*)>(g_main + g_profile->getXLinkComponent)(actor) : nullptr;
         const auto* user = component ? read<const void*>(component, 0x70) : nullptr;
         const auto* root = user ? actor_model::actorModel(actor) : nullptr;
         const auto* nativeRoot = user
-            ? reinterpret_cast<const void* (*)(const void*)>(g_main + kActorGetModel)(actor) : nullptr;
+            ? reinterpret_cast<const void* (*)(const void*)>(g_main + g_profile->actorGetModel)(actor) : nullptr;
         auto& gear = g_gear[i];
         gear.user.store(nullptr, std::memory_order_release);
         gear.root.store(root, std::memory_order_release);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "totk/engine/ReadGuard.hpp"
 #include "RecallRender.hpp"
 
 namespace self_recall::gpu_lifetime {
@@ -42,7 +43,7 @@ public:
     pure::RecallGpuLifetime& ledger() const;
     unsigned noteFailure(Operation operation) const;
     unsigned failureOperation() const;
-    void logBindingFailure(std::uintptr_t commandBuffer, unsigned slot) const;
+    void logUntrackedDraw(std::uintptr_t caller) const;
 };
 
 }
@@ -292,8 +293,16 @@ struct SceneMaterialView {
     ParameterLocation other{};
 };
 
+struct SceneModelLayout {
+    std::uintptr_t vtable = 0x045C0570;
+    std::size_t materialCount = 0x16A;
+    std::size_t materials = 0x180;
+    std::size_t bufferIndex = 0x15;
+};
+
 namespace detail {
 template<class T> inline T read(const void* base, std::size_t offset) {
+    if (!totk::engine::read_guard::admit(base, offset, sizeof(T))) return T{};
     T value;
     std::memcpy(&value, static_cast<const std::byte*>(base) + offset, sizeof(value));
     return value;
@@ -304,13 +313,14 @@ inline bool floatRange(std::uint32_t offset, std::uint32_t size) {
 }
 
 inline MaterialStatus describeSceneMaterial(const void* model, std::uintptr_t mainBase,
-        int materialIndex, int characterIndex, int otherIndex, SceneMaterialView& out) {
+        int materialIndex, int characterIndex, int otherIndex, SceneMaterialView& out,
+        SceneModelLayout layout = {}) {
     using detail::read;
-    if (!model || !mainBase || read<std::uintptr_t>(model, 0) != mainBase + 0x045C0570)
+    if (!model || !mainBase || read<std::uintptr_t>(model, 0) != mainBase + layout.vtable)
         return MaterialStatus::WrongModel;
-    if (materialIndex != 0 || !read<std::uint16_t>(model, 0x16A))
+    if (materialIndex != 0 || !read<std::uint16_t>(model, layout.materialCount))
         return MaterialStatus::MissingMaterial;
-    const auto material = read<const void*>(model, 0x180);
+    const auto material = read<const void*>(model, layout.materials);
     if (!material) return MaterialStatus::MissingMaterial;
     const auto resource = read<const void*>(material, 0);
     if (!resource) return MaterialStatus::MissingMaterial;
@@ -356,7 +366,7 @@ inline MaterialStatus describeSceneMaterial(const void* model, std::uintptr_t ma
         candidate.character.uniformOffset == candidate.other.uniformOffset)
         return MaterialStatus::AliasedParameters;
     candidate.bufferCount = read<std::uint8_t>(material, 0xA);
-    candidate.bufferIndex = read<std::uint8_t>(model, 0x15) & 3u;
+    candidate.bufferIndex = read<std::uint8_t>(model, layout.bufferIndex) & 3u;
     const auto buffers = read<const std::byte*>(material, 0x40);
     if (!buffers || !(read<std::uint16_t>(material, 8) & 1u) ||
         !candidate.bufferCount || candidate.bufferCount > 3 ||
@@ -398,9 +408,10 @@ inline MaterialStatus verifyScenePaletteUpload(const SceneMaterialView& view,
 
 namespace self_recall::palette {
 
+bool sitesValid(std::uintptr_t mainBase, std::size_t textSize);
 void install(std::uintptr_t mainBase);
 void beginFrame(std::uint64_t epoch, std::uint32_t animationGeneration);
-void afterNativeModel(const void* model);
+void afterNativeModel(const void* model, bool forced = false);
 std::uint64_t takeFailure();
 const char* failureName(std::uint64_t failure);
 
@@ -412,10 +423,14 @@ namespace sead { class Heap; }
 
 namespace self_recall::native_path {
 
+bool sitesValid(std::uintptr_t mainBase, std::size_t textSize);
 void install(std::uintptr_t mainBase);
 void initializeForScene(void* extension, void* scene, sead::Heap* heap);
 void beginFrame(std::uint64_t epoch, std::uint32_t generation);
 bool publish(const pure::NativePathRoute& route);
+void* maskForScreenFilter(std::uint64_t epoch, std::uint32_t generation);
+void finishScreenFilter(void* mask);
 std::uint64_t takeFailure();
+
 
 }

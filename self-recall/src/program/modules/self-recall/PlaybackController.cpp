@@ -5,7 +5,6 @@
 
 #include "RecallRuntimeEngine.hpp"
 #include "RecallModelEngine.hpp"
-#include "../../StartupTrace.hpp"
 
 namespace self_recall::playback {
 namespace {
@@ -55,15 +54,6 @@ bool verifyAppliedPose(RecallRuntime& runtime, pure::PosePlayback* cursor,
         liveSpeed);
     if (!std::isfinite(displacement) || displacement > allowance) {
         ++playback.fightTicks;
-        SRLOG(
-            "REWIND_FIGHT n=%d displaced_cm=%d allowance_cm=%d "
-            "path_dms=%d engine_dms=%d live_dms=%d speed=%s",
-            playback.fightTicks,
-            std::isfinite(displacement) ? (int)(displacement * 100.0f) : -1,
-            (int)(allowance * 100.0f),
-            (int)(playback.lastAppliedRecordedSpeed * 10.0f),
-            (int)(playback.lastAppliedEngineSpeed * 10.0f),
-            (int)(liveSpeed * 10.0f), pure::playbackRateText(playback.lastAppliedRate));
         if (playback.fightTicks >= pure::kBlockPersistTicks) {
             finish(runtime, self_recall::pure::PlaybackStop::Blocked,
                    true);
@@ -84,7 +74,6 @@ bool verifyAppliedPose(RecallRuntime& runtime, pure::PosePlayback* cursor,
 // SD builds wait at the last loaded frame; a lost frame or a 10 s wait ends Recall.
 struct SdHold {
     std::uint64_t startedNanoseconds = 0;
-    std::uint64_t episodes = 0;
     std::uint32_t index = 0;
 };
 SdHold g_sdHold;
@@ -98,7 +87,6 @@ bool sdAllowedThrough(RecallRuntime& runtime, pure::PosePlayback* cursor, const 
     const auto probe = history->spillAvailableThrough(cursor->anchorKey(), cursor->index(), limit);
     const bool blocked = probe.through < limit;
     if (blocked && probe.through == cursor->index() && probe.blocked == pure::SpillAvailability::Lost) {
-        sd_history::event("sd_lost", cursor->index(), cursor->selectedKey().serial);
         SRLOG("SD_HISTORY_LOST index=%u count=%u", cursor->index(), cursor->count());
         finish(runtime, pure::PlaybackStop::PoseUnavailable, true);
         return false;
@@ -106,18 +94,14 @@ bool sdAllowedThrough(RecallRuntime& runtime, pure::PosePlayback* cursor, const 
     if (blocked && probe.through == cursor->index()) {
         const auto now = clock.elapsedNanoseconds;
         if (!g_sdHold.startedNanoseconds || g_sdHold.index != cursor->index()) {
-            g_sdHold = {now ? now : 1, g_sdHold.episodes + 1, cursor->index()};
-            sd_history::event("sd_hold_begin", cursor->index(), g_sdHold.episodes);
+            g_sdHold = {now ? now : 1, cursor->index()};
         } else if (now - g_sdHold.startedNanoseconds > 10ull * 1000000000ull) {
-            sd_history::event("sd_hold_timeout", cursor->index(), now - g_sdHold.startedNanoseconds);
             SRLOG("SD_HISTORY_HOLD_TIMEOUT index=%u count=%u", cursor->index(), cursor->count());
             g_sdHold.startedNanoseconds = 0;
             finish(runtime, pure::PlaybackStop::PoseUnavailable, true);
             return false;
         }
-    } else if (g_sdHold.startedNanoseconds) {
-        sd_history::event("sd_hold_end", g_sdHold.index,
-                          (clock.elapsedNanoseconds - g_sdHold.startedNanoseconds) / 1000000ull);
+    } else {
         g_sdHold.startedNanoseconds = 0;
     }
     if (blocked) allowedThrough = std::min(allowedThrough, probe.through);
@@ -185,10 +169,8 @@ void selectAndApplyFrame(RecallRuntime& runtime, pure::PosePlayback* cursor,
 
 }
 
-void clearVelocity(const char* reason) {
-    if (!world::clearLinearVelocity())
-        SRLOG("VELOCITY_CLEAR skipped reason=%s no-player-component",
-              reason ? reason : "unspecified");
+void clearVelocity() {
+    if (!world::clearLinearVelocity()) SRLOG("VELOCITY_CLEAR skipped: no player physics component");
 }
 
 void start(RecallRuntime& runtime) {
@@ -197,13 +179,6 @@ void start(RecallRuntime& runtime) {
     glider_release::cancel(pure::GliderReleaseEnd::NewRecall);
 
     const auto stamina = native_gameplay::stamina(world::playerActor());
-    if (!playback.startPending) {
-        const auto* history = pose_storage::history();
-        startup_trace::mark("61 activation-request",
-            (std::uint64_t{unsigned(runtime.safety.unsafeNow)} << 32) | unsigned(stamina),
-            history ? history->count() : 0);
-        pose_recorder::logDiagnostics();
-    }
     if (stamina != pure::StaminaStatus::Available) {
         playback.startPending = false;
         pose_session::reset(false);
@@ -240,20 +215,17 @@ void start(RecallRuntime& runtime) {
 
     pure::GameTimeSnapshot clock;
     if (!game_clock::snapshot(clock)) {
-        pose_recorder::logDiagnostics();
         playback.startPending = true;
         return;
     }
     const auto begun = pose_session::begin(runtime.session.worldGeneration, clock);
     playback.startPending = begun.pending;
-    if (begun.pending) { setEvent("starting Recall"); pose_recorder::logDiagnostics(); return; }
-    startup_trace::mark("62 activation-result", unsigned(begun.status), pose_session::active());
+    if (begun.pending) { setEvent("starting Recall"); return; }
     if (begun.status != pure::PosePlaybackStatus::Ready) {
         setEvent(begun.status == pure::PosePlaybackStatus::TooShort
                      ? "not enough animation history yet"
                      : "animation history is not ready");
         SRLOG("start refused: pose_history=%u", static_cast<unsigned>(begun.status));
-        pose_recorder::logDiagnostics();
         return;
     }
     auto& cursor = *pose_session::playback();
@@ -267,7 +239,7 @@ void start(RecallRuntime& runtime) {
     playback.selectionPending = true;
     playback.selectedEnd = false;
     playback.lastStepClockSerial = 0;
-    clearVelocity("rewind start");
+    clearVelocity();
     if (!native_gameplay::begin(world::playerActor())) {
         finish(runtime, pure::PlaybackStop::StaminaUnavailable, false);
         return;
@@ -276,15 +248,9 @@ void start(RecallRuntime& runtime) {
         finish(runtime, self_recall::pure::PlaybackStop::PoseApplyFailed, false);
         return;
     }
-    const bool presentation = effects::startRewind();
+    (void)effects::startRewind();
     effects::buildRoute();
     setEvent("REWINDING - B cancels");
-
-    SRLOG("REWIND START frames=%u duration_ms=%llu generation=%u present=%u speed=%s",
-          static_cast<unsigned>(cursor.count()),
-          static_cast<unsigned long long>(cursor.durationNanoseconds() / 1000000),
-          cursor.anchorKey().generation, static_cast<unsigned>(presentation),
-          pure::playbackRateText(runtime.session.speed.rate()));
 }
 
 void finish(RecallRuntime& runtime, pure::PlaybackStop stop,
@@ -302,10 +268,9 @@ void finish(RecallRuntime& runtime, pure::PlaybackStop stop,
                                           playback.lastSampleFlags);
 
     native_gameplay::release();
-    effects::stopForExit(reason, emitEnd);
-    clearVelocity(reason);
-    SRLOG("REWIND %s completed=%u/%u", reason ? reason : "STOP", completed,
-          total);
+    effects::stop(emitEnd);
+    clearVelocity();
+    SRLOG("REWIND %s completed=%u/%u", reason ? reason : "STOP", completed, total);
     clearRoute(reason);
     if (exit.releaseGlider) glider_release::request(world::playerActor(), runtime.session.worldGeneration,
                                                runtime.session.tick, true);
@@ -345,17 +310,11 @@ void step(RecallRuntime& runtime) {
     world::clearLinearVelocity();
 
     if (runtime.safety.probe.obstructed && cursor->index() >= runtime.safety.probe.evaluatedThrough) {
-        const auto& hit = runtime.safety.probe.hitPosition;
-        SRLOG("ROUTE_RAY_BLOCKED hit_cm=(%d,%d,%d)", (int)(hit.x * 100.0f),
-              (int)(hit.y * 100.0f), (int)(hit.z * 100.0f));
         finish(runtime, self_recall::pure::PlaybackStop::RayBlocked, true);
         return;
     }
     safety::armProbe(runtime);
     if (runtime.safety.probe.unavailable && cursor->index() >= runtime.safety.probe.evaluatedThrough) {
-        SRLOG("ROUTE_RAY_UNAVAILABLE index=%u evaluated=%u timeouts=%u",
-              cursor->index(), runtime.safety.probe.evaluatedThrough,
-              runtime.safety.probe.timeouts);
         finish(runtime, self_recall::pure::PlaybackStop::RouteUnavailable, true);
         return;
     }

@@ -19,7 +19,6 @@ public:
     std::vector<std::byte> bytes = std::vector<std::byte>(kSpillFileBytes);
     bool failWrites = false;
     bool failReads = false;
-    std::uint64_t clock = 0;
 
     bool write(std::uint64_t offset, std::span<const std::byte> data) override {
         if (failWrites || offset + data.size() > bytes.size()) return false;
@@ -31,7 +30,6 @@ public:
         std::memcpy(data.data(), bytes.data() + offset, data.size());
         return true;
     }
-    std::uint64_t nanoseconds() override { return clock += 1000; }
 };
 
 constexpr unsigned kFps = 30;

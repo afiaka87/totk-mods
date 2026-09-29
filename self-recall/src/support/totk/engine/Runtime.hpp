@@ -1,5 +1,6 @@
 #pragma once
 
+#include "totk/engine/ReadGuard.hpp"
 #include "totk/core/Types.hpp"
 
 #include <cstddef>
@@ -22,6 +23,7 @@ inline constexpr std::uintptr_t kMaximumMappedAddress = 1ULL << 40;
 
 template <class Value>
 [[nodiscard]] inline Value readMemory(std::uintptr_t address) {
+    if (!totk::engine::read_guard::admit(reinterpret_cast<const void*>(address), 0, sizeof(Value))) return Value{};
     Value value{};
     std::memcpy(&value, reinterpret_cast<const void*>(address), sizeof(Value));
     return value;
@@ -36,12 +38,12 @@ struct Totk121Offsets {
     static constexpr const char* kGameVersion = "1.2.1";
     static constexpr const char* kBuildId = "9B4E43650501A4D4";
 
-    static constexpr core::ImageOffset kSceneModuleInstance{0x04728538};
+    static inline core::ImageOffset kSceneModuleInstance{0x04728538};
 
     static constexpr core::ImageOffset kNpadCalc{0x02A267BC};
     static constexpr core::ImageOffset kRaycastWorker{0x00858590};
 
-    static constexpr core::ImageOffset kForceSetMatrix{0x006BA86C};
+    static inline core::ImageOffset kForceSetMatrix{0x006BA86C};
 
     static constexpr core::ImageOffset kGameDataManagerIndirect{0x0462E3D8};
     static constexpr core::ImageOffset kGameDataGetInt{0x010CD5BC};
@@ -60,11 +62,11 @@ inline constexpr std::ptrdiff_t kResidentDescriptorStride = 0x70;
 inline constexpr std::ptrdiff_t kResidentDescriptor = 0x08;
 inline constexpr std::ptrdiff_t kActorFromDescriptor = 0x40;
 
-inline constexpr std::ptrdiff_t kActorNamePointer = 0x218;
-inline constexpr std::ptrdiff_t kActorComponentRegistry = 0x228;
-inline constexpr std::ptrdiff_t kActorPosition = 0x2B4;
-inline constexpr std::ptrdiff_t kActorRotation = 0x2C0;
-inline constexpr std::ptrdiff_t kActorLinearVelocity = 0x320;
+inline std::ptrdiff_t kActorNamePointer = 0x218;
+inline std::ptrdiff_t kActorComponentRegistry = 0x228;
+inline std::ptrdiff_t kActorPosition = 0x2B4;
+inline std::ptrdiff_t kActorRotation = 0x2C0;
+inline std::ptrdiff_t kActorLinearVelocity = 0x320;
 
 inline constexpr std::ptrdiff_t kPhysicsFromRegistry = 0x50;
 inline constexpr std::ptrdiff_t kRigidBodySetFromPhysics = 0x20;

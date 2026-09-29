@@ -1,23 +1,65 @@
+#include "totk/engine/ReadGuard.hpp"
 #include <lib.hpp>
+#include <cmath>
 
+#include "GameProfiles.hpp"
 #include "RecallEffectsEngine.hpp"
+#include "RecallGraphicsEngine.hpp"
 #include "RecallModelEngine.hpp"
 #include "RecallRender.hpp"
 #include "program/modules/self-recall/SelfRecallModule.hpp"
 
+namespace self_recall::presentation_sites {
+struct Sites {
+    std::ptrdiff_t actorGetXLink, componentSearchEmit, handleSetValid, handleSetFade;
+    std::ptrdiff_t resolveSound, slinkEmit, handleValid, handleFade;
+    std::ptrdiff_t calcMatrix, poolBases, poolStrides, updateEmitter;
+    std::ptrdiff_t setEmitter, elinkSystem;
+    std::uint32_t calcWord, updateWord;
+};
+
+constexpr std::array<Sites, 9> kSites{{
+    {0x11D1F90, 0xB5BDE8, 0xFC0C28, 0xA8D550, 0xFDD210, 0xAC72EC,
+     0xCB9B78, 0xABC568, 0x730EB4, 0x4558A98, 0x4558AA0, 0xFB4C,
+     0x730158, 0x4558AB0, 0xD10683FF, 0xD100C3FF},
+    {0xBB3928, 0xBB2D34, 0xFF02B4, 0xB57CFC, 0x10088E0, 0xB2D620,
+     0xD1B63C, 0xB226A4, 0x7ACAC0, 0x4631B80, 0x4631B88, 0xFB4C,
+     0x7ABD64, 0x4631B98, 0xD10643FF, 0xD100C3FF},
+    {0xB912CC, 0xB906E8, 0xFD4008, 0xB4B630, 0x10258B0, 0xB1FB64,
+     0xD8A388, 0xB14C2C, 0x7B25D8, 0x462BEE8, 0x462BEF0, 0xFB4C,
+     0x7B187C, 0x462BF00, 0xD10683FF, 0xD100C3FF},
+    {0xB2C5DC, 0xB2BE44, 0xFD93D4, 0xA8EC84, 0xFDF214, 0xA63CE4,
+     0xDAE878, 0xA582B4, 0x788B94, 0x46202B8, 0x46202C0, 0xFB4C,
+     0x787E38, 0x46202D0, 0xD10643FF, 0xD100C3FF},
+    {0xBBD0F4, 0xBBC7C0, 0xFC2C48, 0xB94C7C, 0xFF7C38, 0xB026E0,
+     0xD17C80, 0xAF78BC, 0x7C8B5C, 0x462F290, 0x462F298, 0xFB4C,
+     0x7C7E00, 0x462F2A8, 0xD10683FF, 0xD100C3FF},
+    {0xB3D880, 0x72F004, 0xB2ED5C, 0x7DDBE8, 0xC75190, 0xA96364,
+     0xD38D4, 0xADC1F0, 0x28D25F4, 0x3950388, 0x3950390, 0x191390,
+     0x27A56A8, 0x3950B78, 0xD10603FF, 0xB9403008},
+    {0xB29718, 0xC4AF08, 0x94DBC, 0x8183DC, 0xC7D274, 0xA89840,
+     0x54564C, 0xAD4080, 0x28CA354, 0x394B388, 0x394B390, 0x1772E4,
+     0x2799568, 0x394BB78, 0xD10603FF, 0xB9403008},
+    {0xB1CF18, 0xC24FFC, 0xB1071C, 0x82D57C, 0xC88B4C, 0xAC1D48,
+     0x55F048, 0xAC8618, 0x28CA0F0, 0x394D388, 0x394D390, 0xEBC10,
+     0x279A0E8, 0x394DB70, 0xD10603FF, 0xB9403008},
+    {0xB03CC8, 0x6D24A4, 0xB9B684, 0x6E34E8, 0xCBFA20, 0xA98D00,
+     0x481918, 0xAB5B6C, 0x28DA598, 0x395F388, 0x395F390, 0x9EA50,
+     0x27AAD18, 0x395FB70, 0xD10603FF, 0xB9403008},
+}};
+
+const Sites* active() { return &profiles::row(kSites); }
+
+bool valid(std::uintptr_t base) {
+    const auto& sites = *active();
+    const auto textSize = exl::util::GetMainModuleInfo().m_Text.m_Size;
+    return profiles::holds(base, textSize, sites.calcMatrix, sites.calcWord) &&
+           profiles::holds(base, textSize, sites.updateEmitter, sites.updateWord);
+}
+}
+
 namespace self_recall::presentation {
 namespace {
-
-namespace off {
-constexpr ptrdiff_t ActorGetXLink = 0x00BBD0F4;
-constexpr ptrdiff_t ComponentSearchAndEmit = 0x00BBC7C0;
-constexpr ptrdiff_t HandleSetIsValid = 0x00FC2C48;
-constexpr ptrdiff_t HandleSetFade = 0x00B94C7C;
-constexpr ptrdiff_t ResolveSoundPresenter = 0x00FF7C38;
-constexpr ptrdiff_t SLinkSearchAndEmit = 0x00B026E0;
-constexpr ptrdiff_t HandleIsValid = 0x00D17C80;
-constexpr ptrdiff_t HandleFade = 0x00AF78BC;
-}
 
 using Handle = pure::CompactEffectHandle;
 static_assert(sizeof(Handle) == 0x08);
@@ -36,6 +78,7 @@ constexpr const char* kAudioLoopCue = "ReverseRecorder_Lp";
 constexpr const char* kAudioEndCue = "ReverseRecorder_End";
 
 std::uintptr_t g_mainBase = 0;
+const presentation_sites::Sites* g_sites = nullptr;
 Handle invalidCompactHandle() {
     Handle handle{};
     handle.type = 0xff;
@@ -68,14 +111,14 @@ bool okCodePtr(std::uintptr_t pointer) {
 bool valid(const HandleSet& handle) {
     if (!g_mainBase) return false;
     const auto isValid = reinterpret_cast<bool (*)(const HandleSet*)>(
-        g_mainBase + off::HandleSetIsValid);
+        g_mainBase + g_sites->handleSetValid);
     return isValid(&handle);
 }
 
 bool valid(const Handle& handle) {
     if (!g_mainBase) return false;
     const auto isValid = reinterpret_cast<bool (*)(const Handle*)>(
-        g_mainBase + off::HandleIsValid);
+        g_mainBase + g_sites->handleValid);
     return isValid(&handle);
 }
 
@@ -85,7 +128,7 @@ void fade(HandleSet& handle) {
         return;
     }
     const auto fadeHandle = reinterpret_cast<void (*)(HandleSet*, int)>(
-        g_mainBase + off::HandleSetFade);
+        g_mainBase + g_sites->handleSetFade);
     fadeHandle(&handle, -1);
     handle = invalidHandleSet();
 }
@@ -96,7 +139,7 @@ void fade(Handle& handle) {
         return;
     }
     const auto fadeHandle = reinterpret_cast<void (*)(Handle*, int)>(
-        g_mainBase + off::HandleFade);
+        g_mainBase + g_sites->handleFade);
     fadeHandle(&handle, -1);
     handle = invalidCompactHandle();
 }
@@ -108,10 +151,10 @@ bool emitPlayer(void* playerActor, const char* cueName, int type,
         return false;
 
     const auto getXLink = reinterpret_cast<void* (*)(void*)>(
-        g_mainBase + off::ActorGetXLink);
+        g_mainBase + g_sites->actorGetXLink);
     const auto searchAndEmit =
         reinterpret_cast<void (*)(void*, const char**, HandleSet*, int)>(
-            g_mainBase + off::ComponentSearchAndEmit);
+            g_mainBase + g_sites->componentSearchEmit);
     void* component = getXLink(playerActor);
     if (!okPtr(reinterpret_cast<std::uintptr_t>(component))) return false;
 
@@ -132,7 +175,7 @@ ExpressionSoundRoute resolveExpressionSound() {
     if (!g_mainBase) return route;
 
     const auto resolvePresenter = reinterpret_cast<void* (*)()>(
-        g_mainBase + off::ResolveSoundPresenter);
+        g_mainBase + g_sites->resolveSound);
     route.presenter = resolvePresenter();
     if (!okPtr(reinterpret_cast<std::uintptr_t>(route.presenter))) {
         route.presenter = nullptr;
@@ -167,7 +210,7 @@ bool emitAudio(void* user, const char* cueName, Handle* out) {
     *out = invalidCompactHandle();
     const auto searchAndEmit =
         reinterpret_cast<void (*)(void*, const char*, Handle*)>(
-            g_mainBase + off::SLinkSearchAndEmit);
+            g_mainBase + g_sites->slinkEmit);
     searchAndEmit(user, cueName, out);
     return valid(*out);
 }
@@ -175,7 +218,10 @@ bool emitAudio(void* user, const char* cueName, Handle* out) {
 }
 
 void initialize(std::uintptr_t mainBase) {
-    g_mainBase = mainBase;
+    g_sites = presentation_sites::valid(mainBase) ? presentation_sites::active() : nullptr;
+    g_mainBase = g_sites ? mainBase : 0;
+    if (!g_sites)
+        Logging.Log("[self-recall] presentation hook sites differ from selected game build");
     g_startHandle = invalidHandleSet();
     g_loopHandle = invalidHandleSet();
     g_endHandle = invalidHandleSet();
@@ -185,7 +231,7 @@ void initialize(std::uintptr_t mainBase) {
 }
 
 bool start(void* playerActor, std::uint32_t historyGeneration) {
-    stop(playerActor, "restart", false);
+    stop(playerActor, false);
 
     const bool visualStartOk =
         emitPlayer(playerActor, kVisualStartCue, 0, &g_startHandle);
@@ -201,18 +247,11 @@ bool start(void* playerActor, std::uint32_t historyGeneration) {
     const bool audioLoopOk =
         emitAudio(audio.user, kAudioLoopCue, &g_audioLoopHandle);
 
-    g_active =
-        visualStartOk || wristLoopOk || audioStartOk || audioLoopOk;
-    Logging.Log("[self-recall] PRESENT_START visual=%d wrist=%d audio=%d loop=%d",
-                (int)visualStartOk, (int)wristLoopOk, (int)audioStartOk,
-                (int)audioLoopOk);
+    g_active = visualStartOk || wristLoopOk || audioStartOk || audioLoopOk;
     return g_active;
 }
 
-void stop(void* playerActor, const char* reason, bool emitEnd) {
-    const bool wasActive = g_active || valid(g_startHandle) ||
-                           valid(g_loopHandle) ||
-                           valid(g_audioLoopHandle);
+void stop(void* playerActor, bool emitEnd) {
     wrist_effects::end();
     fade(g_endHandle);
     fade(g_audioLoopHandle);
@@ -220,26 +259,15 @@ void stop(void* playerActor, const char* reason, bool emitEnd) {
     fade(g_startHandle);
     g_active = false;
 
-    bool visualEndOk = false;
-    bool audioEndOk = false;
     if (emitEnd && playerActor) {
-        visualEndOk =
-            emitPlayer(playerActor, kVisualEndCue, 0, &g_endHandle);
-        const ExpressionSoundRoute audio = resolveExpressionSound();
+        emitPlayer(playerActor, kVisualEndCue, 0, &g_endHandle);
         Handle audioEndHandle = invalidCompactHandle();
-        audioEndOk =
-            emitAudio(audio.user, kAudioEndCue, &audioEndHandle);
-    }
-    if (wasActive || emitEnd) {
-        Logging.Log(
-            "[self-recall] PRESENT_STOP reason=%s visual_end=%d "
-            "audio_end=%d",
-            reason ? reason : "unspecified", (int)visualEndOk,
-            (int)audioEndOk);
+        emitAudio(resolveExpressionSound().user, kAudioEndCue, &audioEndHandle);
     }
 }
 
 void service() {
+    wrist_effects::serviceBootstrap();
     if (g_endHandle.elink.poolIndex >= 0 && !valid(g_endHandle)) {
         g_endHandle = invalidHandleSet();
     }
@@ -249,23 +277,29 @@ void service() {
 
 namespace self_recall::wrist_effects {
 namespace {
-constexpr std::uintptr_t kCalcMatrix = 0x007C8B5C;
-constexpr std::uintptr_t kHandleValid = 0x00D17C80;
-constexpr std::uintptr_t kPoolBases = 0x0462F290;
-constexpr std::uintptr_t kPoolStrides = 0x0462F298;
-constexpr std::uintptr_t kUpdateEmitterMatrix = 0x0000FB4C;
-constexpr std::uintptr_t kSetEmitterMatrix = 0x007C7E00;
-constexpr std::uintptr_t kELinkSystemIndirect = 0x0462F2A8;
 std::uintptr_t g_mainBase = 0;
+const presentation_sites::Sites* g_sites = nullptr;
 pure::WristEffectOwners g_owners;
 std::atomic<std::uint64_t> g_missingFrames{0};
-std::array<std::atomic<std::uint64_t>, 4> g_equipmentMatrices{};
-std::atomic<std::uint64_t> g_equipmentRefreshes{0};
+std::array<std::atomic<std::uintptr_t>, 2> g_expectedEvents{};
 pure::WristEmitterFrames<32> g_emitters;
 std::atomic<bool> g_haveEmitterBinding{false};
 std::atomic<std::uint64_t> g_emitterRefusals{0};
+constexpr std::array<std::ptrdiff_t, 9> kFindExecutor{{
+    0, 0, 0, 0, 0, 0x28D441C, 0x28CC140, 0x28CBEDC, 0x28DC384,
+}};
+constexpr std::uint32_t kFindExecutorWord = 0xA9BD7BFD;
+constexpr std::uint32_t kSetEmitterWord = 0xA9BE7BFD;
+std::ptrdiff_t g_findExecutor = 0;
+std::array<pure::CompactEffectHandle, 2> g_bootstrapHandles{};
+std::array<unsigned, 2> g_bootstrapTries{};
+std::array<bool, 2> g_bootstrapDone{};
+float g_bootstrapInitialWrist[12]{};
+bool g_bootstrapHaveInitialWrist = false;
+bool g_bootstrapEnabled = false;
 
 template<class T> T read(const void* base, std::size_t offset) {
+    if (!totk::engine::read_guard::admit(base, offset, sizeof(T))) return T{};
     T value;
     std::memcpy(&value, static_cast<const std::byte*>(base) + offset, sizeof(value));
     return value;
@@ -278,27 +312,28 @@ void emitterRefused(unsigned reason) {
             static_cast<unsigned long long>(count));
 }
 
-void bindEmitter(const void* executor, pure::WristEffectOwner owner,
+bool bindEmitter(const void* executor, pure::WristEffectOwner owner,
                  const float wrist[12], const float effect[12],
                  const void* anchorUnit = nullptr, unsigned anchorBone = 0) {
     const auto* set = read<const void*>(executor, 0xB8);
     const auto instance = read<std::uint32_t>(executor, 0xC0);
-    if (!set || read<std::uint32_t>(set, 0x234) != instance) return;
+    if (!set || read<std::uint32_t>(set, 0x234) != instance) return false;
     pure::WristEmitterFrame frame{reinterpret_cast<std::uintptr_t>(set), instance, owner, {},
                                   reinterpret_cast<std::uintptr_t>(anchorUnit), anchorBone};
-    if (!pure::relativeEffectMatrix(wrist, effect, frame.local)) { emitterRefused(1); return; }
-    if (!g_owners.current(owner.serial)) return;
-    if (!g_emitters.put(frame)) { emitterRefused(2); return; }
+    if (!pure::relativeEffectMatrix(wrist, effect, frame.local)) { emitterRefused(1); return false; }
+    if (!g_owners.current(owner.serial)) return false;
+    if (!g_emitters.put(frame)) { emitterRefused(2); return false; }
     g_haveEmitterBinding.store(true, std::memory_order_relaxed);
+    return true;
 }
 
 void refreshEmitter(void* emitter) {
-    if (!pose_session::active() || !g_haveEmitterBinding.load(std::memory_order_relaxed)) return;
+    if (!g_sites || !pose_session::active() || !g_haveEmitterBinding.load(std::memory_order_relaxed)) return;
     auto* set = read<void*>(emitter, 0);
     const auto binding = set ? g_emitters.get(reinterpret_cast<std::uintptr_t>(set),
         read<std::uint32_t>(set, 0x234)) : pure::WristEmitterFrame{};
     if (!binding.owner || !g_owners.current(binding.owner.serial)) return;
-    const auto* holder = read<const void*>(reinterpret_cast<const void*>(g_mainBase), kELinkSystemIndirect);
+    const auto* holder = read<const void*>(reinterpret_cast<const void*>(g_mainBase), g_sites->elinkSystem);
     const auto* system = holder ? read<const void*>(holder, 0) : nullptr;
     if (!system) { emitterRefused(3); return; }
     float anchor[12];
@@ -319,8 +354,7 @@ void refreshEmitter(void* emitter) {
     }
     if (!g_owners.current(binding.owner.serial)) return;
     using SetMatrix = void (*)(void*, const float*);
-    reinterpret_cast<SetMatrix>(g_mainBase + kSetEmitterMatrix)(set, matrix);
-    if (binding.anchorUnit) g_equipmentRefreshes.fetch_add(1, std::memory_order_relaxed);
+    reinterpret_cast<SetMatrix>(g_mainBase + g_sites->setEmitter)(set, matrix);
 }
 
 HOOK_DEFINE_TRAMPOLINE(UpdateEmitterMatrixHook) {
@@ -330,15 +364,53 @@ HOOK_DEFINE_TRAMPOLINE(UpdateEmitterMatrixHook) {
     }
 };
 pure::WristEffectBinding resolve(const pure::CompactEffectHandle& handle) {
-    if (!g_mainBase || handle.type >= 0x80 || handle.poolIndex < 0) return {};
+    if (!g_mainBase || !g_sites || handle.type >= 0x80 || handle.poolIndex < 0) return {};
     using Valid = bool (*)(const pure::CompactEffectHandle*);
-    if (!reinterpret_cast<Valid>(g_mainBase + kHandleValid)(&handle)) return {};
-    const auto bases = read<const std::uintptr_t*>(reinterpret_cast<const void*>(g_mainBase), kPoolBases);
-    const auto strides = read<const std::uintptr_t*>(reinterpret_cast<const void*>(g_mainBase), kPoolStrides);
+    if (!reinterpret_cast<Valid>(g_mainBase + g_sites->handleValid)(&handle)) return {};
+    const auto bases = read<const std::uintptr_t*>(reinterpret_cast<const void*>(g_mainBase), g_sites->poolBases);
+    const auto strides = read<const std::uintptr_t*>(reinterpret_cast<const void*>(g_mainBase), g_sites->poolStrides);
     if (!bases || !strides) return {};
     const auto address = bases[handle.type] + strides[handle.type] * static_cast<unsigned>(handle.poolIndex);
     if (!address || read<std::uint32_t>(reinterpret_cast<const void*>(address), 0x20) != handle.eventId) return {};
     return {handle, address};
+}
+
+void tryBootstrap() {
+    if (!g_bootstrapEnabled || !pose_session::active()) return;
+    const auto session = g_owners.session();
+    if (!session) return;
+    using FindExecutor = const void* (*)(const void*);
+    const auto findExecutor = reinterpret_cast<FindExecutor>(g_mainBase + g_findExecutor);
+    for (unsigned slot = 0; slot < 2; ++slot) {
+        if (g_bootstrapDone[slot] || g_bootstrapHandles[slot].poolIndex < 0 ||
+            g_bootstrapTries[slot] >= 120) continue;
+        ++g_bootstrapTries[slot];
+        unsigned reason = 0;
+        const auto binding = resolve(g_bootstrapHandles[slot]);
+        if (!binding.event ||
+            binding.event != g_expectedEvents[slot].load(std::memory_order_relaxed)) reason = 1;
+        const void* executor = reason ? nullptr :
+            findExecutor(reinterpret_cast<const void*>(binding.event));
+        if (!reason && !executor) reason = 2;
+        const void* set = executor ? read<const void*>(executor, 0xB8) : nullptr;
+        const auto instance = executor ? read<std::uint32_t>(executor, 0xC0) : 0;
+        if (!reason && (!set || read<std::uint32_t>(set, 0x234) != instance)) reason = 3;
+        const auto* holder = reason ? nullptr :
+            read<const void*>(reinterpret_cast<const void*>(g_mainBase), g_sites->elinkSystem);
+        const auto* system = holder ? read<const void*>(holder, 0) : nullptr;
+        if (!reason && !system) reason = 4;
+        pure::RenderWristFrame wrist;
+        if (!reason && !pose_render::copyWrist(session.historyGeneration, wrist)) reason = 5;
+        float effect[12]{};
+        if (!reason) {
+            float columns[16], origin[3];
+            std::memcpy(columns, static_cast<const std::byte*>(set) + 0x100, sizeof(columns));
+            std::memcpy(origin, static_cast<const std::byte*>(system) + 0x64E74, sizeof(origin));
+            if (!pure::effectRowsFromEmitterColumns(columns, origin, effect)) reason = 6;
+        }
+        const auto* anchor = g_bootstrapHaveInitialWrist ? g_bootstrapInitialWrist : wrist.matrix;
+        if (!reason && bindEmitter(executor, session, anchor, effect)) g_bootstrapDone[slot] = true;
+    }
 }
 
 using NativeVector = float __attribute__((vector_size(16)));
@@ -346,8 +418,8 @@ HOOK_DEFINE_TRAMPOLINE(CalculateEffectMatrixHook) {
     static NativeVector Callback(void* executor, void* output, void* resource, void* user,
                                  void* argument4, const void* descriptor, unsigned flags) {
         const auto event = read<const void*>(executor, 0x18);
-        const auto owner = event ? g_owners.match(reinterpret_cast<std::uintptr_t>(event),
-                                                  read<std::uint32_t>(event, 0x20))
+        const auto eventId = event ? read<std::uint32_t>(event, 0x20) : 0;
+        const auto owner = event ? g_owners.match(reinterpret_cast<std::uintptr_t>(event), eventId)
                                  : pure::WristEffectOwner{};
         if (!owner) {
             float matrix[12];
@@ -355,8 +427,6 @@ HOOK_DEFINE_TRAMPOLINE(CalculateEffectMatrixHook) {
             unsigned anchorBone = 0;
             const auto source = equipment_effects::copyMatrix(executor, descriptor, matrix,
                                                               &anchorUnit, &anchorBone);
-            if (source != equipment_effects::EffectMatrix::Foreign)
-                g_equipmentMatrices[unsigned(source)].fetch_add(1, std::memory_order_relaxed);
             if (source != equipment_effects::EffectMatrix::Bone &&
                 source != equipment_effects::EffectMatrix::ModelRoot)
                 return Orig(executor, output, resource, user, argument4, descriptor, flags);
@@ -386,18 +456,24 @@ HOOK_DEFINE_TRAMPOLINE(CalculateEffectMatrixHook) {
         pure::WristMatrixProvider provider(g_owners, owner.serial, frame.matrix);
         const auto historical = provider.descriptor();
         const auto result = Orig(executor, output, resource, user, argument4, &historical, flags);
-        if (provider.copied()) {
-            bindEmitter(executor, owner, frame.matrix, static_cast<const float*>(output));
-        }
+        if (provider.copied()) bindEmitter(executor, owner, frame.matrix, static_cast<const float*>(output));
         return result;
     }
 };
 }
 
 void install(std::uintptr_t mainBase) {
-    g_mainBase = mainBase;
-    CalculateEffectMatrixHook::InstallAtOffset(kCalcMatrix);
-    UpdateEmitterMatrixHook::InstallAtOffset(kUpdateEmitterMatrix);
+    g_sites = presentation_sites::valid(mainBase) ? presentation_sites::active() : nullptr;
+    g_mainBase = g_sites ? mainBase : 0;
+    if (!g_sites) return;
+    const auto textSize = exl::util::GetMainModuleInfo().m_Text.m_Size;
+    g_findExecutor = profiles::row(kFindExecutor);
+    g_bootstrapEnabled = profiles::holds(g_mainBase, textSize, g_findExecutor, kFindExecutorWord) &&
+                         profiles::holds(g_mainBase, textSize, g_sites->setEmitter, kSetEmitterWord);
+    if (g_findExecutor && !g_bootstrapEnabled)
+        Logging.Log("[self-recall] WRIST_BOOTSTRAP_UNAVAILABLE native executor lookup differs");
+    CalculateEffectMatrixHook::InstallAtOffset(g_sites->calcMatrix);
+    UpdateEmitterMatrixHook::InstallAtOffset(g_sites->updateEmitter);
 }
 
 void begin(std::uint32_t historyGeneration, std::span<const pure::CompactEffectHandle> handles) {
@@ -406,32 +482,37 @@ void begin(std::uint32_t historyGeneration, std::span<const pure::CompactEffectH
     g_haveEmitterBinding.store(false, std::memory_order_relaxed);
     g_emitterRefusals.store(0, std::memory_order_relaxed);
     g_missingFrames.store(0, std::memory_order_relaxed);
+    g_bootstrapHandles = {};
+    g_bootstrapTries = {};
+    g_bootstrapDone = {};
+    g_bootstrapHaveInitialWrist = false;
     if (handles.size() > 2) {
         Logging.Log("[self-recall] WRIST_BIND_REFUSED handles=%u", static_cast<unsigned>(handles.size()));
         return;
     }
-    pure::WristEffectBinding bindings[2];
-    unsigned valid = 0;
-    for (std::size_t i = 0; i < handles.size(); ++i) {
-        bindings[i] = resolve(handles[i]);
-        valid += bindings[i].event != 0;
+    pure::WristEffectBinding bindings[2]{};
+    for (std::size_t i = 0; i < handles.size(); ++i) bindings[i] = resolve(handles[i]);
+    for (unsigned i = 0; i < 2; ++i)
+        g_expectedEvents[i].store(i < handles.size() ? bindings[i].event : 0, std::memory_order_relaxed);
+    g_owners.publish(historyGeneration, {bindings, handles.size()});
+    for (unsigned i = 0; i < handles.size(); ++i) g_bootstrapHandles[i] = handles[i];
+    pure::RenderWristFrame initialWrist;
+    if (pose_render::copyWrist(historyGeneration, initialWrist)) {
+        std::memcpy(g_bootstrapInitialWrist, initialWrist.matrix, sizeof(g_bootstrapInitialWrist));
+        g_bootstrapHaveInitialWrist = true;
     }
-    const auto serial = g_owners.publish(historyGeneration, {bindings, handles.size()});
-    Logging.Log("[self-recall] WRIST_BIND owner=%llu history=%u resolved=%u/%u",
-        static_cast<unsigned long long>(serial), historyGeneration, valid, static_cast<unsigned>(handles.size()));
+    tryBootstrap();
 }
 
+void serviceBootstrap() { tryBootstrap(); }
+
 void end() {
-    const auto bone = g_equipmentMatrices[1].exchange(0, std::memory_order_relaxed);
-    const auto root = g_equipmentMatrices[2].exchange(0, std::memory_order_relaxed);
-    const auto missing = g_equipmentMatrices[3].exchange(0, std::memory_order_relaxed);
-    const auto refreshed = g_equipmentRefreshes.exchange(0, std::memory_order_relaxed);
-    if (bone || root || missing || refreshed)
-        Logging.Log("[self-recall] EQUIPMENT_EFFECT_MATRICES bone=%llu model_root=%llu missing=%llu "
-                    "emitter_refreshes=%llu",
-            static_cast<unsigned long long>(bone), static_cast<unsigned long long>(root),
-            static_cast<unsigned long long>(missing), static_cast<unsigned long long>(refreshed));
     g_owners.clear();
+    g_bootstrapHandles = {};
+    g_bootstrapTries = {};
+    g_bootstrapDone = {};
+    g_bootstrapHaveInitialWrist = false;
+    for (auto& event : g_expectedEvents) event.store(0, std::memory_order_relaxed);
     g_emitters.clear();
     g_haveEmitterBinding.store(false, std::memory_order_relaxed);
     g_emitterRefusals.store(0, std::memory_order_relaxed);

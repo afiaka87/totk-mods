@@ -431,6 +431,39 @@ TEST_CASE("repeated root submission requires the later GPU fence before buffer r
     CHECK(f.ledger.canWrite(0));
 }
 
+TEST_CASE("recycled root handles retain private slots until their own sync completes") {
+    Lifetime f;
+    REQUIRE(f.ledger.beginFrame(rootCb));
+    REQUIRE(f.ledger.bindSlot(rootCb, 0));
+    REQUIRE(f.ledger.sealFrame(rootCb, 101));
+    const auto first = f.ledger.submittedAndFenced(101, queue, sync);
+    REQUIRE(first != 0);
+    const auto firstWait = f.ledger.captureWait(queue, sync);
+    CHECK_FALSE(f.ledger.canWrite(0));
+
+    REQUIRE(f.ledger.beginFrame(rootCb));
+    REQUIRE(f.ledger.bindSlot(rootCb, 1));
+    CHECK(f.ledger.inspectSeal(rootCb, 101).blocker == 0);
+    REQUIRE(f.ledger.sealFrame(rootCb, 101));
+    const auto second = f.ledger.submittedAndFenced(101, queue, sync + 1);
+    REQUIRE(second > first);
+    CHECK(f.ledger.captureWait(queue, sync + 1) == second);
+    CHECK(f.ledger.captureWait(queue, sync + 2) == 0);
+    CHECK_FALSE(f.ledger.canWrite(0));
+    CHECK_FALSE(f.ledger.canWrite(1));
+
+    REQUIRE(f.ledger.completeWait(firstWait, 1));
+    CHECK(f.ledger.canWrite(0));
+    CHECK_FALSE(f.ledger.canWrite(1));
+    REQUIRE(f.ledger.completeWait(f.ledger.captureWait(queue, sync + 1), 1));
+    CHECK(f.ledger.canWrite(1));
+
+    REQUIRE(f.ledger.beginFrame(rootCb));
+    REQUIRE(f.ledger.sealFrame(rootCb, 102));
+    CHECK(f.ledger.submittedAndFenced(102, queue, sync + 2) == 0);
+    CHECK(f.ledger.failed());
+}
+
 TEST_CASE("foreign waits and fabricated future tickets cannot release a private buffer") {
     Lifetime f;
     f.record(0);

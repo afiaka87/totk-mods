@@ -1,19 +1,93 @@
+#include "totk/engine/ReadGuard.hpp"
 #include "RecallRuntimeEngine.hpp"
 #include "RecallModelEngine.hpp"
 #include "RecallGraphicsEngine.hpp"
 #include "RecallEffectsEngine.hpp"
+#include "GameProfiles.hpp"
 
+#include <array>
 #include <atomic>
+#include <cmath>
 #include <new>
 #include <optional>
 #include <lib.hpp>
+#include "FloatHook.hpp"
 #include "RecallRender.hpp"
 
 namespace self_recall::pose_render {
-using namespace offsets121::pose_render;
 namespace {
 
-constexpr std::size_t kEmbeddedModel = 0x138;
+struct PoseProfile {
+    std::uintptr_t beforeDraw, calculateView, calculateSkeleton, calculateShape;
+    std::uintptr_t shapeIsVisible, calculateBounding, requestDraw;
+    std::uintptr_t shapeDraw, shapeArrayDraw;
+    std::uintptr_t inlineBeforeDrawRejoin;
+    std::size_t embeddedModel, bufferIndex;
+};
+
+struct InlineDrawProfile {
+    std::array<std::uintptr_t, 4> sites;
+    std::array<std::uint32_t, 4> words;
+    std::array<unsigned, 4> unitRegisters;
+    std::array<std::size_t, 4> unitOffsets;
+};
+
+const InlineDrawProfile& inlineDrawProfile() {
+    static constexpr std::array<InlineDrawProfile, 9> builds{{
+        {}, {}, {}, {}, {},
+        {{0x17BC28, 0x17C6D8, 0x1DCE70, 0x1DD23C},
+         {0xF9423D29, 0xF9432929, 0xF9423D29, 0x91210129}, {27, 27, 25, 25}, {}},
+        {{0x164E58, 0x164FE0, 0x3A1800, 0},
+         {0xF941F929, 0xF942E529, 0xEB09011F, 0}, {20, 20, 28, 0}, {0x10, 0x10, 0, 0}},
+        {{0xD8FB4, 0xD9A3C, 0x2DD1E0, 0x2DD598},
+         {0xF9423129, 0xF9431D29, 0xF9423129, 0x9136C129}, {28, 28, 24, 24}, {}},
+        {{0x84334, 0x84DE0, 0x7AC150, 0x7AC538},
+         {0xF9424529, 0xF9432929, 0xF9424529, 0x10E9EBE9}, {12, 12, 25, 25}, {}},
+    }};
+    return profiles::row(builds);
+}
+
+const PoseProfile& profile() {
+    static constexpr std::array<PoseProfile, 9> builds{{
+        {0x73DEB8, 0x73EB2C, 0x82518, 0x6FF6F0, 0x29D0944, 0x70ABC0,
+         0xA10474, 0x7046C4, 0x29D782C, 0, 0x138, 0x15},
+        {0x76177C, 0x7620E4, 0x824A8, 0x7505E8, 0x2A48CF4, 0x7554F4,
+         0x9CFD5C, 0x68EC90, 0x2A4FF08, 0, 0x138, 0x15},
+        {0x7B37A8, 0x7B55C0, 0x824A8, 0x744B58, 0x2A3FE64, 0x74CF44,
+         0x9A55B8, 0x688C68, 0x2A47078, 0, 0x138, 0x15},
+        {0x7480B0, 0x748DF8, 0x824A8, 0x715120, 0x2A33CC4, 0x71A8D4,
+         0x909D9C, 0x6480F0, 0x2A3AED8, 0, 0x138, 0x15},
+        {0x76B6EC, 0x76C078, 0x824A8, 0x74F450, 0x2A43014, 0x756E98,
+         0x9960D8, 0x74C284, 0x2A4A228, 0, 0x138, 0x15},
+        {0x1062984, 0x28396F0, 0x176560, 0x2839A00, 0x2846018, 0x1766F0,
+         0x282EF38, 0x833490, 0x834840, 0x172330, 0xD8, 0x14},
+        {0x10559B8, 0x282E1D0, 0x160240, 0x282E4E0, 0x283E1F8, 0x1603D0,
+         0x2823A38, 0x836490, 0x83812C, 0x15C074, 0xD8, 0x14},
+        {0x1052DA0, 0x282E4A8, 0xD2F10, 0x282E7B8, 0x283E578, 0xD30A0,
+         0x2824874, 0x86B910, 0x86CDB0, 0xCED24, 0xD8, 0x14},
+        {0x104F4F0, 0x283FFEC, 0x821E0, 0x28402FC, 0x284CE18, 0x1EF540,
+         0x2835944, 0x77E760, 0x7802B4, 0x7DB70, 0xD8, 0x14},
+    }};
+    return profiles::row(builds);
+}
+
+constexpr std::array<std::array<std::uint32_t, 6>, 9> kHookWords{{
+    {0xD10283FF, 0xD103C3FF, 0x79402C09, 0xD10283FF, 0xD101C3FF, 0xD100C3FF},
+    {0xD10303FF, 0xD103C3FF, 0x79402C09, 0xD10283FF, 0xD10343FF, 0xD100C3FF},
+    {0xD10283FF, 0xD103C3FF, 0x79402C09, 0xD10283FF, 0xD10383FF, 0xD100C3FF},
+    {0xD10283FF, 0xD103C3FF, 0x79402C09, 0xD101C3FF, 0xD10343FF, 0xD100C3FF},
+    {0xD10283FF, 0xD103C3FF, 0x79402C09, 0xD10283FF, 0xD10383FF, 0xD100C3FF},
+    {0xD10503FF, 0xD10403FF, 0xF9400408, 0x79402408, 0x39407008, 0xD10343FF},
+    {0xD10503FF, 0xD10403FF, 0xF9400408, 0x79402408, 0x39407008, 0xD10303FF},
+    {0xD10503FF, 0xD10403FF, 0xF9400408, 0x79402408, 0x39407008, 0xD10303FF},
+    {0xD10503FF, 0xD10403FF, 0xF9400408, 0x79402408, 0x39407008, 0xD10343FF},
+}};
+
+// 1.4.3's inlined bounds update rejoins here with the model in X19.
+constexpr std::array<std::uintptr_t, 9> kFoldedBoundsSites{0, 0, 0, 0, 0, 0, 0, 0, 0x7CB38};
+constexpr std::uint32_t kFoldedBoundsWord = 0xF9402274;
+
+std::uintptr_t foldedBoundsSite() { return profiles::row(kFoldedBoundsSites); }
 
 std::uintptr_t g_mainBase = 0;
 alignas(pure::RenderFrameStore) std::byte g_storage[sizeof(pure::RenderFrameStore)];
@@ -25,8 +99,6 @@ std::atomic<std::uint64_t> g_latchedEpoch{0};
 std::atomic<std::uint64_t> g_admittedEpoch{0};
 std::atomic<std::uint32_t> g_preparedGeneration{0};
 std::atomic<std::uint64_t> g_suppressedEpoch{0};
-std::atomic<std::uint64_t> g_originChanges{0}, g_culled{0}, g_wristPhaseDifferences{0};
-std::atomic<std::uint64_t> g_clothingReport{0};
 std::array<std::atomic<std::uintptr_t>, pure::kPoseModelLimit> g_liveEquipment{};
 
 static_assert(sizeof(pure::RenderFrameStore) + sizeof(model::CaptureWorkspace) +
@@ -45,6 +117,7 @@ void fail(Failure code, unsigned detail) {
 
 template <class T>
 T read(const void* base, std::size_t offset) {
+    if (!totk::engine::read_guard::admit(base, offset, sizeof(T))) return T{};
     T value;
     std::memcpy(&value, static_cast<const std::byte*>(base) + offset, sizeof(value));
     return value;
@@ -64,21 +137,6 @@ pure::RenderFrameStore::Lease acquire(const void* unit, unsigned buffer) {
     return std::move(found.lease);
 }
 
-void logOriginChange(const pure::RenderFrameStore::Lease& frame,
-                     const pure::RecordedModelPose& current, unsigned phase) {
-    const auto count = g_originChanges.fetch_add(1, std::memory_order_relaxed) + 1;
-    if (count > 4 && count % 300 != 0) return;
-    const auto& recorded = frame.get()->animation.models[frame.modelIndex()];
-    Logging.Log("[self-recall] RENDER_ORIGIN_CHANGED count=%llu phase=%u model=%u epoch=%llu key=%llu "
-                "relative=%u/%u origin=(%f,%f,%f)/(%f,%f,%f)",
-        static_cast<unsigned long long>(count), phase, unsigned(frame.modelIndex()),
-        static_cast<unsigned long long>(frame.get()->epoch),
-        static_cast<unsigned long long>(frame.get()->animation.header.key.serial),
-        unsigned(recorded.originRelative), unsigned(current.originRelative),
-        double(recorded.renderOrigin[0]), double(recorded.renderOrigin[1]), double(recorded.renderOrigin[2]),
-        double(current.renderOrigin[0]), double(current.renderOrigin[1]), double(current.renderOrigin[2]));
-}
-
 bool makeInput(const void* unit, const pure::RenderFrameStore::Lease& lease,
                 model::NativeRenderInput& input) {
     model::View live;
@@ -90,7 +148,6 @@ bool makeInput(const void* unit, const pure::RenderFrameStore::Lease& lease,
     const auto& recorded = lease.get()->animation;
     const auto prepared = lease.prepareModel(live.pose);
     if (prepared != pure::RenderModelStatus::Ready) {
-        if (prepared == pure::RenderModelStatus::OriginChanged) logOriginChange(lease, live.pose, 1);
         fail(Failure::Prepare, 0x100u | static_cast<unsigned>(prepared));
         return false;
     }
@@ -105,9 +162,10 @@ bool makeInput(const void* unit, const pure::RenderFrameStore::Lease& lease,
 
 void uploadHistoricalAnimation(void* unit) {
     palette::afterNativeModel(unit);
-    const auto buffer = read<std::uint8_t>(unit, 0x15) & 3u;
+    const auto buffer = read<std::uint8_t>(unit, profile().bufferIndex) & 3u;
     auto frame = acquire(unit, buffer);
     if (!frame) return;
+    if (profile().inlineBeforeDrawRejoin && frame.uploaded(frame.modelIndex())) return;
     model::NativeRenderInput input;
     if (!makeInput(unit, frame, input)) return;
 #if SELF_RECALL_STORAGE_PROFILE == 8
@@ -121,11 +179,10 @@ void uploadHistoricalAnimation(void* unit) {
     }
 #endif
     using Calculate = void (*)(void*, unsigned);
-    reinterpret_cast<Calculate>(g_mainBase + kCalculateSkeleton)(input.skeleton, buffer);
-    reinterpret_cast<Calculate>(g_mainBase + kCalculateShape)(input.model, buffer);
+    reinterpret_cast<Calculate>(g_mainBase + profile().calculateSkeleton)(input.skeleton, buffer);
+    reinterpret_cast<Calculate>(g_mainBase + profile().calculateShape)(input.model, buffer);
     frame.markUploaded();
     monochrome::protectHistoricalModel(unit);
-    return;
 }
 
 HOOK_DEFINE_TRAMPOLINE(BeforeDrawHook) {
@@ -136,10 +193,19 @@ HOOK_DEFINE_TRAMPOLINE(BeforeDrawHook) {
     }
 };
 
+HOOK_DEFINE_INLINE(InlineBeforeDrawRejoinHook) {
+    static void Callback(exl::hook::InlineFloatCtx* ctx) {
+        auto* gp = integerRegisters(ctx);
+        auto* unit = reinterpret_cast<void*>(gp->X[19]);
+        if (pose_session::active()) uploadHistoricalAnimation(unit);
+        gp->X[8] = read<std::uint8_t>(unit, 0x14);
+    }
+};
+
 HOOK_DEFINE_TRAMPOLINE(CalculateViewHook) {
     static void Callback(void* modelObject, unsigned view, const void* camera, unsigned buffer) {
         const auto* unit = reinterpret_cast<const void*>(
-            reinterpret_cast<std::uintptr_t>(modelObject) - kEmbeddedModel);
+            reinterpret_cast<std::uintptr_t>(modelObject) - profile().embeddedModel);
         auto frame = acquire(unit, buffer);
         model::NativeRenderInput input;
         if (frame && makeInput(unit, frame, input)) {
@@ -165,11 +231,46 @@ int recalledVisibility(const void* renderUnit) {
     const auto visible = model::nativeShapeVisibility(unit,
         read<std::uint16_t>(renderUnit, 0x16), frame.get()->animation, frame.modelIndex());
     if (visible == pure::AnimationVisibility::Invalid) {
-        fail(Failure::Visibility, frame.modelIndex());
+        fail(Failure::Visibility, 0x100u | frame.modelIndex());
         return 0;
     }
     return visible == pure::AnimationVisibility::Visible ? 1 : 0;
 }
+std::uint64_t skipHistoricalDraw(const void*, void*, unsigned, unsigned) { return 0; }
+
+void routeHiddenDraw(exl::hook::InlineFloatCtx* ctx, unsigned siteIndex) {
+    if (!pose_session::active()) return;
+    auto* gp = integerRegisters(ctx);
+    const auto& draw = inlineDrawProfile();
+    const auto* unit = reinterpret_cast<const void*>(gp->X[draw.unitRegisters[siteIndex]]);
+    if (unit && draw.unitOffsets[siteIndex])
+        unit = read<const void*>(unit, draw.unitOffsets[siteIndex]);
+    if (unit && recalledVisibility(unit) == 0)
+        gp->X[8] = reinterpret_cast<std::uintptr_t>(&skipHistoricalDraw);
+    // The trampoline replays LDR/ADD X9, so preserve its incoming address operand.
+}
+
+HOOK_DEFINE_INLINE(SingleWorkerDrawHook) {
+    static void Callback(exl::hook::InlineFloatCtx* ctx) {
+        routeHiddenDraw(ctx, 0);
+    }
+};
+HOOK_DEFINE_INLINE(ArrayWorkerDrawHook) {
+    static void Callback(exl::hook::InlineFloatCtx* ctx) {
+        routeHiddenDraw(ctx, 1);
+    }
+};
+HOOK_DEFINE_INLINE(SingleGroupDrawHook) {
+    static void Callback(exl::hook::InlineFloatCtx* ctx) {
+        routeHiddenDraw(ctx, 2);
+    }
+};
+HOOK_DEFINE_INLINE(ArrayGroupDrawHook) {
+    static void Callback(exl::hook::InlineFloatCtx* ctx) {
+        routeHiddenDraw(ctx, 3);
+    }
+};
+
 HOOK_DEFINE_TRAMPOLINE(ShapeIsVisibleHook) {
     static std::uint64_t Callback(const void* renderUnit) {
         const auto visible = recalledVisibility(renderUnit);
@@ -179,26 +280,24 @@ HOOK_DEFINE_TRAMPOLINE(ShapeIsVisibleHook) {
 
 HOOK_DEFINE_TRAMPOLINE(ShapeDrawHook) {
     static std::uint64_t Callback(const void* unit, void* context, unsigned view, unsigned flags) {
-        if (!drawVisible(unit)) return 0;
-        return Orig(unit, context, view, flags);
+        return drawVisible(unit) ? Orig(unit, context, view, flags) : 0;
     }
 };
 HOOK_DEFINE_TRAMPOLINE(ShapeArrayDrawHook) {
     static std::uint64_t Callback(const void* unit, void* context, unsigned view, unsigned flags) {
-        if (!drawVisible(unit)) return 0;
-        return Orig(unit, context, view, flags);
+        return drawVisible(unit) ? Orig(unit, context, view, flags) : 0;
     }
 };
 
 using NativeCalculateBounding = float (*)(void*);
-void updateHistoricalBounds(void* unit, NativeCalculateBounding calculate) {
-    if (g_admittedEpoch.load(std::memory_order_acquire) != frame::epoch()) return;
+bool updateHistoricalBounds(void* unit, NativeCalculateBounding calculate) {
+    if (g_admittedEpoch.load(std::memory_order_acquire) != frame::epoch()) return false;
     auto frame = acquire(unit, 0);
-    if (!frame) return;
+    if (!frame) return false;
 #if SELF_RECALL_STORAGE_PROFILE == 8
     const auto* history = pose_storage::history();
     auto source = history ? history->acquire(frame.get()->animation.header.key) : pure::PoseReadLease{};
-    if (!source) { fail(Failure::Prepare, 0xB001); return; }
+    if (!source) { fail(Failure::Prepare, 0xB001); return false; }
     const auto& recorded = *source.get();
 #else
     const auto& recorded = frame.get()->animation;
@@ -206,18 +305,18 @@ void updateHistoricalBounds(void* unit, NativeCalculateBounding calculate) {
     const auto& historical = recorded.models[frame.modelIndex()];
     model::View live;
     const auto described = model::describe(g_mainBase, unit, live);
-    if (described != model::ViewStatus::Ready) { fail(Failure::Model, unsigned(described)); return; }
+    if (described != model::ViewStatus::Ready) { fail(Failure::Model, unsigned(described)); return false; }
     live.pose.originRelative = historical.originRelative;
     std::memcpy(live.pose.renderOrigin, historical.renderOrigin, sizeof(historical.renderOrigin));
     model::NativeRenderInput animation;
     const auto input = animation.prepare(live, historical, recorded.bones + historical.identity.firstBone);
-    if (input != model::RenderInputStatus::Ready) { fail(Failure::Input, unsigned(input)); return; }
+    if (input != model::RenderInputStatus::Ready) { fail(Failure::Input, unsigned(input)); return false; }
     model::NativeBoundingInput bounds;
     bounds.prepareHistorical(unit, animation, pure::kHistoricalEquipment
         ? pure::translatedBoundsSpace(historical, frame.get()->rootOffset) : historical);
     (void)calculate(bounds.unit);
     frame.markBounded();
-    return;
+    return true;
 }
 
 HOOK_DEFINE_TRAMPOLINE(CalculateBoundingHook) {
@@ -228,6 +327,30 @@ HOOK_DEFINE_TRAMPOLINE(CalculateBoundingHook) {
     }
 };
 
+HOOK_DEFINE_INLINE(FoldedBoundingHook) {
+    static void Callback(exl::hook::InlineFloatCtx* ctx) {
+        auto* gp = integerRegisters(ctx);
+        updateHistoricalBounds(reinterpret_cast<void*>(gp->X[19]),
+            [](void* model) { return CalculateBoundingHook::Orig(model); });
+    }
+};
+
+}
+
+bool sitesValid(std::uintptr_t mainBase, std::size_t textSize) {
+    const auto holds = [&](std::uintptr_t site, std::uint32_t word) {
+        return !site || profiles::holds(mainBase, textSize, site, word);
+    };
+    const auto& sites = profile();
+    const std::array<std::uintptr_t, 6> offsets{sites.beforeDraw, sites.calculateView,
+        sites.shapeIsVisible, sites.calculateBounding, sites.shapeDraw, sites.shapeArrayDraw};
+    if (!profiles::holds(mainBase, textSize, offsets, profiles::row(kHookWords)) ||
+        !holds(sites.inlineBeforeDrawRejoin, 0x39405268) || !holds(foldedBoundsSite(), kFoldedBoundsWord))
+        return false;
+    const auto& draw = inlineDrawProfile();
+    for (std::size_t i = 0; i < draw.sites.size(); ++i)
+        if (!holds(draw.sites[i], draw.words[i])) return false;
+    return true;
 }
 
 bool drawVisible(const void* renderUnit) {
@@ -237,12 +360,20 @@ bool drawVisible(const void* renderUnit) {
 void install(std::uintptr_t mainBase) {
     g_mainBase = mainBase;
     g_frames = ::new (static_cast<void*>(g_storage)) pure::RenderFrameStore;
-    BeforeDrawHook::InstallAtOffset(kBeforeDraw);
-    CalculateViewHook::InstallAtOffset(kCalculateView);
-    ShapeIsVisibleHook::InstallAtOffset(kShapeIsVisible);
-    CalculateBoundingHook::InstallAtOffset(kCalculateBounding);
-    ShapeDrawHook::InstallAtOffset(kShapeDraw);
-    ShapeArrayDrawHook::InstallAtOffset(kShapeArrayDraw);
+    BeforeDrawHook::InstallAtOffset(profile().beforeDraw);
+    if (profile().inlineBeforeDrawRejoin)
+        InlineBeforeDrawRejoinHook::InstallAtOffset(profile().inlineBeforeDrawRejoin);
+    CalculateViewHook::InstallAtOffset(profile().calculateView);
+    ShapeIsVisibleHook::InstallAtOffset(profile().shapeIsVisible);
+    CalculateBoundingHook::InstallAtOffset(profile().calculateBounding);
+    ShapeDrawHook::InstallAtOffset(profile().shapeDraw);
+    ShapeArrayDrawHook::InstallAtOffset(profile().shapeArrayDraw);
+    if (foldedBoundsSite()) FoldedBoundingHook::InstallAtOffset(foldedBoundsSite());
+    const auto& draw = inlineDrawProfile();
+    if (draw.sites[0]) SingleWorkerDrawHook::InstallAtOffset(draw.sites[0]);
+    if (draw.sites[1]) ArrayWorkerDrawHook::InstallAtOffset(draw.sites[1]);
+    if (draw.sites[2]) SingleGroupDrawHook::InstallAtOffset(draw.sites[2]);
+    if (draw.sites[3]) ArrayGroupDrawHook::InstallAtOffset(draw.sites[3]);
 }
 
 void admitModels(void* scene, std::uint64_t epoch, std::span<const model::View> current,
@@ -263,13 +394,14 @@ void admitModels(void* scene, std::uint64_t epoch, std::span<const model::View> 
         }
     }
     const auto plan = model::planNativeAdmission(scene, roots,
-        {animation.models, animation.header.modelCount});
+        {animation.models, animation.header.modelCount},
+        profiles::newerRenderer() ? model::kNewAdmissionLayout : model::kLegacyAdmissionLayout);
     if (plan.status != model::AdmissionStatus::Ready) {
         fail(Failure::Admission, 0x300u | static_cast<unsigned>(plan.status)); return;
     }
     using Request = void (*)(const void*);
     for (unsigned i = 0; i < plan.count; ++i)
-        reinterpret_cast<Request>(g_mainBase + kRequestDraw)(plan.request[i]);
+        reinterpret_cast<Request>(g_mainBase + profile().requestDraw)(plan.request[i]);
     for (unsigned i = 0; i < current.size(); ++i) {
         if (!animation.models[i].queueAdmission) continue;
         auto* unit = reinterpret_cast<std::byte*>(current[i].identity.unit);
@@ -304,7 +436,7 @@ void verifyComplete(std::uint64_t epoch, const pure::RecordedPoseFrame& recorded
         const auto visible = model::nativeModelVisibility(reinterpret_cast<const void*>(b.unit), animation,
                                                          static_cast<unsigned>(i));
         if (visible == pure::AnimationVisibility::Invalid) {
-            fail(Failure::Visibility, static_cast<unsigned>(i));
+            fail(Failure::Visibility, 0x200u | static_cast<unsigned>(i));
             return;
         }
         if (visible == pure::AnimationVisibility::Visible) {
@@ -314,23 +446,28 @@ void verifyComplete(std::uint64_t epoch, const pure::RecordedPoseFrame& recorded
             }
             if (!currentFrame.lease.uploaded(static_cast<unsigned>(i))) {
                 const auto* unit = reinterpret_cast<const void*>(b.unit);
-                if (currentFrame.lease.bounded(static_cast<unsigned>(i)) &&
-                    read<std::uint32_t>(unit, 0xC) == 0) {
-                    const auto count = g_culled.fetch_add(1, std::memory_order_relaxed) + 1;
-                    if (count <= 8 || count % 1800 == 0)
-                        Logging.Log("[self-recall] HISTORICAL_MODEL_CULLED count=%llu model=%u body_models=%u "
-                                    "archive=%u epoch=%llu key=%llu position=(%f,%f,%f)",
-                            static_cast<unsigned long long>(count), unsigned(i), unsigned(animation.header.bodyModelCount),
-                            unsigned(equipment::publishedModel(unit)), static_cast<unsigned long long>(epoch),
-                            static_cast<unsigned long long>(animation.header.key.serial),
-                            double(animation.header.route.pose.position.x), double(animation.header.route.pose.position.y),
-                            double(animation.header.route.pose.position.z));
-                    continue;
+                auto bounded = currentFrame.lease.bounded(static_cast<unsigned>(i));
+                // The inlined 1.4.3 copy skips the bounds hook when a model has no bounding shapes.
+                if (!bounded && foldedBoundsSite() && read<std::uint16_t>(unit, 0x24) == 0) bounded = true;
+                // Repeat bounds and upload once before failing a model after the single-root pass.
+                const bool lateRecovery = profiles::newerRenderer() && read<std::uint32_t>(unit, 0xC) != 0;
+                if (lateRecovery && !bounded) {
+                    using Calculate = float (*)(void*);
+                    (void)reinterpret_cast<Calculate>(g_mainBase + profile().calculateBounding)(
+                        const_cast<void*>(unit));
+                    bounded = currentFrame.lease.bounded(static_cast<unsigned>(i));
                 }
-                Logging.Log("[self-recall] ANIMATION_UPLOAD_MISSING model=%u archive=%u bounds_shapes=%u cull=%u flags=%u epoch=%llu",
-                    static_cast<unsigned>(i), unsigned(equipment::publishedModel(unit)),
+                if (lateRecovery && bounded) {
+                    uploadHistoricalAnimation(const_cast<void*>(unit));
+                    if (currentFrame.lease.uploaded(static_cast<unsigned>(i))) continue;
+                }
+                // A bounded model with an empty cull mask is off screen, not missing.
+                if (bounded && read<std::uint32_t>(unit, 0xC) == 0) continue;
+                Logging.Log("[self-recall] ANIMATION_UPLOAD_MISSING model=%u archive=%u bounded=%u "
+                            "bounds_shapes=%u cull=%u flags=%u",
+                    static_cast<unsigned>(i), unsigned(equipment::publishedModel(unit)), unsigned(bounded),
                     unsigned(read<std::uint16_t>(unit, 0x24)), read<std::uint32_t>(unit, 0xC),
-                    unsigned(read<std::uint16_t>(unit, 0x12)), static_cast<unsigned long long>(epoch));
+                    unsigned(read<std::uint16_t>(unit, 0x12)));
                 fail(Failure::Upload, static_cast<unsigned>(i));
                 return;
             }
@@ -359,7 +496,6 @@ void beginFrame(std::uint64_t epoch) {
             prepared = pose_recorder::prepareCurrentEquipment(candidate, *selected.get(), report);
             return prepared;
         });
-    g_clothingReport.store(report, std::memory_order_release);
     if (!prepared) {
         fail(Failure::Prepare, 0xC000u | unsigned(report >> 56)); return;
     }
@@ -377,8 +513,6 @@ void beginFrame(std::uint64_t epoch) {
     }
     equipment_effects::selectFrame(selected.get());
 }
-
-std::uint64_t clothingReport() { return g_clothingReport.load(std::memory_order_acquire); }
 
 bool copyBone(const void* unit, unsigned bone, float out[12]) {
     if (!g_frames || !unit || !pose_session::active()) return false;
@@ -450,14 +584,6 @@ bool copyWrist(std::uint32_t historyGeneration, pure::RenderWristFrame& out) {
     out.epoch = frame::epoch();
     std::memcpy(out.matrix, header.wristMatrix, sizeof(out.matrix));
     pure::shiftMatrix(out.matrix, presentation.offset);
-    pure::RenderWristFrame body;
-    if (g_frames && g_frames->copyWrist(out.epoch, historyGeneration, body) && body.key != out.key) {
-        const auto count = g_wristPhaseDifferences.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (count <= 8 || count % 1800 == 0)
-            Logging.Log("[self-recall] WRIST_BODY_PHASE count=%llu epoch=%llu wrist=%llu body=%llu",
-                static_cast<unsigned long long>(count), static_cast<unsigned long long>(out.epoch),
-                static_cast<unsigned long long>(out.key.serial), static_cast<unsigned long long>(body.key.serial));
-    }
     return pose_session::active();
 }
 std::uint64_t takeFailure() { return g_failure.exchange(0, std::memory_order_acq_rel); }
@@ -470,13 +596,6 @@ bool ready(std::uint32_t generation) {
     return generation && g_preparedGeneration.load(std::memory_order_acquire) == generation;
 }
 void reset() {
-    const auto origins = g_originChanges.exchange(0, std::memory_order_relaxed);
-    const auto culled = g_culled.exchange(0, std::memory_order_relaxed);
-    const auto phases = g_wristPhaseDifferences.exchange(0, std::memory_order_relaxed);
-    if (origins || culled || phases)
-        Logging.Log("[self-recall] RENDER_PRESENTATION_SUMMARY origin_changes=%llu culled_models=%llu wrist_body_phase=%llu",
-            static_cast<unsigned long long>(origins), static_cast<unsigned long long>(culled),
-            static_cast<unsigned long long>(phases));
     g_failure.store(0, std::memory_order_release);
     g_frameGeneration.store(0, std::memory_order_release);
     g_preparedGeneration.store(0, std::memory_order_release);

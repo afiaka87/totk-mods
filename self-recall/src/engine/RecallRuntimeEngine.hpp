@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace self_recall::offsets121 {
@@ -168,6 +169,7 @@ struct Observers {
 };
 
 void install(Observers observers = {});
+bool sitesValid(std::uintptr_t mainBase, std::size_t textSize);
 std::uint64_t epoch();
 
 }

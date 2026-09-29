@@ -48,12 +48,6 @@ ServiceResult service(ProbeState& state, bool rewinding, std::uint64_t tick) {
             if (rewinding && poll.hit.hit) {
                 state.hitPosition = poll.hit.position;
                 state.obstructed = true;
-                const auto& segment = state.plan.segments[poll.segment];
-                Logging.Log("[self-recall] ROUTE_SEGMENT_HIT segment=%u/%u through=%u flags=%u,%u from=(%.3f,%.3f,%.3f) to=(%.3f,%.3f,%.3f) hit=(%.3f,%.3f,%.3f) normal=(%.3f,%.3f,%.3f)",
-                    poll.segment, state.plan.count, state.requestedThrough, segment.fromFlags, segment.toFlags,
-                    segment.from.x, segment.from.y, segment.from.z, segment.to.x, segment.to.y, segment.to.z,
-                    poll.hit.position.x, poll.hit.position.y, poll.hit.position.z,
-                    poll.hit.normal.x, poll.hit.normal.y, poll.hit.normal.z);
             } else if (rewinding) {
                 state.evaluatedThrough = state.requestedThrough;
             }
