@@ -5,7 +5,7 @@
 #pragma once
 
 namespace arrowbound::pure {
-// Travel cues prefer Ultrahand's sounds, with interface fallbacks; AmiiboMarker_OK loops forever, so never use it.
+// Use interface fallbacks when ExpressionSound is unavailable; AmiiboMarker_OK loops indefinitely.
 inline constexpr const char* kCueAbilityUser = "ExpressionSound";
 inline constexpr const char* kCueTravel = "UltraHand_Start";
 inline constexpr const char* kCueTravelFallback = "mc_PlusMenuOpen";

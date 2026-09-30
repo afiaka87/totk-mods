@@ -15,7 +15,7 @@ Exlaunch authors are owed attribution here.
 | Infinite Ascend | `infinite-ascend/` | Ascend reach extended from ~20 m to 10,000 m; native checks kept. |
 | Phantom Foothold | `phantom-foothold/` | Climb every surface with collision, ceilings included; no game files replaced. |
 | Self Recall | `self-recall/` | Recall Link through his own movement and animation history. |
-| Glideshot | `glideshot/` | A hookshot: chain to any climbable wall, zip along it, land in the native climb. Contains arrowbound as well. |
+| Zonai Hookshot (formerly Glideshot) | `zonai-hookshot/` | A hookshot: chain to any climbable wall, zip along it, land in the native climb. Contains arrowbound as well. |
 | Bivouac | `bivouac/` | Eat a truffle or radish while climbing to build a persistent cliff or water camp you can travel back to. |
 | Arrowbound | `arrowbound/` | Shoot an arrow and Link glides along its path. |
 | Zonai Survey | `zonai-survey/` | Scan the landscape for collectibles with visible names and icons. |
@@ -30,7 +30,7 @@ All code here is MIT-licensed (see `LICENSE`). The feature mods use exlaunch. It
 |---|---|
 | Phantom Foothold | subsdk2 |
 | Infinite Ascend | subsdk4 |
-| Glideshot (including its Arrowbound feature) | subsdk5 |
+| Zonai Hookshot (including Arrowbound) | subsdk5 |
 | Fleet Sync | subsdk6 |
 | Bivouac | subsdk7 |
 | Self Recall | subsdk8 |

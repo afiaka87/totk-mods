@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
 
-// Each mod compiles its own copy of the engine adapters, with its own namespace and log tag.
+// Each mod compiles the engine adapters under its own namespace and log tag to keep separate state.
 #pragma once
 
 #include "Vec3.hpp"

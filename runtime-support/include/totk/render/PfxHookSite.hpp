@@ -18,7 +18,7 @@ struct PfxEntry {
     std::uintptr_t previous{};
 };
 
-// Accepts exlaunch's hook patch forms: an in-range B, or an absolute jump laid out for the entry's alignment.
+// Accept exlaunch B or LDR X17/BR X17/literal patches, with the alignment NOP when required.
 inline constexpr PfxEntry decodeDetour(std::uintptr_t site, const std::uint32_t* words) {
     std::uintptr_t previous{};
     PfxEntryKind kind{};

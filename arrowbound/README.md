@@ -12,14 +12,14 @@ slow motion; releasing the shot ends slow motion for the flight.
 - Hit a climbable wall to turn toward it and enter normal climbing. Other impacts finish in the glider.
 - No targeting reticle, chain or arrow refund is added by this feature.
 
-The same feature source is imported by [Glideshot](../glideshot), which also supplies manual
-ZL + L wall targeting. Glideshot and Arrowbound must not be enabled as separate code add-ons
-together: the combined Glideshot build already contains Arrowbound.
+The same feature source is imported by [Zonai Hookshot (formerly Glideshot)](../zonai-hookshot), which also supplies manual
+ZL + L wall targeting. Zonai Hookshot and Arrowbound must not be enabled as separate code add-ons
+together: the combined Zonai Hookshot build already contains Arrowbound.
 
 ## Persistence and the emblem
 
 `sd:/arrowbound/settings.bin` remembers activation. Emulators use their emulated SD card.
-The preference is shared by standalone Arrowbound and Glideshot across all saves/profiles on
+The preference is shared by standalone Arrowbound and Zonai Hookshot across all saves/profiles on
 that SD card; loading an older save does not rewind it. Missing or invalid settings default off.
 Storage failures retain a session-only choice. No unrelated vanilla flag is used for this setting.
 
@@ -31,7 +31,7 @@ No game assets, replacement ROMFS files or custom GameData schema are distribute
 ## Requirements and validation
 
 The source carries checked address tables for Tears of the Kingdom 1.0.0 through 1.4.3 and
-selects one at startup; an unrecognized build installs nothing. Inside Glideshot v0.10.4 the
+selects one at startup; an unrecognized build installs nothing. Inside Zonai Hookshot v0.11.0 the
 shared code was observed working on Eden on all nine versions. The standalone package keeps
 1.2.1's NPDM and is documented for 1.2.1 only; it has not had its own observed boot.
 Earlier fast-arrow fixes passed Citron tests. At very high speed, Link's legs can
@@ -43,7 +43,7 @@ This contains only mod-owned source, not a complete Switch build environment. No
 made that it builds as-is; provide your own devkitPro/devkitA64 toolchain, exlaunch project and
 the required game-facing headers. The native source uses C++26.
 
-- Framework: exlaunch (GPL-2.0), known-good base `f698816d`, not included. The combined Glideshot
+- Framework: exlaunch (GPL-2.0), known-good base `f698816d`, not included. The combined Zonai Hookshot
   host also requires its documented InlineFloatCtx fix for the manual jump hook.
 - Standalone: compile `src/program/main.cpp`, `src/program/modules/arrowbound` and `src/engine`.
   Include `src/program`, `src/pure`, `src/engine`, `src/support` and `src/include`.
@@ -62,13 +62,7 @@ the required game-facing headers. The native source uses C++26.
 Run `tests/run_host_tests.ps1` with CMake, Ninja and a C++23 compiler installed. It fetches doctest
 2.4.11 if no vendored copy is available. The 74 cases cover following, per-build address tables,
 ownership, wall capture, carrier saving, menu text and persistence failure handling. Engine-facing tests use local stubs;
-the default suite needs no game files. Glideshot's test runner also runs this suite.
-
-## A note on the code
-
-Is this partially vibe coded? Yes. It's a mod so I don't hold myself to the same standards as I do
-with my professional work. If that bothers you, I apologize sincerely. But note that the license is
-highly permissive (MIT) and I hope this adds to the community.
+the default suite needs no game files. Zonai Hookshot's test runner also runs this suite.
 
 ## Credits and license
 

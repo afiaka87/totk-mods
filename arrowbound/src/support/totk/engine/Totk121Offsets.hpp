@@ -8,7 +8,7 @@
 #include <cstddef>
 
 namespace totk::engine {
-// Game addresses default to 1.2.1's; ActiveGame.cpp replaces each from the running build's profile at startup.
+// ActiveGame.cpp replaces the 1.2.1 defaults with the running build profile before any reader runs.
 struct Totk121Offsets {
     // SceneModule singleton variable; one dereference.
     static inline core::ImageOffset kSceneModuleInstance{0x04728538};
