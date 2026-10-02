@@ -19,7 +19,7 @@ Exlaunch authors are owed attribution here.
 | Bivouac | `bivouac/` | Eat a truffle or radish while climbing to build a persistent cliff or water camp you can travel back to. |
 | Arrowbound | `arrowbound/` | Shoot an arrow and Link glides along its path. |
 | Zonai Survey | `zonai-survey/` | Scan the landscape for collectibles with visible names and icons. |
-| Free Rein | `free-rein/` | Use the bow while holding a Zonai Steering Stick; Link lets go and aims in any direction. |
+| Drive-by (formerly Free Rein) | `drive-by/` | Use the bow, sword and shield while holding a Zonai Steering Stick, and keep driving. |
 
 
 All code here is MIT-licensed (see `LICENSE`). The feature mods use exlaunch. It is not included. See `NOTICE`.
@@ -36,7 +36,7 @@ All code here is MIT-licensed (see `LICENSE`). The feature mods use exlaunch. It
 | Self Recall | subsdk8 |
 | Zonai Survey | subsdk9 |
 | Standalone Arrowbound | subsdk9 (intentional conflict) |
-| Free Rein | none (patch and cheat file only) |
+| Drive-by | none (patch files only) |
 
 Slots 1 and 3 are left available for TKMM and UltraCam. These assignments apply to
 new slot-migrated packages, not older downloads. Remove each upgraded mod's old
