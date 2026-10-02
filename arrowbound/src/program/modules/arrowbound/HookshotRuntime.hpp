@@ -61,10 +61,18 @@ struct DriveMailbox {
     std::atomic<std::uint32_t> poseEntryUpdates{0};
 };
 
+struct ArrowRenderIdentity {
+    std::uintptr_t actor{}, controller{}, handle{};
+    std::int32_t generation{-1};
+    std::uint32_t shot{}, sample{};
+    pure::Vec3 velocity{};
+};
+
 struct ArrowMailbox {
     std::atomic<std::uint32_t> releaseObserved{0}, followBegins{0}, clockRejects{0}, carrierWrites{0};
     std::atomic<std::uintptr_t> playerActor{0};
     std::atomic<std::uintptr_t> controllerToken{0};
+    pure::FlightMailbox<ArrowRenderIdentity> renderIdentity;
     std::atomic<std::uint32_t> modeEnabled{0};
     std::atomic<std::uint32_t> acceptShots{0};
     std::atomic<std::uint32_t> pendingShot{0};

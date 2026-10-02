@@ -78,6 +78,7 @@ engine::ArrowIdentity arrowIdentity(void* rawController) {
 
 void retireToken(HookshotRuntime& rt) {
     rt.arrow.pendingShot.store(0, std::memory_order_release);
+    rt.arrow.renderIdentity.publish({});
     rt.arrow.controllerToken.store(0, std::memory_order_release);
 }
 
@@ -166,6 +167,7 @@ void onArrowRelease(void* equipmentUser) {
     if (mailbox.modeEnabled.load(std::memory_order_acquire) == 0 ||
         !mailbox.acceptShots.exchange(0, std::memory_order_acq_rel)) return;
     mailbox.controllerToken.store(0, std::memory_order_release);
+    mailbox.renderIdentity.publish({});
     mailbox.claimOldIgnored.store(0, std::memory_order_relaxed);
     mailbox.claimOwnerMisses.store(0, std::memory_order_relaxed);
     mailbox.sampleBodyMisses.store(0, std::memory_order_relaxed);
@@ -262,6 +264,15 @@ void onArrowSample(void* rawController, float nativeDelta) {
     mailbox.samplePosition.store(position);
     mailbox.sampleVelocity.store(velocity);
     const auto published = mailbox.sampleSeq.fetch_add(1, std::memory_order_release) + 1;
+    if (game().version == profiles::GameVersion::V121) {
+        // Copy a weak native link while the arrow is live; drawing borrows its own reference.
+        const auto handle = *reinterpret_cast<const std::uintptr_t*>(actor + 0x1A8);
+        const auto generation = *reinterpret_cast<const std::int32_t*>(actor + 0x10);
+        if (okPtr(handle) && generation != -1 &&
+            !mailbox.renderIdentity.publish({actor, controller, handle, generation,
+                mailbox.shotSeq.load(std::memory_order_acquire), published, velocity}))
+            ZHLOG("ARROW_RENDER_IDENTITY_BUSY shot=%u", mailbox.shotSeq.load());
+    }
     const auto sample = (published - mailbox.shotSampleBase.load(std::memory_order_relaxed)) / 2;
     if (sample <= 8 || sample % 60 == 0)
         ZHLOG("ARROW_SAMPLE_CLOCK shot=%u sample=%u rate_milli=%d raw_speed_cm_s=%d follow_speed_cm_s=%d",
