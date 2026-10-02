@@ -27,6 +27,7 @@ add_executable(zonai_survey_pure_tests
     test_survey_sweep.cpp
     test_survey_cue.cpp
     test_atlas_layout.cpp
+    test_label_placement.cpp
 )
 if(SURVEY_TEST_GAME_DATA)
     target_sources(zonai_survey_pure_tests PRIVATE test_glyph_tables.cpp test_packed_glyphs.cpp

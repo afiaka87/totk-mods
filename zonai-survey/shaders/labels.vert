@@ -13,6 +13,8 @@ void main() {
     Quad q=quads[index];
     vec2 pos=q.rect.xy+uv*q.rect.zw;
     gl_Position=vec4(pos.x/640.0-1.0,1.0-pos.y/360.0,0.0,1.0);
-    pixel=uv*vec2(q.tile.yz)-0.5;
+    // A 16-unit cell spans the tile; letter quads add an equal margin on every side.
+    vec2 margin=(q.rect.zw-vec2(16.0))*0.5;
+    pixel=(uv*q.rect.zw-margin)*vec2(q.tile.yz)*0.0625-0.5;
     tile=q.tile;
 }

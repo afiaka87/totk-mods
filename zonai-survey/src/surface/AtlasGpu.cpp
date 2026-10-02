@@ -23,6 +23,7 @@ NVNprogram g_program{};
 NVNsync g_fences[atlas::kSlotCount]{};
 bool g_pending[atlas::kSlotCount]{};
 bool g_ready{}, g_attempted{};
+unsigned g_lastSlot{},g_lastCount{};
 NVNbufferAddress g_address{};
 NVNbufferAddress g_atlasAddress{};
 unsigned g_next{},g_refusal{};
@@ -34,6 +35,8 @@ PFNNVNCOMMANDBUFFERFENCESYNCPROC g_fence{};
 PFNNVNCOMMANDBUFFERBARRIERPROC g_barrier{};
 PFNNVNSYNCWAITPROC g_wait{};
 template<class T> T read(const void* p,std::size_t offset) { T v; std::memcpy(&v,static_cast<const unsigned char*>(p)+offset,sizeof(v)); return v; }
+template<class F> F native(std::uintptr_t base,std::ptrdiff_t offset) { return reinterpret_cast<F>(base+offset); }
+using ContextCall=void(*)(void*,void*);
 void refuse(unsigned why,unsigned detail=0) {
     if(g_refusal!=why) { g_refusal=why; Logging.Log("[survey-atlas] refused reason=%u detail=%u\n",why,detail); }
 }
@@ -78,7 +81,7 @@ bool initialize(NVNdevice* device,PFNNVNDEVICEGETPROCADDRESSPROC get) {
     int padding=-1,limit=0;
     integer(device,NVN_DEVICE_INFO_SHADER_CODE_MEMORY_POOL_PADDING_SIZE,&padding);
     integer(device,NVN_DEVICE_INFO_MAX_UNIFORM_BUFFER_SIZE,&limit);
-    if(padding<0 || kCodeEnd+padding>kSlots || limit<int(atlas::kFontBankBytes)) { refuse(2,limit); return false; }
+    if(padding<0 || kCodeEnd+padding>kSlots || limit<int(atlas::kPixelBytes)) { refuse(2,limit); return false; }
     std::memcpy(g_storage,shader::labelVertCode,sizeof(shader::labelVertCode));
     std::memcpy(g_storage+kFragment,shader::labelFragCode,sizeof(shader::labelFragCode));
     NVNmemoryPoolBuilder builder{};
@@ -102,57 +105,93 @@ bool initialize(NVNdevice* device,PFNNVNDEVICEGETPROCADDRESSPROC get) {
     Logging.Log("[survey-atlas] ready\n");
     return true;
 }
-}
-void draw(std::uintptr_t base,NVNdevice* device,PFNNVNDEVICEGETPROCADDRESSPROC get,
-          void* drawContext,void* context,const float* view,const float* projection) {
-    const auto& game = *profiles::active;
-    auto* command=read<NVNcommandBuffer*>(drawContext,0xb8);
-    if(!command) { refuse(8); return; }
-    if(!initialize(device,get)) return;
+struct Batch { NVNcommandBuffer* command{}; unsigned slot{}; std::size_t offset{}; unsigned count{}; };
+bool prepare(NVNdevice* device,PFNNVNDEVICEGETPROCADDRESSPROC get,void* drawContext,
+             const float* view,const float* projection,const atlas::PixelGrid& grid,Batch& batch) {
+    batch.command=read<NVNcommandBuffer*>(drawContext,0xb8);
+    if(!batch.command) { refuse(8); return false; }
+    if(!initialize(device,get)) return false;
     unsigned slot=atlas::kSlotCount;
     for(unsigned i=0;i<atlas::kSlotCount;++i) {
         const unsigned candidate=(g_next+i)%atlas::kSlotCount;
         if(g_pending[candidate]) {
             const auto result=g_wait(&g_fences[candidate],0);
-            if(result==NVN_SYNC_WAIT_RESULT_FAILED) { refuse(9,candidate); return; }
+            if(result==NVN_SYNC_WAIT_RESULT_FAILED) { refuse(9,candidate); return false; }
             if(result==NVN_SYNC_WAIT_RESULT_TIMEOUT_EXPIRED) continue;
             g_pending[candidate]=false;
         }
         slot=candidate; break;
     }
-    // Every slot is still on the GPU; skip this frame's labels.
-    if(slot==atlas::kSlotCount) return;
-    const auto offset=kSlots+slot*atlas::kSlotBytes;
-    auto* quads=reinterpret_cast<atlas::Quad*>(g_storage+offset);
-    const unsigned count=render::buildAtlasQuads(view,projection,quads);
-    if(!count) return;
-    g_flush(&g_pool,offset,align(count*sizeof(atlas::Quad),256));
-    alignas(8) unsigned char state[128]{};
-    const auto defaults=reinterpret_cast<void(*)(void*)>(base+game.calls.contextCtor);
-    const auto apply=reinterpret_cast<void(*)(void*,void*)>(base+game.calls.contextApply);
-    defaults(state); state[0]=state[1]=0;
-    // GraphicsContext::apply reads cull face at +101; screen-space quads are two-sided.
-    state[101]=NVN_FACE_NONE;
-    const unsigned blend=1; std::memcpy(state+4,&blend,4);
-    state[40]=NVN_BLEND_FUNC_SRC_ALPHA; state[42]=NVN_BLEND_FUNC_ONE_MINUS_SRC_ALPHA;
-    state[41]=NVN_BLEND_FUNC_ZERO; state[43]=NVN_BLEND_FUNC_ONE;
-    state[44]=state[45]=NVN_BLEND_EQUATION_ADD;
-    apply(state,drawContext);
-    reinterpret_cast<void(*)(void*,void*)>(base+game.calls.bind)(context,drawContext);
-    g_barrier(command,NVN_BARRIER_INVALIDATE_SHADER_BIT);
-    g_bind(command,&g_program,63);
-    g_uniform(command,NVN_SHADER_STAGE_FRAGMENT,0,g_atlasAddress,atlas::kFontBankBytes);
-    for(unsigned first=0;first<count;first+=atlas::kBatchQuads) {
-        const unsigned batch=std::min(atlas::kBatchQuads,count-first);
-        g_uniform(command,NVN_SHADER_STAGE_VERTEX,0,g_address+offset+first*sizeof(atlas::Quad),atlas::kBatchQuads*sizeof(atlas::Quad));
-        g_draw(command,NVN_DRAW_PRIMITIVE_TRIANGLES,0,batch*6);
+    // Every slot is still on the GPU: redraw the newest labels (fenced again in submit) rather than blink.
+    const bool redraw=slot==atlas::kSlotCount;
+    if(!redraw) {
+        g_lastSlot=slot;
+        g_lastCount=render::buildAtlasQuads(view,projection,grid,
+            reinterpret_cast<atlas::Quad*>(g_storage+kSlots+slot*atlas::kSlotBytes));
     }
-    g_fence(command,&g_fences[slot],NVN_SYNC_CONDITION_ALL_GPU_COMMANDS_COMPLETE,0);
-    g_pending[slot]=true; g_next=(slot+1)%atlas::kSlotCount;
-    reinterpret_cast<void(*)(void*,void*)>(base+game.calls.unbind)(context,drawContext);
-    reinterpret_cast<void(*)(void*,void*)>(base+game.calls.barrier)(
-        read<void*>(context,game.layout.contextTarget),drawContext);
-    defaults(state); apply(state,drawContext);
+    batch.slot=g_lastSlot; batch.offset=kSlots+g_lastSlot*atlas::kSlotBytes; batch.count=g_lastCount;
+    if(!batch.count) return false;
+    if(!redraw) g_flush(&g_pool,batch.offset,align(batch.count*sizeof(atlas::Quad),256));
+    return true;
+}
+void applyState(std::uintptr_t base,unsigned char* state,void* drawContext,bool labels) {
+    const auto& calls=profiles::active->calls;
+    native<void(*)(void*)>(base,calls.contextCtor)(state);
+    if(labels) {
+        state[0]=state[1]=0;
+        // GraphicsContext::apply reads cull face at +101; screen-space quads are two-sided.
+        state[101]=NVN_FACE_NONE;
+        const unsigned blend=1; std::memcpy(state+4,&blend,4);
+        state[40]=NVN_BLEND_FUNC_SRC_ALPHA; state[42]=NVN_BLEND_FUNC_ONE_MINUS_SRC_ALPHA;
+        state[41]=NVN_BLEND_FUNC_ZERO; state[43]=NVN_BLEND_FUNC_ONE;
+        state[44]=state[45]=NVN_BLEND_EQUATION_ADD;
+    }
+    native<ContextCall>(base,calls.contextApply)(state,drawContext);
+}
+void submit(const Batch& batch) {
+    g_barrier(batch.command,NVN_BARRIER_INVALIDATE_SHADER_BIT);
+    g_bind(batch.command,&g_program,63);
+    g_uniform(batch.command,NVN_SHADER_STAGE_FRAGMENT,0,g_atlasAddress,atlas::kPixelBytes);
+    for(unsigned first=0;first<batch.count;first+=atlas::kBatchQuads) {
+        const unsigned count=std::min(atlas::kBatchQuads,batch.count-first);
+        g_uniform(batch.command,NVN_SHADER_STAGE_VERTEX,0,g_address+batch.offset+first*sizeof(atlas::Quad),
+                  atlas::kBatchQuads*sizeof(atlas::Quad));
+        g_draw(batch.command,NVN_DRAW_PRIMITIVE_TRIANGLES,0,count*6);
+    }
+    g_fence(batch.command,&g_fences[batch.slot],NVN_SYNC_CONDITION_ALL_GPU_COMMANDS_COMPLETE,0);
+    g_pending[batch.slot]=true; g_next=(batch.slot+1)%atlas::kSlotCount;
     g_refusal=0;
+}
+}
+void draw(std::uintptr_t base,NVNdevice* device,PFNNVNDEVICEGETPROCADDRESSPROC get,
+          void* drawContext,void* context,const float* view,const float* projection,
+          float sceneWidth,float sceneHeight) {
+    const auto& game = *profiles::active;
+    Batch batch;
+    if(!prepare(device,get,drawContext,view,projection,atlas::pixelGrid(sceneWidth,sceneHeight),batch)) return;
+    alignas(8) unsigned char state[128]{};
+    applyState(base,state,drawContext,true);
+    native<ContextCall>(base,game.calls.bind)(context,drawContext);
+    submit(batch);
+    native<ContextCall>(base,game.calls.unbind)(context,drawContext);
+    native<ContextCall>(base,game.calls.barrier)(read<void*>(context,game.layout.contextTarget),drawContext);
+    applyState(base,state,drawContext,false);
+}
+void drawUi(std::uintptr_t base,NVNdevice* device,PFNNVNDEVICEGETPROCADDRESSPROC get,
+            const profiles::UiSite& site,const UiTarget& ui,const float* view,const float* projection) {
+    float size[2]{};
+    native<void(*)(void*,float*,void*)>(base,site.viewportSize)(ui.viewport,size,ui.target);
+    const auto grid=atlas::pixelGrid(size[0],size[1]);
+    if(!grid.x) { refuse(12,unsigned(size[0]>0 && size[0]<65536 ? size[0] : 0)); return; }
+    Batch batch;
+    if(!prepare(device,get,ui.drawContext,view,projection,grid,batch)) return;
+    alignas(8) unsigned char state[128]{};
+    applyState(base,state,ui.drawContext,true);
+    native<void(*)(void*,void*,void*)>(base,site.viewportApply)(ui.viewport,ui.drawContext,ui.target);
+    alignas(8) unsigned char bindScratch[40]{};
+    native<void(*)(void*,void*,void*,unsigned)>(base,site.renderBufferBind)(ui.target,ui.drawContext,bindScratch,0);
+    submit(batch);
+    // The interface binds and completes this target itself; restore its own context state.
+    native<ContextCall>(base,profiles::active->calls.contextApply)(ui.restore,ui.drawContext);
 }
 }

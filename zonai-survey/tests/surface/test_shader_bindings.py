@@ -35,12 +35,15 @@ class MemoryProfileTests(unittest.TestCase):
             budget.nso_profile(b"bad")
 
 class ShaderBindingsTests(unittest.TestCase):
-    def test_fixed_regular_font_and_draw_on_glass_have_no_runtime_selector_or_depth(self):
+    def test_one_baked_font_redraw_on_lag_and_draw_on_glass_has_no_depth(self):
         root = Path(__file__).resolve().parents[2]
         renderer = (root / 'src/presentation/AtlasRenderer.cpp').read_text(encoding='utf-8')
         gpu = (root / 'src/surface/AtlasGpu.cpp').read_text(encoding='utf-8')
         baker = (root / 'tools/bake_label_atlas.py').read_text(encoding='utf-8')
-        self.assertIn("FONT_FILES = ('RodinM.bfotf',)", baker)
+        self.assertIn("FONT_NAME, FONT_FILE = 'Rodin bold', 'RodinB.bfotf'", baker)
+        for removed in ('g_font', 'atlasFont', 'kFontLetters'):
+            self.assertNotIn(removed, renderer+gpu)
+        self.assertIn('batch.slot=g_lastSlot', gpu)
         for removed in ('samplerBindings', 'depthSlot', 'labelDepth'):
             self.assertNotIn(removed, gpu+renderer)
         self.assertIn('state[0]=state[1]=0', gpu)
@@ -146,7 +149,7 @@ class GpuAssemblyTests(unittest.TestCase):
         self.assertIn('(uint(gl_VertexID)*683u)>>12u', vertex)
         self.assertIn('uint(gl_VertexID)-index*6u', vertex)
         self.assertIn('kBatchQuads=128', layout.replace(' ', ''))
-        self.assertIn('NVN_DRAW_PRIMITIVE_TRIANGLES,0,batch*6', native)
+        self.assertIn('NVN_DRAW_PRIMITIVE_TRIANGLES,0,count*6', native)
         corners = ((0,0), (1,0), (1,1), (0,0), (1,1), (0,1))
         for count in range(1, 129):
             for vertex_id in range(count*6):
@@ -158,9 +161,19 @@ class GpuAssemblyTests(unittest.TestCase):
         # This lower-precision reciprocal really varies on the tested axis.
         self.assertTrue(any(((i*171)>>10) != i//6 for i in range(768)))
 
+    def test_letter_snapping_matches_the_baked_cell_and_vertex_margin(self):
+        root = Path(__file__).resolve().parents[2]
+        baker = (root/'tools/bake_label_atlas.py').read_text(encoding='utf-8')
+        layout = (root/'src/pure/AtlasLayout.hpp').read_text(encoding='utf-8').replace(' ', '')
+        vertex = (root/'shaders/labels.vert').read_text(encoding='utf-8')
+        self.assertIn('cell_baseline=[1,12]', baker)
+        self.assertIn('kCellBaseline=12', layout)
+        self.assertIn('vec2 margin=(q.rect.zw-vec2(16.0))*0.5;', vertex)
+        self.assertIn('pixel=(uv*q.rect.zw-margin)*vec2(q.tile.yz)*0.0625-0.5;', vertex)
+
     def test_label_gpu_loads_keep_all_four_words_per_tap(self):
         loads = ''.join(f'/*0088*/ LDC R2, c[0x3][R1{offset}];\n'
-                        for _ in range(4) for offset in ('', '+0x4', '+0x8', '+0xc'))
+                        for _ in range(compiler.LABEL_TAPS) for offset in ('', '+0x4', '+0x8', '+0xc'))
         good = loads + '/*0090*/ EXIT;'
         compiler.validate_gpu_assembly('labelFrag', good)
         with self.assertRaisesRegex(ValueError, 'all four'):
@@ -171,7 +184,8 @@ class GpuAssemblyTests(unittest.TestCase):
     def test_label_ir_rejects_integer_saturation_and_lost_components(self):
         good = '\n'.join(f'MOV TEMP[{i}], CONST[2][ADDR[0].x]\n' +
                          '\n'.join(f'MOV TEMP[20].x, TEMP[{i}].{lane*4}' for lane in 'xyzw')
-                         for i in range(4)) + '\n' + ('ISLT\nISGE\n' * 8)
+                         for i in range(compiler.LABEL_TAPS)) + '\n' + ('ISLT\nISGE\n' * 2*compiler.LABEL_TAPS)
+        good += 'MOV_SAT TEMP[40].x, TEMP[41].xxxx\n' * compiler.LABEL_SATURATIONS
         compiler.validate_label_ir(good)
         for bad, error in ((good+'MOV_SAT TEMP[0].xy, TEMP[1].xyyy', 'saturation'),
                            (good.replace('CONST[2][ADDR[0].x]', 'CONST[2][ADDR[0].x].xxxx'), 'complete'),

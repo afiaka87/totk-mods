@@ -9,6 +9,7 @@
 #include <lib.hpp>
 #include <nvn/nvn.h>
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include "totk/render/PfxHook.hpp"
 #include "SurveyGameProfiles.hpp"
@@ -169,6 +170,30 @@ bool hasTarget(void* drawContext, void* context) {
            read<void*>(context, layout.contextViewport);
 }
 
+struct SceneDepth {
+    void* sampler{};
+    unsigned width{}, height{};
+    Refusal refusal{};
+    unsigned detail{};
+};
+SceneDepth sceneDepth(void* scene) {
+    const auto& layout = zonai_survey::profiles::active->layout;
+    SceneDepth depth{};
+    const auto* buffers = read<const void*>(scene, layout.sceneBuffers);
+    if (!buffers || read<unsigned>(buffers, 8) < 1) { depth.refusal = kDepthBuffers; return depth; }
+    auto* record = read<unsigned char*>(buffers, 0x10);
+    if (!record) { depth.refusal = kDepthRecord; return depth; }
+    const auto flags = read<unsigned>(record, 8);
+    const auto slot = depthSlot(flags, layout.depthFull, layout.depthHalf);
+    if (!slot) { depth.refusal = kDepthSlot; depth.detail = flags; return depth; }
+    void* sampler = record + slot;
+    const auto width = read<std::uint16_t>(sampler, layout.textureWidth);
+    const auto height = read<std::uint16_t>(sampler, layout.textureWidth + 2);
+    if (!validDimensions(width, height)) { depth.refusal = kDepthSize; depth.detail = width; return depth; }
+    depth.sampler = sampler; depth.width = width; depth.height = height;
+    return depth;
+}
+
 void draw(void* drawContext, void* scene, void* context) {
     const auto& game = *zonai_survey::profiles::active;
     const auto sequence = g_pulseSequence.load();
@@ -201,20 +226,11 @@ void draw(void* drawContext, void* scene, void* context) {
     uniforms.surfaceStyle[2] = kGridSpacing;
     uniforms.surfaceStyle[3] = kImprintHalfWidth;
 
-    const auto* buffers = read<const void*>(scene, game.layout.sceneBuffers);
-    if (!buffers || read<unsigned>(buffers, 8) < 1) { refuse(kDepthBuffers); return; }
-    auto* record = read<unsigned char*>(buffers, 0x10);
-    if (!record) { refuse(kDepthRecord); return; }
-    const auto flags = read<unsigned>(record, 8);
-    const auto slot = depthSlot(flags, game.layout.depthFull, game.layout.depthHalf);
-    if (!slot) { refuse(kDepthSlot, flags); return; }
-    void* sampler = record + slot;
-    const auto width = read<std::uint16_t>(sampler, game.layout.textureWidth);
-    const auto height = read<std::uint16_t>(sampler, game.layout.textureWidth + 2);
-    if (!validDimensions(width, height)) { refuse(kDepthSize, width); return; }
+    const auto depth = sceneDepth(scene);
+    if (depth.refusal) { refuse(depth.refusal, depth.detail); return; }
     if (!cameraUniforms(context, uniforms)) { refuse(kCamera); return; }
     uniforms.settings[3] = 1.0f;
-    uniforms.dimensions[0] = float(width); uniforms.dimensions[1] = float(height);
+    uniforms.dimensions[0] = float(depth.width); uniforms.dimensions[1] = float(depth.height);
 
     const auto* allocator = global(game.variables.uniformAllocator);
     if (!allocator || !read<void*>(allocator, 24) || !read<unsigned>(allocator, 72)) {
@@ -234,7 +250,7 @@ void draw(void* drawContext, void* scene, void* context) {
     native<void(*)(void*, void*)>(game.calls.contextApply)(state, drawContext);
     native<void(*)(void*, void*)>(game.calls.bind)(context, drawContext);
     const bool sampled = native<bool(*)(void*, void*, unsigned, void*)>(game.calls.activateSampler)(
-        g_samplerBindings, drawContext, 0, sampler);
+        g_samplerBindings, drawContext, 0, depth.sampler);
     if (sampled) {
         g_bindProgram(command, &g_program, 63);
         g_bindUniform(command, NVN_SHADER_STAGE_FRAGMENT, 0,
@@ -248,6 +264,95 @@ void draw(void* drawContext, void* scene, void* context) {
     native<void(*)(void*, void*)>(game.calls.barrier)(read<void*>(context, game.layout.contextTarget), drawContext);
     native<void(*)(void*)>(game.calls.contextCtor)(state);
     native<void(*)(void*, void*)>(game.calls.contextApply)(state, drawContext);
+}
+
+// A stale tick means menus or loading: labels hide and the camera object is not read.
+struct SceneCamera {
+    float view[12]{}; float projection[16]{};
+    std::uint64_t tick{};
+    const unsigned char* source{};
+};
+zonai_survey::atlas::Mailbox<SceneCamera> g_sceneCameras;
+constexpr std::uint64_t kStaleCameraTicks = zonai_survey::pure::kSystemTicksPerSecond / 4;
+const zonai_survey::profiles::UiSite* g_uiSite{};
+unsigned g_cameraFallbacks{};
+
+bool finite(const float* values, unsigned count) {
+    for (unsigned i = 0; i < count; ++i) if (!std::isfinite(values[i])) return false;
+    return true;
+}
+// The live camera keeps labels pinned while panning; the scene copy is a frame old by now.
+void labelCamera(const SceneCamera& camera, float* view, float* projection) {
+    const auto& layout = zonai_survey::profiles::active->layout;
+    if (camera.source) {
+        std::memcpy(view, camera.source + layout.cameraView, sizeof(camera.view));
+        std::memcpy(projection, camera.source + layout.cameraProjection, sizeof(camera.projection));
+        if (finite(view, 12) && finite(projection, 16)) return;
+    }
+    std::memcpy(view, camera.view, sizeof(camera.view));
+    std::memcpy(projection, camera.projection, sizeof(camera.projection));
+    if (g_cameraFallbacks++ < 8)
+        Logging.Log("[survey-pulse] camera unreadable at interface draw; labels use the scene copy\n");
+}
+
+zonai_survey::atlas_gpu::UiTarget uiTarget(void* module, void* args) {
+    const auto* info = module && args ? read<const void*>(args, 0) : nullptr;
+    if (!info) return {};
+    auto* target = read<void*>(info, 0x20);
+    return {read<void*>(info, 0x58), target ? target : read<void*>(info, 0x18), read<void*>(info, 0x48),
+            static_cast<unsigned char*>(module) + 0x110};
+}
+
+struct UiHook {
+    inline static std::uint64_t (*previous)(void*, void*){};
+    // Labels draw before the game's HUD and menus; a fresh camera means the scene pass set up the device.
+    static std::uint64_t Callback(void* module, void* args) {
+        const auto ui = uiTarget(module, args);
+        const auto& camera = g_sceneCameras.consume();
+        const bool fresh = camera.tick && svcGetSystemTick() - camera.tick < kStaleCameraTicks;
+        if (ui.drawContext && ui.target && ui.viewport && fresh && zonai_survey::render::atlasHasContent()) {
+            float view[12], projection[16];
+            labelCamera(camera, view, projection);
+            zonai_survey::atlas_gpu::drawUi(g_base, g_device, g_getProc, *g_uiSite, ui, view, projection);
+        }
+        return previous(module, args);
+    }
+};
+
+bool installUiHook(std::uintptr_t mainBase) {
+    const auto* site = zonai_survey::profiles::uiSite(zonai_survey::profiles::active);
+    if (!site) return false;
+    const auto* words = reinterpret_cast<const std::uint32_t*>(mainBase + site->draw2D);
+    if (words[0] != site->first || words[1] != site->second) {
+        Logging.Log("[survey-pulse] interface labels refused bytes=%08x,%08x; labels stay in the scene\n",
+                    words[0], words[1]);
+        return false;
+    }
+    UiHook::previous = exl::hook::Hook(mainBase + site->draw2D, UiHook::Callback, true);
+    g_uiSite = site;
+    Logging.Log("[survey-pulse] interface labels installed\n");
+    return true;
+}
+
+void handOffLabels(void* args, void* drawContext, void* context, const unsigned char* camera) {
+    const auto& layout = zonai_survey::profiles::active->layout;
+    const auto* view = reinterpret_cast<const float*>(camera + layout.cameraView);
+    const auto* projection = reinterpret_cast<const float*>(camera + layout.cameraProjection);
+    if (g_uiSite) {
+        if (!initializeGpuStorage()) return;
+        SceneCamera frame;
+        std::memcpy(frame.view, view, sizeof(frame.view));
+        std::memcpy(frame.projection, projection, sizeof(frame.projection));
+        frame.tick = svcGetSystemTick();
+        frame.source = camera;
+        g_sceneCameras.publish(frame);
+    } else if (hasTarget(drawContext, context) && zonai_survey::render::atlasHasContent() &&
+               initializeGpuStorage()) {
+        auto* scene = read<void*>(args, 8);
+        const auto depth = scene ? sceneDepth(scene) : SceneDepth{};
+        zonai_survey::atlas_gpu::draw(g_base, g_device, g_getProc, drawContext, context, view, projection,
+                                      float(depth.width), float(depth.height));
+    }
 }
 
 struct PfxHook {
@@ -266,12 +371,7 @@ struct PfxHook {
             zonai_survey::engine::publishCameraForward(-view[8], -view[9], -view[10]);
         }
         draw(drawContext, read<void*>(args, 8), context);
-        if (camera && hasTarget(drawContext, context) && zonai_survey::render::atlasHasContent() &&
-            initializeGpuStorage()) {
-            zonai_survey::atlas_gpu::draw(g_base, g_device, g_getProc, drawContext, context,
-                reinterpret_cast<const float*>(camera + layout.cameraView),
-                reinterpret_cast<const float*>(camera + layout.cameraProjection));
-        }
+        if (camera) handOffLabels(args, drawContext, context, camera);
         return result;
     }
 };
@@ -284,6 +384,7 @@ void install(std::uintptr_t mainBase) {
                                      totk::render::PfxSite{static_cast<std::uintptr_t>(site.offset), site.first, site.second},
                                      PfxHook::Callback,
                                      PfxHook::previous, "survey")) return;
+    installUiHook(mainBase);
     Logging.Log("[survey-pulse] installed\n");
 }
 

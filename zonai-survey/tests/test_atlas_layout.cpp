@@ -50,6 +50,37 @@ TEST_CASE("atlas projection follows camera rotation and rejects invalid points")
     CHECK_FALSE(atlas::project(view,proj,std::numeric_limits<float>::quiet_NaN(),0,-10,x,y));
     CHECK(atlas::rgba(1,0.5f,0,1)==0xff0080ff);
 }
+TEST_CASE("letters keep their pen offsets and land the baseline on whole pixels") {
+    const auto grid=atlas::pixelGrid(1920,1080);
+    CHECK(grid.x==doctest::Approx(1.5f)); CHECK(grid.y==doctest::Approx(1.5f));
+    CHECK(atlas::pixelGrid(1600,900).x==doctest::Approx(1.25f));
+    CHECK(atlas::pixelGrid(0,0).x==0);
+    CHECK(atlas::pixelGrid(1600,9000).y==0);
+    // A whole-pixel offset added to a snapped origin stays on the grid.
+    const float origin=grid.snapX(311.37f), name=origin+grid.snapX(19);
+    CHECK(std::fabs(name*grid.x-std::round(name*grid.x))<1e-3f);
+    unsigned unsnappedFractions=0;
+    for(int i=0;i<400;++i) {
+        const float pen=100+i*0.37f, top=200+i*0.29f;
+        const auto q=atlas::letterQuad(grid,pen,top,256,0xffffffffu);
+        CHECK(q.rect[2]==22); CHECK(q.rect[3]==22);
+        CHECK(q.tile[0]==256); CHECK(q.tile[1]==16); CHECK(q.tile[2]==16);
+        // labels.vert maps the cell at an equal margin inside the quad.
+        const float margin=(q.rect[2]-16)*0.5f;
+        CHECK(margin==atlas::kLetterMargin);
+        const float basePixel=(q.rect[1]+margin+atlas::kCellBaseline)*grid.y;
+        CHECK(std::fabs(basePixel-std::round(basePixel))<1e-3f);
+        // Letters move with the word: the pen is never snapped on its own.
+        CHECK(q.rect[0]+margin==doctest::Approx(pen));
+        CHECK(std::fabs(q.rect[1]+margin-top)<=0.5f/grid.y+1e-4f);
+        const float raw=(top+atlas::kCellBaseline)*grid.y;
+        unsnappedFractions+=std::fabs(raw-std::round(raw))>0.05f;
+    }
+    // The sampled baselines really start off-grid.
+    CHECK(unsnappedFractions>100);
+    const auto loose=atlas::letterQuad(atlas::PixelGrid{},10.3f,20.7f,0,0);
+    CHECK(loose.rect[0]==doctest::Approx(7.3f)); CHECK(loose.rect[1]==doctest::Approx(17.7f));
+}
 TEST_CASE("atlas mailbox never writes a snapshot being read") {
     struct Frame { unsigned sequence{},values[64]{}; };
     atlas::Mailbox<Frame> box;

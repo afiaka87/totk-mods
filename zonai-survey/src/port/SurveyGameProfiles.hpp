@@ -56,4 +56,11 @@ template<class ReadWord> constexpr const Game* select(std::size_t textSize, Read
     return selected;
 }
 inline const Game* active{};
+// 1.2.1's interface draw, where labels go under the HUD; other versions draw them in the scene.
+struct UiSite { std::ptrdiff_t draw2D; std::uint32_t first; std::uint32_t second;
+                std::ptrdiff_t viewportApply; std::ptrdiff_t viewportSize; std::ptrdiff_t renderBufferBind; };
+inline constexpr UiSite kUiSite121{0xB0F844, 0xD10283FF, 0xA9067BFD, 0x74F09C, 0xE8413C, 0x7B9274};
+static_assert(kGames[4].version[0]=='1' && kGames[4].version[2]=='2' && kGames[4].version[4]=='1' &&
+              kGames[4].version[5]==0);
+inline const UiSite* uiSite(const Game* game) { return game == &kGames[4] ? &kUiSite121 : nullptr; }
 } // namespace zonai_survey::profiles

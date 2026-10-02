@@ -11,6 +11,9 @@ import tempfile
 
 EXPECTED_UAM = "2bf51f6713b0219cdfbee6b8ab3c7b87169b85a001e1466129e44359f13aa6fb"
 EXPECTED_NVDISASM = "1138409fc6d4202c533e357a55668e11186a114b84d345a8438a84e6216d58c0"
+# Letters sample fill and shadow bilinearly (8 taps) and clamp fill, outline and shadow edges.
+LABEL_TAPS = 8
+LABEL_SATURATIONS = 3
 
 def validate_bindings(name: str, ir: str) -> None:
     if name == "vert":
@@ -44,21 +47,21 @@ def validate_gpu_assembly(name: str, assembly: str) -> None:
         if re.search(r"\b(?:FADD|IADD)(?:\.[A-Z0-9]+)*\.SAT\b", assembly):
             raise ValueError("labelFrag: integer bounds became saturation; use explicit comparisons")
         loads = re.findall(r"\bLDC R\d+, c\[0x3\]\[R\d+(?:\+0x([48c]))?\]", assembly)
-        if sorted(loads) != sorted(["", "4", "8", "c"] * 4):
-            raise ValueError("labelFrag: four bilinear taps must each load all four atlas words")
+        if sorted(loads) != sorted(["", "4", "8", "c"] * LABEL_TAPS):
+            raise ValueError("labelFrag: every bilinear tap must load all four atlas words")
 
 def validate_label_ir(ir: str) -> None:
-    if re.search(r"\b[A-Z]+_SAT\b", ir):
-        raise ValueError("labelFrag: integer clamp was lowered to saturation")
+    if len(re.findall(r"\b[A-Z]+_SAT\b", ir)) != LABEL_SATURATIONS:
+        raise ValueError("labelFrag: expected one saturation per distance-field edge")
     loads = re.findall(r"MOV (TEMP\[\d+\]), CONST\[2\]\[ADDR\[0\]\.x\](?=\s*$)", ir, re.MULTILINE)
-    if len(loads) != 4:
-        raise ValueError("labelFrag: expected four complete atlas-vector loads")
+    if len(loads) != LABEL_TAPS:
+        raise ValueError("labelFrag: expected one complete atlas-vector load per tap")
     for register in loads:
         for lane in "xyzw":
             if not re.search(r"MOV TEMP\[\d+\]\.x, " + re.escape(register + "." + lane*4) + r"\b", ir):
                 raise ValueError("labelFrag: atlas vector component was lost")
     for comparison in ("ISLT", "ISGE"):
-        if len(re.findall(r"\b"+comparison+r"\b", ir)) != 8:
+        if len(re.findall(r"\b"+comparison+r"\b", ir)) != 2*LABEL_TAPS:
             raise ValueError("labelFrag: each tap needs signed lower and upper bounds on both axes")
 
 def disassemble_shader(name: str, code: Path, nvdisasm: Path) -> Path:
