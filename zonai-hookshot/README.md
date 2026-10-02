@@ -1,7 +1,8 @@
-# Zonai Hookshot (formerly Glideshot) v0.11.0
+# Zonai Hookshot (formerly Glideshot) v0.12.0
 
 Aim at a climbable wall and pull Link toward it with a glowing Zonai tether from his right hand.
 The double helix has layered filaments, travelling light and small motes inspired by Ascend.
+Toward the far end the strands keep their proportions and a teal core, so long tethers stay crisp.
 Link faces along the tether, turns gradually toward the destination, and enters normal climbing
 for the final grab. Native animation gives his legs and torso movement during travel.
 
@@ -33,9 +34,10 @@ to remain behind terrain.
 One module supports Tears of the Kingdom **1.0.0, 1.1.0, 1.1.2, 1.2.0, 1.2.1, 1.4.0, 1.4.1,
 1.4.2 and 1.4.3**. It identifies the running game at startup and installs nothing on unknown builds.
 
-The current Hookshot gameplay and presentation passed observed tests on all nine versions in
-Eden. The same payload passed on physical Switch **1.2.1 and 1.4.3**. Physical Switch 1.0.0 was
-deferred. Other hardware/version combinations have not been tested with this payload.
+The v0.11.0 gameplay and presentation passed observed tests on all nine versions in Eden and
+on physical Switch **1.2.1 and 1.4.3**. Physical Switch 1.0.0 was deferred. The v0.12.0 changes
+(far chain and final-approach arms) were tested in Citron on 1.2.1 only. Other hardware/version
+combinations have not been tested with this payload.
 Earlier combined builds passed tests beside Survey and Self Recall; compatibility with every
 other executable mod is not guaranteed.
 
@@ -43,9 +45,9 @@ other executable mod is not guaranteed.
 
 Close the game and back up the existing mod installation before replacing files.
 
-- **Emulator:** extract `zonai-hookshot-v0.11.0-emulator-subsdk5.zip`. Put its `zonai-hookshot`
+- **Emulator:** extract `zonai-hookshot-v0.12.0-emulator-subsdk5.zip`. Put its `zonai-hookshot`
   folder in the game's mod directory, then enable it in the emulator's Add-Ons menu.
-- **Switch:** extract `zonai-hookshot-v0.11.0-switch-subsdk5.zip`. Merge its
+- **Switch:** extract `zonai-hookshot-v0.12.0-switch-subsdk5.zip`. Merge its
   `0100F2C0115B6000` folder under `atmosphere/contents/` on the SD card.
 
 Both packages contain the same `exefs/subsdk5` and `exefs/main.npdm`. Check `SHA256SUMS.txt`.
@@ -78,6 +80,14 @@ quest progress are preserved. No custom GameData schema is shipped.
 - Wing-fused arrows and every modded bow have not been exhaustively tested.
 - Very short pulls can wait for native glide before the final wall approach.
 - Travel and arrival sounds use interface fallbacks when the native sound user is unavailable.
+
+## Changes in v0.12.0
+
+- The far half of the tether stays crisp: strand width follows the on-screen size of each turn, and
+  the glow fades out toward the tip, leaving teal cores and edges.
+- Link's arms keep their pose through the final wall approach instead of raising as if holding the
+  hidden glider.
+- Arrowbound fast-arrow drawing changes from ongoing work; its high-speed issues remain (see below).
 
 ## Changes in v0.11.0
 

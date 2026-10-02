@@ -50,6 +50,8 @@ def validate_gpu_assembly(name: str, assembly: str) -> None:
     if "PRET" in instructions:
         raise ValueError(f"{name}: PRET is unsupported by the host recompiler; "
                          "use single-exit shader control flow")
+    if name == "frag" and "IMAD" in instructions:
+        raise ValueError(f"{name}: IMAD is unsupported by the emulator recompiler; keep index math in floats")
     if name == "frag" and {"LDL", "STL"}.intersection(instructions):
         raise ValueError(f"{name}: local-memory traffic; index arrays by literal constants only")
 

@@ -28,6 +28,8 @@ layout(std140, binding = 0) uniform Chain {
 const float kTau = 6.283185307;
 
 const float kCoilOpenness = 0.25;
+const float kStrandPerTurn = 0.12;
+const float kStrandFloorPx = 1.0;
 
 float chAbs(float x) { return abs(x); }
 // @include chain_math.inl
@@ -51,9 +53,12 @@ vec4 solidReticle(vec4 acc, float r, float outer, float feather) {
 }
 
 // Signed normal distance lets fine threads weave within each main strand.
+// k (1 near the hand) shrinks edges and feathers with the strand; decor 0 keeps only core and edge.
 vec4 energyStrand(float v, float endSq, float theta, float detail,
-                  float taper, float shade, vec4 tint) {
-    float w = coil.w;
+                  float taper, float shade, vec4 tint, float w, float decor) {
+    float k = w / max(coil.w, 0.001);
+    float coreFeather = 0.70 * max(k, 0.72);
+    float threadFeather = 0.65 * max(k, 0.77);
     float beat = 0.5 + 0.5 * sin(theta + 2.0 * coil.z);
     float pulse = beat * beat * beat;
     float weave = sin(3.0 * theta + coil.z);
@@ -62,16 +67,19 @@ vec4 energyStrand(float v, float endSq, float theta, float detail,
     float coreDistance = v - 0.32 * drift * weave;
     float threadA = v - drift * (1.55 + 0.40 * sin(2.0 * theta - coil.z));
     float threadB = v + drift * (1.35 + 0.35 * weave);
-    float core = stripe(sqrt(coreDistance * coreDistance + endSq), w * 0.42, 0.70);
-    float fineA = stripe(sqrt(threadA * threadA + endSq), w * 0.17, 0.65);
-    float fineB = stripe(sqrt(threadB * threadB + endSq), w * 0.13, 0.65);
+    float coreR = sqrt(coreDistance * coreDistance + endSq);
+    float threadAR = sqrt(threadA * threadA + endSq);
+    float threadBR = sqrt(threadB * threadB + endSq);
+    float core = stripe(coreR, w * 0.42, coreFeather);
+    float fineA = stripe(threadAR, w * 0.17, threadFeather);
+    float fineB = stripe(threadBR, w * 0.13, threadFeather);
     // A narrow jade edge keeps luminous threads legible on pale rock and sky.
-    float edgeCore = stripe(sqrt(coreDistance * coreDistance + endSq), w * 0.42 + 0.90, 0.65);
-    float edgeA = stripe(sqrt(threadA * threadA + endSq), w * 0.17 + 0.65, 0.65);
-    float edgeB = stripe(sqrt(threadB * threadB + endSq), w * 0.13 + 0.65, 0.65);
-    float backing = max(edgeCore * 0.72, max(edgeA, edgeB) * detail * 0.48);
-    float aura = (1.0 - smoothstep(w * 0.5, w * 4.5 + 1.0, d)) * (0.16 + 0.08 * pulse);
-    float ribbon = stripe(d, w * 1.30, 1.2) * (0.19 + 0.07 * weave);
+    float edgeCore = stripe(coreR, w * 0.42 + 0.90 * k, threadFeather);
+    float edgeA = stripe(threadAR, w * 0.17 + 0.65 * k, threadFeather);
+    float edgeB = stripe(threadBR, w * 0.13 + 0.65 * k, threadFeather);
+    float backing = max(edgeCore * 0.72, max(edgeA, edgeB) * detail * 0.48 * decor);
+    float aura = (1.0 - smoothstep(w * 0.5, w * 4.5 + k, d)) * (0.16 + 0.08 * pulse) * decor;
+    float ribbon = stripe(d, w * 1.30, 1.2 * max(k, 0.5)) * (0.19 + 0.07 * weave) * decor;
     vec3 mint = mix(tint.rgb, vec3(0.85, 1.0, 0.91), 0.78);
     // Keep the invalid preview red; avoid mixing a mint highlight into red feedback.
     mint = mix(mint, mix(tint.rgb, vec3(1.0, 0.78, 0.64), 0.5),
@@ -79,10 +87,10 @@ vec4 energyStrand(float v, float endSq, float theta, float detail,
     vec4 layer = vec4(tint.rgb * aura, aura);
     layer = over(layer, vec4(tint.rgb * 0.07 * backing, backing));
     layer = over(layer, vec4(tint.rgb * ribbon, ribbon));
-    float threads = max(fineA * 0.82, fineB * 0.65) * detail;
+    float threads = max(fineA * 0.82, fineB * 0.65) * detail * decor;
     layer = over(layer, vec4(mix(tint.rgb, mint, 0.4) * threads, threads));
     float bright = core * (0.93 + 0.07 * pulse);
-    layer = over(layer, vec4(mint * bright, bright));
+    layer = over(layer, vec4(mix(tint.rgb, mint, mix(0.35, 1.0, decor)) * bright, bright));
     layer.rgb *= shade;
     return layer * tint.a;
 }
@@ -158,16 +166,20 @@ void main() {
                 float vB = (across + offset) * shrink;
                 float dS = sqrt(across * across + overshootSq);
                 float detail = smoothstep(12.0, 34.0, turnPx);
-                float resolved = smoothstep(2.0, 6.0, turnPx);
+                float resolved = smoothstep(1.5, 4.0, turnPx);
+                float strandW = min(coil.w, max(kStrandFloorPx, kStrandPerTurn * turnPx));
+                // Glow, ribbon, threads and motes fade out 30-50% of the way to the tip; cores and edges stay.
+                float decor = 1.0 - smoothstep(0.30, 0.50, t);
                 float covS = stripe(dS, pxScale.z, feather) * spineColor.a;
+                covS *= max(decor, 1.0 - resolved);
                 covS *= 0.55 + 0.45 * pow(0.5 + 0.5 * sin(theta + 2.0 * coil.z), 3.0);
                 acc = over(acc, vec4(spineColor.rgb * covS, covS));
 
                 float lean = clamp(radialZ, -1.0, 1.0);
                 vec4 layerA = energyStrand(vA, overshootSq, theta, detail, taper,
-                    mix(0.68, 1.0, 0.5 + 0.5 * lean), coreA) * resolved;
+                    mix(0.68, 1.0, 0.5 + 0.5 * lean), coreA, strandW, decor) * resolved;
                 vec4 layerB = energyStrand(vB, overshootSq, theta + 3.141592654, detail, taper,
-                    mix(0.68, 1.0, 0.5 - 0.5 * lean), coreB) * resolved;
+                    mix(0.68, 1.0, 0.5 - 0.5 * lean), coreB, strandW, decor) * resolved;
                 // Continuous crossing order avoids a tiny color pop at the hand/phase wrap.
                 vec4 strands = mix(over(layerA, layerB), over(layerB, layerA),
                                    smoothstep(-0.12, 0.12, radialZ));
@@ -179,10 +191,10 @@ void main() {
                 float travel = 0.5 + 0.22 * sin(coil.z + seed * kTau);
                 float dx = (fract(cell) - travel) * turnPx;
                 float dy = mix(vA, vB, step(0.5, seed)) -
-                    taper * coil.w * (2.6 + sin(coil.z + seed * kTau));
+                    taper * strandW * (2.6 + sin(coil.z + seed * kTau));
                 float moteD = sqrt(dx * dx + dy * dy + overshootSq);
                 float mote = (stripe(moteD, 0.65, 0.7) * 0.78 +
-                    (1.0 - smoothstep(0.6, 3.8, moteD)) * 0.16) * detail * taper;
+                    (1.0 - smoothstep(0.6, 3.8, moteD)) * 0.16) * detail * taper * decor;
                 vec3 moteColor = mix(coreA.rgb, vec3(0.88, 1.0, 0.9), 0.7);
                 moteColor = mix(moteColor, coreA.rgb, step(coreA.g, coreA.r));
                 acc = over(acc, vec4(moteColor * mote, mote));

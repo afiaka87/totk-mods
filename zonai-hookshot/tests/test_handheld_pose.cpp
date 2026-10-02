@@ -85,12 +85,42 @@ TEST_CASE("aim preserves native glide and climb poses until firing") {
         const auto shot=pose::presentation(phase,true,false);
         CHECK(shot.track);CHECK(shot.rightArm);CHECK(shot.leftArm);CHECK(shot.gliderHidden);CHECK_FALSE(shot.glideSteering);
     }
-    const auto arrival=pose::presentation(Phase::Capture,true,false);
-    CHECK(arrival.track);CHECK_FALSE(arrival.rightArm);CHECK_FALSE(arrival.leftArm);CHECK(arrival.gliderHidden);
     for(auto phase:{Phase::Idle,Phase::Arming,Phase::Cooldown}) {
         const auto off=pose::presentation(phase,true,false);
         CHECK_FALSE(off.track);CHECK_FALSE(off.rightArm);CHECK_FALSE(off.leftArm);
         CHECK_FALSE(off.gliderHidden);CHECK_FALSE(off.glideSteering);
+    }
+}
+TEST_CASE("terminal wall approach keeps flight arms until climb, cancellation or failure") {
+    Machine machine{};
+    machine.phase=Phase::PositionCruise;
+    MachineInputs inputs{};
+    inputs.worldReady=true;
+    inputs.positionZipDone=true;
+    inputs.glideEntered=true;
+    REQUIRE(step(machine,inputs).event==Event::CaptureStarted);
+    REQUIRE(machine.phase==Phase::Capture);
+    CHECK(pose::ownsArm(machine.phase));
+    const auto arrival=pose::presentation(machine.phase,true,false);
+    CHECK(arrival.track);CHECK(arrival.rightArm);CHECK(arrival.leftArm);
+    CHECK(arrival.gliderHidden);CHECK_FALSE(arrival.glideSteering);
+
+    // Native Climb can enter before the next state-machine tick.
+    const auto climbing=pose::presentation(machine.phase,false,true);
+    CHECK_FALSE(climbing.rightArm);CHECK_FALSE(climbing.leftArm);
+    for(unsigned exit=0;exit<4;++exit) {
+        auto finishing=machine;
+        MachineInputs finish{};
+        finish.worldReady=exit!=3;
+        finish.climbEntered=exit==0;
+        finish.bEdge=exit==1;
+        finish.captureFailed=exit==2;
+        const Event expected[]{Event::ClimbAcquired,Event::Cleared,Event::CaptureFailed,Event::Reset};
+        CHECK(step(finishing,finish).event==expected[exit]);
+        const auto released=pose::presentation(finishing.phase,true,exit==0);
+        CHECK_FALSE(pose::ownsArm(finishing.phase));
+        CHECK_FALSE(released.rightArm);CHECK_FALSE(released.leftArm);
+        CHECK_FALSE(released.gliderHidden);CHECK_FALSE(released.track);
     }
 }
 TEST_CASE("ground turn speed accelerates gradually and brakes without a jump") {

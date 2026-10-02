@@ -105,10 +105,10 @@ inline bool isAiming(Phase phase) {return phase==Phase::Targeting||phase==Phase:
 inline bool ownsArm(Phase phase) {
     return isAiming(phase)||phase==Phase::ChainLaunch||phase==Phase::Latched||
            phase==Phase::PositionCruise||phase==Phase::DetachRequest||
-           phase==Phase::FallCruise||phase==Phase::GlideHandoff;
+           phase==Phase::FallCruise||phase==Phase::GlideHandoff||phase==Phase::Capture;
 }
-inline bool tracksHand(Phase phase) {return ownsArm(phase)||phase==Phase::Capture||phase==Phase::GlideTerminal;}
-inline bool hidesGlider(Phase phase) {return (ownsArm(phase)&&!isAiming(phase))||phase==Phase::Capture;}
+inline bool tracksHand(Phase phase) {return ownsArm(phase)||phase==Phase::GlideTerminal;}
+inline bool hidesGlider(Phase phase) {return ownsArm(phase)&&!isAiming(phase);}
 struct Presentation {bool track{},rightArm{},leftArm{},gliderHidden{},glideSteering{};};
 inline Presentation presentation(Phase phase,bool gliding,bool climbing) {
     return {tracksHand(phase),ownsArm(phase)&&!climbing,

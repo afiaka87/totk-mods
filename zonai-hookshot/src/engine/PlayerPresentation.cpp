@@ -8,11 +8,14 @@
 #include "RestingLeftArm.hpp"
 #include "TravelGlidePose.hpp"
 #include "TravelBodyAnchor.hpp"
+#include "ArrowFlightPresentation.hpp"
 #include "HandheldEffects.hpp"
 #include "HookshotWorld.hpp"
 #include "HookshotInput.hpp"
 #include "../program/modules/zonai-hookshot/HookshotRuntime.hpp"
+#include "../../../arrowbound/src/program/modules/arrowbound/HookshotRuntime.hpp"
 #include <arrowbound/ActiveGame.hpp>
+#include <ModelTrace.hpp>
 #include <lib.hpp>
 #include <nn/os.h>
 #include <cstring>
@@ -52,6 +55,10 @@ struct Control {
     unsigned glideMagnitude{}, glideDirection{};
     TravelGlideBlend glideBlend{};
     bool anchorTravel{};
+    std::uintptr_t arrowToken{};
+    unsigned arrowShot{};
+    float arrowAnimationWeight{};
+    bool alignArrowModels{};
 };
 Control g_control{};
 struct Result {
@@ -184,6 +191,15 @@ Matrix matrix(void* unit, unsigned index) {
     native<void (*)(void*, Matrix*, unsigned)>(g_profile->functions.boneWorld.offset)(unit, &out,
                                                                                       index);
     return out;
+}
+bool arrowStillOwned(const Control& c) {
+    if (!c.arrowToken || !c.anchorTravel) return false;
+    const auto& rt = arrowbound::runtime();
+    return rt.arrow.controllerToken.load(std::memory_order_acquire) == c.arrowToken &&
+           rt.arrow.shotSeq.load(std::memory_order_acquire) == c.arrowShot &&
+           rt.arrow.playerActor.load(std::memory_order_acquire) == c.actor &&
+           rt.drive.presentParaglider.load(std::memory_order_acquire) &&
+           rt.drive.parasailActive.load(std::memory_order_acquire);
 }
 bool aimArmLocals(void* unit, const Control& c) {
     auto* skeleton = read<void*>(unit, g_profile->model.skeleton);
@@ -562,6 +578,9 @@ HOOK_DEFINE_TRAMPOLINE(TravelBodyAnchorHook) {
         Control c{};
         if (!snapshot(c) || !c.anchorTravel || structure != c.ragdollStructure || !basis)
             return Orig(structure, basis);
+        if (c.arrowToken && !arrowStillOwned(c)) return Orig(structure, basis);
+        if (c.arrowToken && c.arrowAnimationWeight == 1.f)
+            return Orig(structure, basis);
         const auto* profile = arrowbound::profiles::active();
         const auto count = read<unsigned>(structure, 0x58);
         auto* entries = read<void*>(structure, 0x60);
@@ -618,13 +637,28 @@ HOOK_DEFINE_TRAMPOLINE(TravelBodyAnchorHook) {
         // Restore the merge translation state after the call; never move rigid bodies here.
         const auto savedCached = read<Vec3>(structure, 0x17C),
                    savedShift = read<Vec3>(structure, 0x188);
+        const float savedPrimary = c.arrowToken ? read<float>(structure, 0x30) : 0.f,
+                    savedSecondary = c.arrowToken ? read<float>(structure, 0x34) : 0.f;
+        const float blend = pure::arrowAnimationWeight(savedPrimary, savedSecondary,
+                                                       c.arrowAnimationWeight);
+        const bool blendArrow = correcting && c.arrowToken && c.arrowAnimationWeight > 0 &&
+                                std::isfinite(blend);
         auto* raw = static_cast<std::byte*>(structure);
         if (correcting) {
             const unsigned translatedFlags = flags | 0x400000;
             std::memcpy(raw + 0x17C, &cached, sizeof(cached));
             std::memcpy(raw + 0x10, &translatedFlags, sizeof(translatedFlags));
         }
+        if (blendArrow) {
+            const float primary = 1.f;
+            std::memcpy(raw + 0x30, &primary, sizeof(primary));
+            std::memcpy(raw + 0x34, &blend, sizeof(blend));
+        }
         const auto result = Orig(structure, basis);
+        if (blendArrow) {
+            std::memcpy(raw + 0x30, &savedPrimary, sizeof(savedPrimary));
+            std::memcpy(raw + 0x34, &savedSecondary, sizeof(savedSecondary));
+        }
         if (correcting) {
             const unsigned restoredFlags =
                 (read<unsigned>(structure, 0x10) & ~0x400000u) | (flags & 0x400000u);
@@ -635,6 +669,20 @@ HOOK_DEFINE_TRAMPOLINE(TravelBodyAnchorHook) {
             std::memcpy(raw + 0x10, &restoredFlags, sizeof(restoredFlags));
             std::memcpy(raw + 0x17C, &restoredCached, sizeof(restoredCached));
             std::memcpy(raw + 0x188, &restoredShift, sizeof(restoredShift));
+        }
+        if (correcting && c.arrowToken && std::isfinite(savedPrimary) &&
+            std::isfinite(savedSecondary)) {
+            static std::atomic<unsigned> samples{};
+            const auto n = samples.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (n <= 12 || n % 60 == 0) {
+                const auto* finalPose = native<const void* (*)(void*, unsigned)>(
+                    g_profile->functions.animatedPose.offset)(sourcePose, unsigned(poseIndex));
+                const float rootError = finalPose ? distance(read<Vec3>(finalPose, 0x10), anchor) : -1.f;
+                Logging.Log("[zonai-hookshot] ARROW_PRESENTATION shot=%u n=%u shift_cm=%d animation_milli=%d native_primary_milli=%d native_secondary_milli=%d root_error_cm=%d",
+                            c.arrowShot, n, int(length(shift) * 100.f), int(blend * 1000.f),
+                            int(savedPrimary * 1000.f), int(savedSecondary * 1000.f),
+                            std::isfinite(rootError) ? int(rootError * 100.f) : -1);
+            }
         }
         return result;
     }
@@ -667,6 +715,187 @@ HOOK_DEFINE_TRAMPOLINE(ModelWorldHook) {
         }
         visibility(unit, hideUnit(unit, c), c);
         return result;
+    }
+};
+bool arrowRenderMiss(unsigned reason, unsigned shot, std::uintptr_t detail = 0) {
+    static std::atomic<unsigned> failures{};
+    const auto bit = 1u << reason;
+    if (!(failures.fetch_or(bit, std::memory_order_relaxed) & bit))
+        Logging.Log("[zonai-hookshot] ARROW_RENDER_MISS shot=%u reason=%u detail=%p", shot,
+                    reason, reinterpret_cast<void*>(detail));
+    return false;
+}
+void flushArrowModelRequest(void* model) {
+    const auto flags = read<std::uint8_t>(model, 0x241);
+    if (!(flags & 4)) return;
+    // Consume the queued update before the scene starts its culling workers.
+    native<void (*)(void*)>(0x2216CC4)(model);
+    static_cast<std::byte*>(model)[0x241] &= ~std::byte{4};
+}
+bool renderedArrowTarget(const Control& c, Vec3& position, Vec3& velocity, unsigned& sample,
+                         bool prepare = false) {
+    arrowbound::ArrowRenderIdentity identity{};
+    if (!arrowbound::runtime().arrow.renderIdentity.snapshot(identity) ||
+        identity.controller != c.arrowToken || identity.shot != c.arrowShot ||
+        !identity.handle || identity.generation == -1 || !arrowStillOwned(c))
+        return arrowRenderMiss(0, c.arrowShot, identity.shot);
+    struct StaticLink {
+        std::uintptr_t vtable{}, handle{};
+        std::int32_t generation{-1};
+        std::uint8_t flags[4]{};
+    } link{0, identity.handle, identity.generation};
+    static_assert(sizeof(StaticLink) == 24);
+    auto arrow = native<Reference (*)(const void*)>(g_profile->functions.getReference.offset)(&link);
+    if (reinterpret_cast<std::uintptr_t>(arrow.actor) != identity.actor || !arrowStillOwned(c))
+        return arrowRenderMiss(1, c.arrowShot, reinterpret_cast<std::uintptr_t>(arrow.actor));
+    auto* root = modelRoot(arrow.actor);
+    if (!root || read<unsigned>(root, 0x20) > 32) return arrowRenderMiss(2, c.arrowShot);
+    if (prepare) flushArrowModelRequest(root);
+    auto* unit = firstUnit(root);
+    if (!unit || read<void*>(unit, 0) != read<void*>(c.body, 0))
+        return arrowRenderMiss(3, c.arrowShot, read<std::uintptr_t>(unit, 0));
+    auto* skeleton = read<void*>(unit, g_profile->model.skeleton);
+    const auto bones = read<std::uint16_t>(read<void*>(skeleton, 0), 0x38);
+    if (!skeleton || !bones || bones > 512) return arrowRenderMiss(4, c.arrowShot, bones);
+    const auto world = matrix(unit, 0);
+    for (float value : world.v)
+        if (!std::isfinite(value)) return arrowRenderMiss(5, c.arrowShot);
+    position = pose::position(world);
+    velocity = identity.velocity;
+    sample = identity.sample;
+    return arrowStillOwned(c);
+}
+HOOK_DEFINE_TRAMPOLINE(ArrowCameraTargetHook) {
+    static void Callback(void* component, const float* delta) {
+        Orig(component, delta);
+        Control c{};
+        if (!snapshot(c) || !c.alignArrowModels || !arrowStillOwned(c)) return;
+        auto* actor = read<void*>(component, 0x18);
+        if (reinterpret_cast<std::uintptr_t>(actor) != c.actor ||
+            firstUnit(modelRoot(actor)) != c.body ||
+            read<void*>(c.body, g_profile->model.skeleton) != c.bodySkeleton) return;
+        Vec3 position{}, velocity{}, target{}, focus{};
+        unsigned sample{};
+        const auto player = read<Vec3>(actor, arrowbound::profiles::active()->layout.actorPosition);
+        const auto nativeFocus = read<Vec3>(component, 0xC8);
+        if (!renderedArrowTarget(c, position, velocity, sample) ||
+            !arrowbound::pure::arrowTrailPoint(position, velocity, target) ||
+            !arrowCameraFocus(nativeFocus, player, target, velocity, focus)) {
+            reject(29, c.arrowShot);
+            return;
+        }
+        if (!arrowStillOwned(c)) return;
+        std::memcpy(static_cast<std::byte*>(component) + 0xC8, &focus, sizeof(focus));
+        static unsigned shot{}, samples{};
+        if (shot != c.arrowShot) { shot = c.arrowShot; samples = 0; }
+        const auto n = ++samples;
+        if (n <= 120 || n % 60 == 0)
+            Logging.Log("[zonai-hookshot] ARROW_CAMERA_TARGET shot=%u n=%u arrow_n=%u shift_cm=%d native_cm=(%d,%d,%d) focus_cm=(%d,%d,%d) player_cm=(%d,%d,%d) target_cm=(%d,%d,%d)",
+                        c.arrowShot, n, sample, int(distance(player, target) * 100),
+                        int(nativeFocus.x * 100), int(nativeFocus.y * 100), int(nativeFocus.z * 100),
+                        int(focus.x * 100), int(focus.y * 100), int(focus.z * 100),
+                        int(player.x * 100), int(player.y * 100), int(player.z * 100),
+                        int(target.x * 100), int(target.y * 100), int(target.z * 100));
+    }
+};
+void updateArrowModel(void* model, const Matrix& root) {
+    std::memcpy(static_cast<std::byte*>(model) + 0x1F8, &root, sizeof(root));
+    static_cast<std::byte*>(model)[0x240] |= std::byte{1};
+    // Rebuild the native model hierarchy without repeating the actor's pose modifiers.
+    native<void (*)(void*, void*)>(0x64D388)(model, nullptr);
+}
+void prepareArrowScene(void* scene, const Control& c) {
+    if (!c.alignArrowModels || !c.player || !arrowStillOwned(c) || !world::ready()) return;
+    auto* player = world::playerActor();
+    if (reinterpret_cast<std::uintptr_t>(player) != c.actor) return;
+    auto* body = modelRoot(player);
+    if (!body || read<void*>(body, 0x60) != scene || firstUnit(body) != c.body ||
+        read<void*>(c.body, g_profile->model.skeleton) != c.bodySkeleton) return;
+
+    Reference references[22]{};
+    void* models[24]{body};
+    unsigned count = 1, held = 0;
+    auto* gliderModel = static_cast<void*>(nullptr);
+    const auto collect = [&](const void* link, bool glider) {
+        if (!link || held == 22) return;
+        auto part = native<Reference (*)(const void*)>(g_profile->functions.getReference.offset)(link);
+        auto* model = modelRoot(part.actor);
+        if (!model || read<void*>(model, 0x60) != scene) return;
+        auto* unit = firstUnit(model);
+        if (!unit || read<void*>(unit, 0) != read<void*>(c.body, 0) ||
+            read<unsigned>(model, 0x20) > 32) { reject(30, count); return; }
+        if (glider) gliderModel = model;
+        for (unsigned i = 0; i < count; ++i) if (models[i] == model) return;
+        references[held].actor = part.actor;
+        references[held++].counted = part.counted;
+        part.actor = nullptr;
+        models[count++] = model;
+    };
+    auto* equipment = read<std::byte*>(components(player), 0x230);
+    if (equipment)
+        for (unsigned i = 0; i < 20; ++i) collect(equipment + 0x20 + i * 0x18, false);
+    if (equipment) {
+        auto sword = native<Reference (*)(const void*)>(g_profile->functions.getReference.offset)(
+            equipment + 0x20);
+        auto* weapon = read<void*>(components(sword.actor), 0x208);
+        if (weapon && read<std::uint8_t>(weapon, 0x50C))
+            collect(static_cast<std::byte*>(weapon) + 0xB0, false);
+    }
+    collect(static_cast<std::byte*>(c.player) + 0x6B8, true);
+    if (!gliderModel) { reject(31, c.arrowShot); return; }
+
+    for (unsigned i = 0; i < count; ++i) flushArrowModelRequest(models[i]);
+    const auto oldRoot = read<Matrix>(body, 0x1F8);
+    Vec3 arrow{}, velocity{}, target{}, shift{};
+    unsigned sample{};
+    if (!renderedArrowTarget(c, arrow, velocity, sample, true) ||
+        !arrowRenderTranslation(oldRoot, arrow, velocity, target, shift)) {
+        reject(8, c.arrowShot); return;
+    }
+    const unsigned attachment = bone(c.body, "Weapon_R");
+    const auto bones = read<std::uint16_t>(read<void*>(c.bodySkeleton, 0), 0x38);
+    const auto* animation = read<void*>(body, 0x40);
+    if (attachment >= bones || !animation || read<int>(animation, 0x90) < 1 || !arrowStillOwned(c)) {
+        reject(19, attachment); return;
+    }
+    const auto oldAttachment = matrix(c.body, attachment);
+    const auto oldGlider = read<Matrix>(gliderModel, 0x1F8);
+    Matrix inverse{};
+    if (!pose::inverseAffine(oldAttachment, inverse)) { reject(23, attachment); return; }
+
+    // Apply the current animation frame; this does not advance animation time.
+    native<void (*)(void*, void*, unsigned)>(0x832640)(body, body, 1);
+    updateArrowModel(body, translateArrowModel(oldRoot, shift));
+    Matrix gliderRoot{};
+    if (!arrowAttachmentRoot(oldAttachment, matrix(c.body, attachment), oldGlider, gliderRoot)) {
+        reject(24, attachment);
+        gliderRoot = translateArrowModel(oldGlider, shift);
+    }
+    for (unsigned i = 1; i < count; ++i) {
+        const auto root = models[i] == gliderModel ? gliderRoot :
+            translateArrowModel(read<Matrix>(models[i], 0x1F8), shift);
+        updateArrowModel(models[i], root);
+    }
+    static unsigned shot{}, frames{};
+    if (shot != c.arrowShot) { shot = c.arrowShot; frames = 0; }
+    const auto n = ++frames;
+    if (n <= 120 || n % 60 == 0) {
+        const auto final = pose::position(matrix(c.body, 0));
+        const auto* alpha = read<void*>(components(player), 0x280);
+        const float opacity = alpha ? read<float>(alpha, 0x5C) * read<float>(alpha, 0x64) *
+            read<float>(alpha, 0xA4) * read<float>(alpha, 0x60) : -1.f;
+        Logging.Log("[zonai-hookshot] ARROW_SCENE shot=%u n=%u arrow_n=%u models=%u shift_cm=%d root_error_cm=%d trail_cm=%d alpha_milli=%d target_cm=(%d,%d,%d)",
+                    c.arrowShot, n, sample, count, int(length(shift) * 100),
+                    int(distance(final, target) * 100), int(distance(final, arrow) * 100),
+                    std::isfinite(opacity) ? int(opacity * 1000) : -1,
+                    int(target.x * 100), int(target.y * 100), int(target.z * 100));
+    }
+}
+HOOK_DEFINE_TRAMPOLINE(ArrowSceneFrameHook) {
+    static std::uint64_t Callback(void* scene) {
+        Control c{};
+        if (snapshot(c)) prepareArrowScene(scene, c);
+        return Orig(scene);
     }
 };
 struct GlowParameters {
@@ -759,6 +988,27 @@ HOOK_DEFINE_TRAMPOLINE(ModelBeforeDrawHook) {
         }
         GlowParameters glow(unit, c);
         const auto result = Orig(unit, graphics, views, count);
+        if (c.alignArrowModels && unit == c.body && arrowStillOwned(c) &&
+            read<void*>(unit, g_profile->model.skeleton) == c.bodySkeleton) {
+            static unsigned shot{}, samples{};
+            if (shot != c.arrowShot) { shot = c.arrowShot; samples = 0; }
+            const auto n = ++samples;
+            if (n <= 12 || n % 60 == 0) {
+                const auto bounds = arrowbound::pure::inspectModelCull(unit);
+                const auto root = pose::position(matrix(unit, 0));
+                const unsigned bones = read<std::uint16_t>(read<void*>(c.bodySkeleton, 0), 0x38);
+                float reach = 0;
+                if (bones <= 512)
+                    for (unsigned i = 0; i < bones; ++i)
+                        reach = std::max(reach, distance(root, pose::position(matrix(unit, i))));
+                Logging.Log("[zonai-hookshot] ARROW_UPLOAD shot=%u n=%u views=%08x bounds_valid=%u radius_cm=%d root_bounds_cm=%d bone_reach_cm=%d root_cm=(%d,%d,%d)",
+                            c.arrowShot, n, bounds.mask, unsigned(bounds.sphereValid),
+                            bounds.sphereValid ? int(bounds.radius * 100) : -1,
+                            bounds.sphereValid ? int(distance(root, bounds.center) * 100) : -1,
+                            std::isfinite(reach) ? int(reach * 100) : -1,
+                            int(root.x * 100), int(root.y * 100), int(root.z * 100));
+            }
+        }
         // Publish after body upload; simulation can already be working on the next pose.
         publishHand(unit, c);
         return result;
@@ -983,11 +1233,11 @@ void updatePoseControl(Control& c, const HookshotRuntime& rt) {
 }
 
 void collectEquipment(Control& c, void* player, void* equipment) {
-    if (c.requested)
+    if (c.requested || c.alignArrowModels)
         addGlowUnits(c, modelRoot(player));
     if (equipment) {
         // EquipmentUser holds eight dynamic and twelve static links; release every borrowed reference.
-        if (c.requested)
+        if (c.requested || c.alignArrowModels)
             for (unsigned i = 0; i < 20; ++i) {
                 auto part =
                     native<Reference (*)(const void*)>(g_profile->functions.getReference.offset)(
@@ -1044,6 +1294,17 @@ void install(std::uintptr_t mainBase) {
         if (route.site.offset &&
             !arrowbound::profiles::entryHookable(mainBase, route.site, "presentation dispatch"))
             return;
+    constexpr arrowbound::profiles::Site cameraTarget{0x84578C, 0xD10683FF};
+    const bool arrowCamera = game->version == arrowbound::profiles::GameVersion::V121;
+    constexpr arrowbound::profiles::Site arrowSceneSites[]{
+        {0x974D9C, 0xA9BA7BFD}, {0x832640, 0xD101C3FF},
+        {0x64D388, 0xD10343FF}, {0x2216CC4, 0xA9BE7BFD},
+    };
+    if (arrowCamera) {
+        if (!arrowbound::profiles::entryHookable(mainBase, cameraTarget, "arrow camera target")) return;
+        for (const auto& site : arrowSceneSites)
+            if (!arrowbound::profiles::entryHookable(mainBase, site, "arrow scene pose")) return;
+    }
     g_base = mainBase;
     nn::os::InitializeMutex(&g_lock, true, 0);
     g_installed = true;
@@ -1051,6 +1312,10 @@ void install(std::uintptr_t mainBase) {
     ModelWorldHook::InstallAtOffset(f.modelWorld.offset);
     ShapeVisibleHook::InstallAtOffset(f.shapeVisible.offset);
     ModelBeforeDrawHook::InstallAtOffset(f.modelBeforeDraw.offset);
+    if (arrowCamera) {
+        ArrowCameraTargetHook::InstallAtOffset(cameraTarget.offset);
+        ArrowSceneFrameHook::InstallAtOffset(arrowSceneSites[0].offset);
+    }
     EffectCalcHook::InstallAtOffset(f.effectCalc.offset);
     EffectDestroyedHook::InstallAtOffset(f.effectDestroyed.offset);
     SoundCalcHook::InstallAtOffset(f.soundCalc.offset);
@@ -1098,6 +1363,19 @@ void update(const HookshotRuntime& rt) {
     c.generation = rt.session.worldGen;
     c.anchorTravel = rt.machine.phase == Phase::PositionCruise && rt.positionDrive.path.active &&
                      !rt.positionDrive.failed;
+    const auto& arrow = arrowbound::runtime();
+    if (!c.anchorTravel && arrowbound::profiles::active()->version ==
+                               arrowbound::profiles::GameVersion::V121) {
+        const auto flight = arrowFlightPresentation(
+            arrow.arrowTrip.phase, arrow.drive.parasailActive.load(std::memory_order_acquire) != 0,
+            g_climbingPlayer.load(std::memory_order_acquire) != 0, arrow.arrowTrip.arrowVelocity);
+        c.arrowToken = arrow.arrow.controllerToken.load(std::memory_order_acquire);
+        c.arrowShot = arrow.arrowTrip.shotSeqSeen;
+        c.anchorTravel = flight.anchor && c.arrowToken != 0;
+        c.arrowAnimationWeight = flight.animationWeight;
+        c.alignArrowModels = flight.alignModels && c.anchorTravel &&
+                             arrow.arrowTrip.haveRequestedPosition;
+    }
     c.requested = pose::ownsArm(rt.machine.phase);
     c.trackHand = pose::tracksHand(rt.machine.phase);
     c.aiming = pose::isAiming(rt.machine.phase);
