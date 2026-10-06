@@ -93,7 +93,7 @@ extern "C" void exl_main(void*, void*) {
                                 self_recall::pose_recorder::prepareScene});
     RayCastWorkerHook::InstallAtOffset(self_recall::profiles::address(0x00858590));
     NpadCalcHook::InstallAtOffset(self_recall::profiles::address(0x02A267BC));
-    Logging.Log("[self-recall] v1.1.0 TotK=%s storage=%s: Glide outfit selects 1.25/1.5/2/4x Recall speed",
+    Logging.Log("[self-recall] v1.1.1 TotK=%s storage=%s: Glide outfit selects 1.25/1.5/2/4x Recall speed",
                 game->name, self_recall::pure::kStorageProfileName);
 }
 

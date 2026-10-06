@@ -1,9 +1,21 @@
-# Self Recall v1.1.0
+# Self Recall v1.1.1
 
 Recall Link through his recent movement and animation history. Both builds now
 retain 64 seconds. The regular build keeps the whole history in memory for
 emulators. The Switch build keeps the newest 10 seconds in memory and stores older
 history on the SD card. **SD-card history is an alpha feature** (see below).
+
+## Changes in v1.1.1
+
+- Fixes a crash during Recall through an Airbender Glider v2 paraglide in Ryujinx.
+- Corrects historical model bounds for skinned models without changing recorded
+  movement, animation, equipment or the 64-second window.
+- Removes temporary bounds-diagnostic logging; failure logs remain.
+
+The correction passed a diagnostic glide-Recall session on Ryujinx 1.3.3 with
+Tears of the Kingdom 1.2.1. The final builds pass offline checks. The updated
+Switch build has not had a separate physical-Switch play-test. Earlier v1.1.0
+version and hardware acceptance is recorded below; it is not a new v1.1.1 test.
 
 ## Controls
 

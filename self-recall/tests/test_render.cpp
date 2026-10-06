@@ -272,6 +272,82 @@ TEST_CASE("historical bounds do not pin an early native origin before GPU prepar
     CHECK(unit == untouched);
 }
 
+TEST_CASE("world-space historical bounds preserve rigid boxes and tolerate absent skinned boxes") {
+    using namespace self_recall::model;
+    alignas(16) std::array<std::byte, 0x400> unit{};
+    unit[0x355] = std::byte{0xA5};
+    NativeRenderInput input;
+    std::memset(input.skeleton, 0x55, sizeof(input.skeleton));
+    std::array<RecordedBoneMatrix, kPoseBoneLimit> source{};
+    for (unsigned i = 0; i < source.size(); ++i) {
+        const float matrix[16]{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0,
+                               float(i + 2), -3, 4, 1};
+        std::memcpy(source[i].words, matrix, sizeof(matrix));
+    }
+    const void* sourcePointer = source.data();
+    std::memcpy(input.skeleton + 0x20, &sourcePointer, sizeof(sourcePointer));
+    const auto untouched = unit;
+    const auto originalBones = source;
+    std::array<std::byte, 0x48> originalSkeleton;
+    std::memcpy(originalSkeleton.data(), input.skeleton, originalSkeleton.size());
+    NativeWorldBoundingInput bounds;
+    RecordedModelPose pose{};
+    pose.identity.boneCount = 2;
+    pose.originRelative = 1;
+    pose.renderOrigin[0] = 1000;
+    pose.renderOrigin[1] = -200;
+    pose.renderOrigin[2] = 30;
+    REQUIRE(bounds.prepareWorldHistorical(unit.data(), input, pose));
+    CHECK(bounds.unit[0x355] == std::byte{0xA4});
+    const std::byte* skeleton;
+    const RecordedBoneMatrix* bones;
+    std::memcpy(&skeleton, bounds.unit + 0x170, sizeof(skeleton));
+    std::memcpy(&bones, skeleton + 0x20, sizeof(bones));
+    CHECK(skeleton == bounds.worldSkeleton);
+    CHECK(bones == bounds.worldBones);
+    auto absolute = pose;
+    absolute.originRelative = 0;
+    for (unsigned i = 0; i < pose.identity.boneCount; ++i) {
+        float expected[12], actual[12];
+        REQUIRE(boneToWorldMatrix(source[i], pose, expected));
+        REQUIRE(boneToWorldMatrix(bones[i], absolute, actual));
+        CHECK(std::memcmp(expected, actual, sizeof(actual)) == 0);
+    }
+    // Native origin-relative translation does not guard the optional submesh buffer.
+    float rigid[2][3]{{1001, -205, 32}, {1005, -201, 36}};
+    float (*outputs[2])[3]{nullptr, rigid};
+    for (auto* output : outputs) {
+        if ((std::to_integer<unsigned>(bounds.unit[0x355]) & 1u) != 0) {
+            REQUIRE(output != nullptr);
+            for (auto& box : std::span<float[3]>(output, 2))
+                for (unsigned axis = 0; axis < 3; ++axis) box[axis] += pose.renderOrigin[axis];
+        }
+    }
+    CHECK(rigid[0][0] == 1001);
+    CHECK(rigid[1][1] == -201);
+    CHECK(unit == untouched);
+    CHECK(std::memcmp(source.data(), originalBones.data(), sizeof(source)) == 0);
+    CHECK(std::memcmp(input.skeleton, originalSkeleton.data(), originalSkeleton.size()) == 0);
+
+    pose.originRelative = 0;
+    pose.identity.boneCount = kPoseBoneLimit;
+    REQUIRE(bounds.prepareWorldHistorical(unit.data(), input, pose));
+    CHECK(std::memcmp(bounds.worldBones, source.data(), sizeof(source)) == 0);
+    pose.identity.boneCount = 0;
+    CHECK_FALSE(bounds.prepareWorldHistorical(unit.data(), input, pose));
+    pose.identity.boneCount = kPoseBoneLimit + 1;
+    CHECK_FALSE(bounds.prepareWorldHistorical(unit.data(), input, pose));
+    pose.identity.boneCount = 2;
+    pose.originRelative = 2;
+    CHECK_FALSE(bounds.prepareWorldHistorical(unit.data(), input, pose));
+    pose.originRelative = 1;
+    pose.renderOrigin[0] = std::numeric_limits<float>::infinity();
+    CHECK_FALSE(bounds.prepareWorldHistorical(unit.data(), input, pose));
+    sourcePointer = nullptr;
+    std::memcpy(input.skeleton + 0x20, &sourcePointer, sizeof(sourcePointer));
+    CHECK_FALSE(bounds.prepareWorldHistorical(unit.data(), input, pose));
+}
+
 TEST_CASE("unused origins may change after upload while effective origin changes still fail") {
     FrameFixture fixture;
     fixture.current.originRelative = fixture.recorded.models[0].originRelative = 0;

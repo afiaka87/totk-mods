@@ -311,9 +311,13 @@ bool updateHistoricalBounds(void* unit, NativeCalculateBounding calculate) {
     model::NativeRenderInput animation;
     const auto input = animation.prepare(live, historical, recorded.bones + historical.identity.firstBone);
     if (input != model::RenderInputStatus::Ready) { fail(Failure::Input, unsigned(input)); return false; }
-    model::NativeBoundingInput bounds;
-    bounds.prepareHistorical(unit, animation, pure::kHistoricalEquipment
-        ? pure::translatedBoundsSpace(historical, frame.get()->rootOffset) : historical);
+    // Skinned shapes have no submesh box buffer; native origin translation does not guard it.
+    model::NativeWorldBoundingInput bounds;
+    if (!bounds.prepareWorldHistorical(unit, animation, pure::kHistoricalEquipment
+        ? pure::translatedBoundsSpace(historical, frame.get()->rootOffset) : historical)) {
+        fail(Failure::Input, 0xB002);
+        return false;
+    }
     (void)calculate(bounds.unit);
     frame.markBounded();
     return true;

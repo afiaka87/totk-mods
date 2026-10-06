@@ -1046,6 +1046,31 @@ struct NativeBoundingInput {
     }
 };
 
+struct NativeWorldBoundingInput : NativeBoundingInput {
+    alignas(16) std::byte worldSkeleton[0x48];
+    pure::RecordedBoneMatrix worldBones[pure::kPoseBoneLimit];
+
+    bool prepareWorldHistorical(const void* liveUnit, const NativeRenderInput& animation,
+                                const pure::RecordedModelPose& historical) {
+        const auto count = historical.identity.boneCount;
+        if (!count || count > pure::kPoseBoneLimit || historical.originRelative > 1) return false;
+        const pure::RecordedBoneMatrix* source;
+        std::memcpy(&source, animation.skeleton + 0x20, sizeof(source));
+        if (!source) return false;
+        auto absolute = historical;
+        absolute.originRelative = 0;
+        for (unsigned i = 0; i < count; ++i)
+            if (!pure::rebaseBoneForRender(source[i], historical, absolute, worldBones[i])) return false;
+        prepareHistorical(liveUnit, animation, absolute);
+        std::memcpy(worldSkeleton, animation.skeleton, sizeof(worldSkeleton));
+        const void* bones = worldBones;
+        std::memcpy(worldSkeleton + 0x20, &bones, sizeof(bones));
+        const void* skeleton = worldSkeleton;
+        std::memcpy(unit + g_nativeModelLayout.skeleton, &skeleton, sizeof(skeleton));
+        return true;
+    }
+};
+
 }
 
 #include "RecallVisual.hpp"
