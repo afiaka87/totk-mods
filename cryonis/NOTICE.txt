@@ -1,0 +1,9 @@
+Cryonis's original source is MIT licensed, copyright Clay Mullis.
+
+The compiled module includes exlaunch, licensed under GPL-2.0.
+Upstream source: https://github.com/shadowninja108/exlaunch
+Mod source: https://github.com/afiaka87/totk-mods/tree/main/cryonis
+
+Native builds use devkitPro/devkitA64. The meshes, textures, sounds and fonts that the
+build tools extract from an owned copy of the games are not part of this source and are
+not relicensed. No Nintendo game assets are distributed here.
