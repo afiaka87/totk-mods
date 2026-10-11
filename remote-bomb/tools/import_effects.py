@@ -15,6 +15,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT/'scripts'))
+from totk_mod_tools.textures import gpu
 from totk_mod_tools.textures.bntx import Bank
 
 SETS = ('BombAppear', 'RemoteBomb', 'RemoteBomb_Stripe', 'Test_Explosion', 'Test_Explosion_1')
@@ -68,6 +69,11 @@ def source_bundle(source: Path) -> tuple[bytes, str]:
 
 
 def extract(source: Path) -> tuple[list[tuple[Image.Image, dict]], list[dict], str]:
+    images, emitters, source_hash, _ = originals(source)
+    return images, emitters, source_hash
+
+
+def originals(source: Path) -> tuple[list[tuple[Image.Image, dict]], list[dict], str, list[gpu.GpuTexture]]:
     data, source_hash = source_bundle(source)
     rows = sections(data)
     bank_row = next(row for row in rows if row['signature'] == 'GRTF')
@@ -107,7 +113,7 @@ def extract(source: Path) -> tuple[list[tuple[Image.Image, dict]], list[dict], s
                              parameter_sha256=hashlib.sha256(data[start:start+2568]).hexdigest()))
     if len(emitters) != 23 or {e['set'] for e in emitters} != set(SETS):
         raise ValueError('Original bomb emitter census changed')
-    images = []
+    images, uploads = [], []
     for name in NAMES:
         texture = bank.get(name)
         if texture.format_name == 'R8G8_UNORM':
@@ -120,7 +126,12 @@ def extract(source: Path) -> tuple[list[tuple[Image.Image, dict]], list[dict], s
         image = Image.frombytes('RGBA', (texture.width, texture.height), pixels)
         images.append((image, dict(name=name, format=texture.format_name, width=texture.width,
                                   height=texture.height, pixels_sha256=hashlib.sha256(pixels).hexdigest())))
-    return images, emitters, source_hash
+        # The game samples the original blocks; they must read back as exactly these pixels.
+        upload = gpu.original(bank, name)
+        if gpu.expand(upload) != pixels:
+            raise ValueError('Original particle texture does not sample as its decode: '+name)
+        uploads.append(upload)
+    return images, emitters, source_hash, uploads
 
 
 def vector(values) -> str:
@@ -129,7 +140,7 @@ def vector(values) -> str:
 
 def build(source: Path, output: Path) -> dict:
     output.mkdir(parents=True, exist_ok=True)
-    images, emitters, source_hash = extract(source)
+    images, emitters, source_hash, uploads = originals(source)
     lines = ['// Private owned-game particle data; generated locally, never distributed.',
              '#pragma once', '#include "RemoteBombAssets.hpp"',
              'namespace remote_bomb::effect_assets {',
@@ -138,12 +149,11 @@ def build(source: Path, output: Path) -> dict:
     lines.append('enum EmitterId { '+','.join(e['set']+'_'+e['name'] for e in emitters)+' };')
     lines.append('enum TextureId { '+','.join(NAMES)+' };')
     textures = []
-    for i, (image, _) in enumerate(images):
-        raw = image.tobytes()
-        lines.append(f'alignas(16) inline constexpr unsigned char image{i}[]={{')
-        lines.extend(','.join(str(v) for v in raw[j:j+48])+',' for j in range(0, len(raw), 48))
-        lines.append('};')
-        textures.append(f'{{image{i},{image.width},{image.height}}}')
+    for i, ((image, info), upload) in enumerate(zip(images, uploads)):
+        array, value = gpu.cxx(f'image{i}', upload)
+        lines.extend(array)
+        textures.append(value)
+        info['upload'] = upload.receipt()
         image.save(output/f'effect-{i}.png')
     lines.append('inline constexpr assets::Texture textures[]{'+','.join(textures)+'};')
     lines.append('inline constexpr Emitter emitters[]{')

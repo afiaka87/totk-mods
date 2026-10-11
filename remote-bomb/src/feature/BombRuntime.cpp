@@ -8,6 +8,7 @@
 #include "BombWorld.hpp"
 #include "BombSignals.hpp"
 #include "BombRenderPolicy.hpp"
+#include "totk/engine/AbilityChoice.hpp"
 #include "totk/engine/Npad.hpp"
 #include <lib.hpp>
 #include <atomic>
@@ -28,6 +29,12 @@ struct HighlightTrace {
     std::uint32_t serial{};
     highlight::Level level{};
     bool active{}, focused{}, held{};
+};
+// Last hold state per bomb seen with Link close by, for the pickup diagnostic.
+struct PickupTrace {
+    std::uint32_t serial{};
+    std::uint64_t flags{};
+    bool carried{};
 };
 // The player's Ultrahand fields the highlight reads.
 struct Hand {
@@ -61,8 +68,13 @@ struct Runtime {
     std::array<Spent, 2> spent{};
     std::array<HighlightTrace, 2> highlights{};
     unsigned highlightLogs{};
+    std::array<PickupTrace, 2> pickups{};
+    unsigned pickupLogs{};
+    bool pickupPress{};
+    bool modChosen{};
     std::uint64_t priorClock{};
     unsigned generation{}, seenSelections{};
+    totk::engine::AbilityChoiceWatch otherAbilities;
     std::atomic_flag tickLock = ATOMIC_FLAG_INIT;
     std::atomic_flag presentationLock = ATOMIC_FLAG_INIT;
     Presentation frame;
@@ -393,6 +405,30 @@ highlight::Level highlightOf(unsigned form, const Hand &hand, engine::Position b
     }
     return level;
 }
+// Diagnostic for ground pickup: an A press within 3 m of a bomb, and each change of the bomb's hold
+// state or of what Link carries while he stays that close. Ultrahand's per-frame bits are ignored.
+void tracePickup(unsigned form, engine::Position bomb) {
+    if (!state.player.address || state.pickupLogs >= 80)
+        return;
+    const auto player = engine::position(state.player);
+    const float dx = bomb.x - player.x, dy = bomb.y - player.y, dz = bomb.z - player.z;
+    const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+    if (distance > 3.f)
+        return;
+    const auto receiver = receiverOf(state.actors[form].address);
+    const auto flags = (receiver ? eng::readMemory<std::uint64_t>(receiver + 32) : 0) & ~std::uint64_t(0xC000);
+    const bool carried = engine::carriedActor(state.native, state.generation, borrow(state.player)).value ==
+                         borrow(state.actors[form]).value;
+    auto &trace = state.pickups[form];
+    const auto serial = state.gameplay.slots[form].ticket.serial;
+    if (!state.pickupPress && trace.serial == serial && trace.flags == flags && trace.carried == carried)
+        return;
+    trace = {serial, flags, carried};
+    ++state.pickupLogs;
+    Logging.Log("[remote-bomb] PICKUP_TRACE form=%u serial=%u a_pressed=%u carried=%u receiver_flags=%llx "
+                "distance=%f remembered=%u", form, serial, unsigned(state.pickupPress), unsigned(carried),
+                (unsigned long long)flags, double(distance), unsigned(state.controls.remembered));
+}
 void publish(bool running) {
     Presentation frame;
     frame.state = state.gameplay;
@@ -414,6 +450,7 @@ void publish(bool running) {
             eng::readMemory<std::array<float, 9>>(state.actors[form].address + eng::layout::kActorRotation));
         view.live = true;
         view.highlight = highlightOf(form, hand, view.position);
+        tracePickup(form, view.position);
         state.effects = effects::track(state.effects, form ? Shape::Cube : Shape::Sphere,
                                       state.gameplay.slots[form].ticket,
                                       {view.position.x, view.position.y, view.position.z}, true);
@@ -464,19 +501,30 @@ void tick(void *device) {
     const auto snapshot = frame.snapshot();
     const bool fresh = snapshot.freshSampleCount != 0;
     const auto buttons = fresh ? snapshot.buttons : state.controls.lastButtons;
+    state.pickupPress = fresh && (buttons & ~state.controls.lastButtons & 1u);  // A
     const auto selections = state.signals.nativeSelections.load(std::memory_order_acquire);
+    const bool otherChosen = state.otherAbilities.chosenElsewhere(totk::engine::Ability::RemoteBomb);
+    if (selections != state.seenSelections)
+        state.modChosen = false;
+    if (otherChosen)
+        state.modChosen = true;
     bool bombOut{};
     for (const auto &slot : state.gameplay.slots)
         bombOut |= available && (slot.phase == Phase::Live || slot.phase == Phase::DetonationRequested);
     const auto controls = input::transition(state.controls,
         {input::unpack(state.signals.wheel.load(std::memory_order_acquire)), buttons,
          fresh ? buttons & ~state.controls.lastButtons : 0, fresh, running, available,
-         selections != state.seenSelections, bombOut});
+         selections != state.seenSelections || otherChosen, bombOut, state.modChosen});
     state.seenSelections = selections;
+    // A bomb left out answers the next L press, so the other abilities leave that press alone.
+    totk::engine::holdL(totk::engine::Ability::RemoteBomb, controls.next.reclaimed || bombOut);
+    if (state.controls.reclaimed && !controls.next.reclaimed)
+        Logging.Log("[remote-bomb] L_RETURNED to_mod=%u", unsigned(controls.next.handing));
     state.controls = controls.next;
     state.signals.request.store(controls.next.pendingEpoch, std::memory_order_release);
-    state.signals.remembered.store(controls.next.remembered, std::memory_order_release);
+    state.signals.remembered.store(input::blocksNative(controls.next), std::memory_order_release);
     if (controls.event == input::Event::Equipped) {
+        totk::engine::chooseAbility(totk::engine::Ability::RemoteBomb);
         apply({controls.next.selected == Shape::Sphere ? Event::SelectSphere : Event::SelectCube});
     }
     if (controls.event != input::Event::None)
@@ -548,8 +596,9 @@ void wheelClosed(std::uintptr_t screen) { engine::wheelClosed(state.signals, scr
 bool wheelCancelRequested(std::uintptr_t screen) { return engine::wheelCancelRequested(state.signals, screen); }
 void nativeSelectionAccepted(std::uintptr_t screen) { engine::nativeSelectionAccepted(state.signals, screen); }
 void maskRecentAbilityKey(std::uintptr_t node) { engine::maskRecentAbilityKey(state.base, state.signals, node); }
-std::uint64_t nativeAbilityAdmission(std::uint64_t (*original)(std::uintptr_t), std::uintptr_t actor) {
-    return engine::nativeAbilityAdmission(original, state.signals, actor);
+std::uint64_t nativeAbilityAdmission(std::uint64_t (*original)(std::uintptr_t), std::uintptr_t actor,
+                                    std::uintptr_t caller) {
+    return engine::nativeAbilityAdmission(original, state.signals, actor, caller - state.base);
 }
 void cancelOwnedAmiibo(std::uintptr_t node) { engine::cancelOwnedAmiibo(state.base, state.signals, node); }
 }

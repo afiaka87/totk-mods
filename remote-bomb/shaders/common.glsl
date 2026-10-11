@@ -1,7 +1,11 @@
 layout(std140,binding=0) uniform Bomb {
     vec4 dimensions,view0,view1,view2,projection;
-    vec4 actor0,actor1,actor2,lighting,emission,highlight,outline;
+    vec4 actor0,actor1,actor2,lighting,emission,highlight,outline,privateDepth;
 };
+// The 16-bit private depth buffer spans only the view distances around the live bombs.
+float privateDepthOf(float distance){
+    return clamp((distance-privateDepth.x)/(privateDepth.y-privateDepth.x),0.0,1.0);
+}
 vec3 eyePosition(){return vec3(view0.w,view1.w,view2.w);}
 vec3 viewPosition(vec3 p){
     p-=eyePosition();

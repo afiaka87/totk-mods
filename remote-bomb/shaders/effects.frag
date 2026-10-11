@@ -35,7 +35,7 @@ void main(){
     float depth=dimensions.z+texelFetch(sceneDepth,ivec2(gl_FragCoord.xy),0).r*(dimensions.w-dimensions.z);
     float alpha=clamp(mask*lighting.w,0.0,1.0);
     if(-viewPosition(position).z>depth+.005)alpha=0.0;
-    gl_FragDepth=clamp((-viewPosition(position).z-dimensions.z)/(dimensions.w-dimensions.z),0.0,1.0);
+    gl_FragDepth=privateDepthOf(-viewPosition(position).z);
     result=vec4(emission.rgb*alpha,alpha);
     bright=result;
 }

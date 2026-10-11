@@ -60,7 +60,8 @@ constexpr Blob kBlobs[]{BLOB(watervert),   BLOB(waterfrag),   BLOB(icevert), BLO
 #undef BLOB
 alignas(4096) unsigned char g_codeMemory[128 * 1024]{};
 alignas(4096) unsigned char g_meshMemory[53248]{};
-alignas(65536) unsigned char g_textureMemory[8 * 1024 * 1024]{};
+// The Cryonis textures are the original compressed blocks and need 542,720 bytes.
+alignas(65536) unsigned char g_textureMemory[640 * 1024]{};
 NVNmemoryPool g_codePool{}, g_meshPool{}, g_texturePool{};
 NVNprogram g_waterProgram{}, g_iceProgram{}, g_effectsProgram{}, g_hudProgram{};
 NVNtexture g_textures[3]{};
@@ -210,6 +211,7 @@ bool initializeTextures() {
     PFNNVNTEXTUREBUILDERSETTARGETPROC texTarget{};
     PFNNVNTEXTUREBUILDERSETSIZE2DPROC texSize{};
     PFNNVNTEXTUREBUILDERSETFORMATPROC texFormat{};
+    PFNNVNTEXTUREBUILDERSETSWIZZLEPROC texSwizzle{};
     PFNNVNTEXTUREBUILDERGETSTORAGESIZEPROC texBytes{};
     PFNNVNTEXTUREBUILDERGETSTORAGEALIGNMENTPROC texAlignment{};
     PFNNVNTEXTUREBUILDERSETSTORAGEPROC texStorage{};
@@ -221,6 +223,7 @@ bool initializeTextures() {
         !resolve(texTarget, "nvnTextureBuilderSetTarget") ||
         !resolve(texSize, "nvnTextureBuilderSetSize2D") ||
         !resolve(texFormat, "nvnTextureBuilderSetFormat") ||
+        !resolve(texSwizzle, "nvnTextureBuilderSetSwizzle") ||
         !resolve(texBytes, "nvnTextureBuilderGetStorageSize") ||
         !resolve(texAlignment, "nvnTextureBuilderGetStorageAlignment") ||
         !resolve(texStorage, "nvnTextureBuilderSetStorage") ||
@@ -232,6 +235,8 @@ bool initializeTextures() {
     const unsigned widths[]{assets::tex0Width, assets::tex1Width, assets::tex2Width},
         heights[]{assets::tex0Height, assets::tex1Height, assets::tex2Height};
     const unsigned char *pixels[]{assets::tex0, assets::tex1, assets::tex2};
+    const unsigned formats[]{assets::tex0Format, assets::tex1Format, assets::tex2Format};
+    const unsigned char *swizzles[]{assets::tex0Swizzle, assets::tex1Swizzle, assets::tex2Swizzle};
     auto manager = read<void *>(variable(offsets::kNvnManagerSlot), 0);
     if (!manager) {
         refuse(9);
@@ -244,7 +249,9 @@ bool initializeTextures() {
         texDevice(&tb, g_device);
         texTarget(&tb, NVN_TEXTURE_TARGET_2D);
         texSize(&tb, widths[i], heights[i]);
-        texFormat(&tb, NVN_FORMAT_RGBA8);
+        texFormat(&tb, NVNformat(formats[i]));
+        texSwizzle(&tb, NVNtextureSwizzle(swizzles[i][0]), NVNtextureSwizzle(swizzles[i][1]),
+                   NVNtextureSwizzle(swizzles[i][2]), NVNtextureSwizzle(swizzles[i][3]));
         const auto alignment = texAlignment(&tb), bytes = texBytes(&tb);
         if (!alignment || (alignment & (alignment - 1)) || !bytes) {
             refuse(10);
@@ -252,6 +259,8 @@ bool initializeTextures() {
         }
         used = (used + alignment - 1) & ~(alignment - 1);
         if (used + bytes > sizeof(g_textureMemory)) {
+            Logging.Log("[cryonis] TEXTURE_POOL_FULL index=%u need=%u pool=%u", i, unsigned(used + bytes),
+                        unsigned(sizeof(g_textureMemory)));
             refuse(10);
             return false;
         }
@@ -533,7 +542,7 @@ struct Pfx {
 };
 }
 void install(std::uintptr_t base) {
-    if (!signatures::codeMatches(base, signatures::kRender, "RENDER_REFUSED"))
+    if (!totk::engine::codeMatches(base, signatures::kRender, "cryonis", "RENDER_REFUSED"))
         return;
     if (totk::render::installPfxHook(
             base, {signatures::kPfx.offset, signatures::kPfx.first, signatures::kPfx.second},

@@ -5,18 +5,21 @@ from pathlib import Path
 import argparse
 import hashlib
 import json
+import sys
 import numpy as np
 from PIL import Image
 from reference_mesh import load_mesh, parameter
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]/'scripts'))
+from totk_mod_tools.textures import gpu
 
 
-def build(source: Path, output: Path):
+def build(source: Path, botw: Path, output: Path):
     lines = ['// Private owned-game assets; generated locally, never distributed.',
              '#pragma once', '#include <cstddef>', '#include <cstdint>',
              'namespace remote_bomb::assets {',
              'struct Draw { unsigned first, count; bool mask; float emission[4]; };',
              'struct Mesh { const float (*rows)[4]; const std::uint16_t *indices; unsigned indexCount; const Draw *draws; unsigned drawCount; };',
-             'struct Texture { const unsigned char *pixels; unsigned width, height; };']
+             gpu.TEXTURE_STRUCT]
     receipt = {'forms': {}}
     def numbers(values):
         return '{' + ','.join(f'{float(v):.9e}f' for v in values) + '}'
@@ -50,18 +53,24 @@ def build(source: Path, output: Path):
                         'packed_rows_sha256': hashlib.sha256(padded.tobytes()).hexdigest(),
                         'packed_indices_sha256': hashlib.sha256(indices.tobytes()).hexdigest(), 'textures': {}}
         prefix = 'Item_RemoteBombCube' if form == 'cube' else 'Item_RemoteBomb'
+        archive = gpu.read_pack_member(botw/'Pack/TitleBG.pack', f'Model/{prefix}.Tex.sbfres')
+        bank = gpu.bank_in(archive)
         for suffix in ('Alb', 'Emm', 'Nrm', 'Spm'):
             name = f'{prefix}_{suffix}'
+            texture = gpu.original(bank, name)
+            # The reference export is the same original decoded by another tool: it may differ
+            # by one rounding step per channel, never in alpha.
             path = folder / (name + '.png')
-            image = Image.open(path).convert('RGBA')
-            pixels = image.tobytes()
-            lines.append(f'alignas(16) inline constexpr unsigned char {name}[]={{')
-            lines.extend(','.join(str(v) for v in pixels[i:i+48]) + ',' for i in range(0, len(pixels), 48))
-            lines.append('};')
-            textures.append('{' + f'{name},{image.width},{image.height}' + '}')
-            form_receipt['textures'][name] = {'width': image.width, 'height': image.height,
-                    'pixels_sha256': hashlib.sha256(pixels).hexdigest(),
-                    'source_sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+            reference = np.asarray(Image.open(path).convert('RGBA'), dtype=np.int16)
+            sampled = np.frombuffer(gpu.expand(texture), np.uint8).reshape(reference.shape).astype(np.int16)
+            if np.abs(sampled[..., :3] - reference[..., :3]).max() > 1 or (sampled[..., 3] != reference[..., 3]).any():
+                raise ValueError('Original texture no longer matches its reference export: ' + name)
+            array, value = gpu.cxx(name, texture)
+            lines.extend(array)
+            textures.append(value)
+            form_receipt['textures'][name] = texture.receipt() | {
+                    'reference_sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+        form_receipt['texture_archive_sha256'] = hashlib.sha256(archive).hexdigest()
         receipt['forms'][form] = form_receipt
     lines.append('inline constexpr Mesh meshes[]{' + ','.join(meshes) + '};')
     lines.append('inline constexpr Texture textures[]{' + ','.join(textures) + '};')
@@ -71,12 +80,13 @@ def build(source: Path, output: Path):
     header.write_text('\n'.join(lines)+'\n', encoding='utf-8')
     receipt['header_sha256'] = hashlib.sha256(header.read_bytes()).hexdigest()
     (output/'asset-receipt.json').write_text(json.dumps(receipt, indent=2)+'\n', encoding='utf-8')
-    print('Packed two original meshes, four material draws and eight original texture maps.')
+    print('Packed two original meshes, four material draws and eight original compressed texture maps.')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--source', required=True, type=Path)
+    parser.add_argument('--botw-romfs', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args()
-    build(args.source, args.output)
+    build(args.source, args.botw_romfs, args.output)

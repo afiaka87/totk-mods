@@ -37,7 +37,7 @@ function(support_test name source)
     set(SUPPORT_TEST_TARGETS ${SUPPORT_TEST_TARGETS} ${target} PARENT_SCOPE)
 endfunction()
 
-# The public source export contains only the three coexistence suites.
+# The public source export contains only the coexistence and code-check suites.
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_overlay_layout.cpp")
     support_test(overlay_layout test_overlay_layout.cpp)
     support_test(harness_contract test_harness_contract.cpp)
@@ -50,6 +50,8 @@ endif()
 support_test(pfx_hook test_pfx_hook.cpp)
 support_test(grip_hook test_grip_hook.cpp)
 support_test(flight_clock_hook test_flight_clock_hook.cpp)
+support_test(code_check test_code_check.cpp)
+target_include_directories(runtime_support_code_check_test PRIVATE stubs)
 target_include_directories(runtime_support_grip_hook_test PRIVATE "${GLIDESHOT_SOURCE}/engine")
 target_include_directories(runtime_support_flight_clock_hook_test PRIVATE ../../arrowbound/src/engine)
 foreach(name pfx_hook grip_hook flight_clock_hook)

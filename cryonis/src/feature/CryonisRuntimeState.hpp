@@ -7,6 +7,7 @@
 #include "CryonisCamera.hpp"
 #include "CryonisActors.hpp"
 #include "CryonisHooks.hpp"
+#include "totk/engine/AbilityChoice.hpp"
 #include "totk/engine/ActorRoster.hpp"
 #include "totk/engine/Npad.hpp"
 #include "totk/ui/NativeFont.hpp"
@@ -44,6 +45,7 @@ struct ControlsState {
     control::Memory memory;
     std::uint64_t buttons{}, previousClock{};
     unsigned ticks{}, seenSelections{};
+    totk::engine::AbilityChoiceWatch otherAbilities;
 };
 struct TargetingState {
     target::Mailbox cast;

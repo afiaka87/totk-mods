@@ -5,6 +5,7 @@
 #include "CryonisFeature.hpp"
 #include "CryonisEngine.hpp"
 #include "CryonisAudio.hpp"
+#include "totk/engine/AbilityChoice.hpp"
 #include <lib.hpp>
 #include <cstring>
 namespace cryonis::runtime {
@@ -83,7 +84,9 @@ void advanceSimulation(float frames, bool running) {
 void acceptNativeSelection() {
     auto &signals = runtimeState.signals;
     const auto selections = signals.nativeSelections.load(std::memory_order_acquire);
-    if (selections == runtimeState.controls.seenSelections)
+    const bool otherChosen =
+        runtimeState.controls.otherAbilities.chosenElsewhere(eng::Ability::Cryonis);
+    if (selections == runtimeState.controls.seenSelections && !otherChosen)
         return;
     runtimeState.controls.seenSelections = selections;
     runtimeState.controls.memory.recent.nativeAccepted();
@@ -92,7 +95,7 @@ void acceptNativeSelection() {
     clearActivation();
     signals.recentKeyOwned.store(false);
     signals.recentNativeOwned.store(false, std::memory_order_release);
-    Logging.Log("[cryonis] NATIVE_ABILITY_TAKEOVER preview_cleared=1");
+    Logging.Log("[cryonis] NATIVE_ABILITY_TAKEOVER preview_cleared=1 mod=%u", unsigned(otherChosen));
 }
 control::Transition processControls(const control::Context &context) {
     auto &signals = runtimeState.signals;
@@ -101,6 +104,8 @@ control::Transition processControls(const control::Context &context) {
     runtimeState.controls.memory = result.next;
     signals.recentKeyOwned.store(result.next.recent.tap, std::memory_order_release);
     signals.request.store(result.next.activation.pendingEpoch, std::memory_order_release);
+    if (result.chord.event == input::Event::Activated)
+        eng::chooseAbility(eng::Ability::Cryonis);
     if (result.chord.event != input::Event::None)
         Logging.Log("[cryonis] WHEEL_ACTION event=%u epoch=%u", unsigned(result.chord.event),
                     context.wheel.epoch);
@@ -248,7 +253,8 @@ void tick(void *device) {
     acceptNativeSelection();
     const auto wheel = input::unpack(runtimeState.signals.wheel.load(std::memory_order_acquire));
     const auto chord = processControls({wheel, buttons, pressed, fresh, running, swimming,
-                                        gameplay.aiming, runtimeState.pillars.pending.active})
+                                        gameplay.aiming, runtimeState.pillars.pending.active,
+                                        eng::lHeldElsewhere(eng::Ability::Cryonis)})
                            .chord;
     // Capture ownership before any exit so held A cannot become native Climb down.
     const auto owned = chord.mask | controls.ownedButtons.mask(gameplay.aiming, buttons, fresh);

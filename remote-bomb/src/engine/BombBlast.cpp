@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
 #include "BombBlast.hpp"
-#include "CodeGuard.hpp"
+#include "totk/engine/CodeCheck.hpp"
 #include "BombIdentity.hpp"
 #include "BombPressure.hpp"
 #include "BlastWindow.hpp"
@@ -30,7 +30,7 @@ std::uintptr_t player{};
 unsigned scene{};
 std::uint64_t clock{};
 bool running{};
-constexpr CodeGuard guards[]{
+constexpr totk::engine::CodeSite guards[]{
     {0x1396A0C, 0xD10543FF, 0xFD007BEA}, {0x13884B0, 0xD10203FF, 0xA9057BFD},
     {0x138B024, 0xA9BE7BFD, 0xF9000BF3},
     {0x138B0D0, 0xD10103FF, 0x6D0123E9},
@@ -109,7 +109,7 @@ bool initialize(std::uintptr_t base) {
         refused(0, 0, "base");
         return false;
     }
-    if (!codeMatches(base, guards, "BLAST_BIND_REFUSED"))
+    if (!totk::engine::codeMatches(base, guards, "remote-bomb", "BLAST_BIND_REFUSED"))
         return false;
     mainBase = base;
     return true;

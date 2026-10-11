@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
 #include "BombRender.hpp"
-#include "CodeGuard.hpp"
+#include "totk/engine/CodeCheck.hpp"
 #include "BombRuntime.hpp"
 #include "BombRenderPolicy.hpp"
 #include "BombHighlight.hpp"
@@ -44,7 +44,8 @@ NVNtexture textures[kTextureCount]{};
 int textureIds[kTextureCount]{}, samplerId = -1;
 alignas(4096) unsigned char codeMemory[65536]{};
 alignas(4096) unsigned char meshMemory[131072]{};
-alignas(65536) unsigned char textureMemory[16 * 1024 * 1024]{};
+// The bomb textures are the original compressed blocks and need 1,380,352 bytes.
+alignas(65536) unsigned char textureMemory[1536 * 1024]{};
 NVNbufferAddress meshAddress{}, indexAddress[2]{};
 bool initialized{}, attempted{};
 unsigned refusals{};
@@ -170,6 +171,7 @@ bool initializeTextures() {
     PFNNVNTEXTUREBUILDERSETTARGETPROC target{};
     PFNNVNTEXTUREBUILDERSETSIZE2DPROC size{};
     PFNNVNTEXTUREBUILDERSETFORMATPROC format{};
+    PFNNVNTEXTUREBUILDERSETSWIZZLEPROC swizzle{};
     PFNNVNTEXTUREBUILDERGETSTORAGESIZEPROC bytes{};
     PFNNVNTEXTUREBUILDERGETSTORAGEALIGNMENTPROC alignment{};
     PFNNVNTEXTUREBUILDERSETSTORAGEPROC storage{};
@@ -178,7 +180,8 @@ bool initializeTextures() {
     PFNNVNTEXTUREFLUSHTEXELSPROC flush{};
     if (!resolve(defaults, "nvnTextureBuilderSetDefaults") || !resolve(setDevice, "nvnTextureBuilderSetDevice") ||
         !resolve(target, "nvnTextureBuilderSetTarget") || !resolve(size, "nvnTextureBuilderSetSize2D") ||
-        !resolve(format, "nvnTextureBuilderSetFormat") || !resolve(bytes, "nvnTextureBuilderGetStorageSize") ||
+        !resolve(format, "nvnTextureBuilderSetFormat") || !resolve(swizzle, "nvnTextureBuilderSetSwizzle") ||
+        !resolve(bytes, "nvnTextureBuilderGetStorageSize") ||
         !resolve(alignment, "nvnTextureBuilderGetStorageAlignment") || !resolve(storage, "nvnTextureBuilderSetStorage") ||
         !resolve(init, "nvnTextureInitialize") || !resolve(writePixels, "nvnTextureWriteTexels") ||
         !resolve(flush, "nvnTextureFlushTexels"))
@@ -192,19 +195,24 @@ bool initializeTextures() {
                              i < 15 ? hud_assets::textures[i - 8] : effect_assets::textures[i - 15];
         NVNtextureBuilder builder{};
         defaults(&builder); setDevice(&builder, device); target(&builder, NVN_TEXTURE_TARGET_2D);
-        size(&builder, source.width, source.height); format(&builder, NVN_FORMAT_RGBA8);
+        size(&builder, source.width, source.height); format(&builder, NVNformat(source.format));
+        swizzle(&builder, NVNtextureSwizzle(source.swizzle[0]), NVNtextureSwizzle(source.swizzle[1]),
+                NVNtextureSwizzle(source.swizzle[2]), NVNtextureSwizzle(source.swizzle[3]));
         const auto align = alignment(&builder), count = bytes(&builder);
         if (!align || (align & (align - 1)) || !count)
             return refuse(11);
         used = (used + align - 1) & ~(align - 1);
-        if (used + count > sizeof(textureMemory))
+        if (used + count > sizeof(textureMemory)) {
+            Logging.Log("[remote-bomb] TEXTURE_POOL_FULL index=%u need=%u pool=%u", i, unsigned(used + count),
+                        unsigned(sizeof(textureMemory)));
             return refuse(12);
+        }
         storage(&builder, &texturePool, used);
         used += count;
         if (!init(&textures[i], &builder))
             return refuse(13);
         NVNcopyRegion region{0, 0, 0, int(source.width), int(source.height), 1};
-        writePixels(&textures[i], nullptr, &region, source.pixels);
+        writePixels(&textures[i], nullptr, &region, source.data);
         flush(&textures[i], nullptr, &region);
         textureIds[i] = native<int (*)(void *, NVNtexture *, NVNtextureView *)>(0xA5B0B4)(manager, &textures[i], nullptr);
         if (textureIds[i] < 0)
@@ -212,7 +220,8 @@ bool initializeTextures() {
     }
     write<unsigned>(samplerBindings, 0x68, 1);
     write<const void *>(samplerBindings, 0x70, samplerLocations);
-    Logging.Log("[remote-bomb] GPU_READY meshes=2 maps=8 hud=7 effects=21 texture_bytes=%u", unsigned(used));
+    Logging.Log("[remote-bomb] GPU_READY meshes=2 maps=8 hud=7 effects=21 texture_bytes=%u pool=%u", unsigned(used),
+                unsigned(sizeof(textureMemory)));
     return true;
 }
 bool initialize() {
@@ -223,7 +232,7 @@ bool initialize() {
     initialized = initializePools() && initializeTextures() && targets::initialize(device, getProc, base);
     return initialized;
 }
-struct Resources { NVNcommandBuffer *command{}; void *sampler{}; unsigned width{}, height{}; };
+struct Resources { NVNcommandBuffer *command{}; void *sampler{}; unsigned width{}, height{}; float depth[2]{}; };
 bool resources(void *drawContext, void *scene, void *context, Resources &out) {
     if (!drawContext || !scene || !context || !read<void *>(context, 0x540) || !read<void *>(context, 0x548))
         return refuse(15);
@@ -238,11 +247,16 @@ bool resources(void *drawContext, void *scene, void *context, Resources &out) {
         return refuse(17);
     const auto sampler = record + slot;
     const auto width = read<std::uint16_t>(sampler, 0x30), height = read<std::uint16_t>(sampler, 0x32);
-    if (width < 16 || height < 16 || width > targets::kWidth || height > targets::kHeight) {
+    if (width < 16 || height < 16 || width > 8192 || height > 8192) {
         if (!(refusals & (1u << 18)))
-            Logging.Log("[remote-bomb] TARGET_VIEWPORT_REFUSED width=%u height=%u cap=%u,%u",
-                        unsigned(width), unsigned(height), targets::kWidth, targets::kHeight);
+            Logging.Log("[remote-bomb] TARGET_VIEWPORT_REFUSED width=%u height=%u", unsigned(width), unsigned(height));
         return refuse(18);
+    }
+    static bool large{};
+    if (!large && (width > targets::kWidth || height > targets::kHeight)) {
+        Logging.Log("[remote-bomb] TARGET_VIEWPORT_LARGE width=%u height=%u cap=%u,%u drawing without bloom",
+                    unsigned(width), unsigned(height), targets::kWidth, targets::kHeight);
+        large = true;
     }
     out = {command, sampler, width, height};
     return true;
@@ -331,6 +345,8 @@ void drawEffectLayer(const Resources &r, const Camera &camera, effects::Position
     uniform.lighting[3] = opacity * curve(source.curves[1], progress, 0, source.colors[0][3]);
     for (unsigned channel = 0; channel < 3; ++channel)
         uniform.emission[channel] = curve(source.curves[0], progress, channel, source.colors[0][channel]);
+    uniform.depth[0] = r.depth[0];
+    uniform.depth[1] = r.depth[1];
     const auto block = uniformBlock(uniform);
     if (!block) { refuse(23); return; }
     for (unsigned map = 0; map < 3; ++map) {
@@ -361,22 +377,21 @@ void drawEffects(const Resources &r, const Camera &camera, const effects::Timeli
 }
 struct FilterUniforms { float sizes[4]{}, kernel[4]{}; };
 struct FilterBlocks { std::uint64_t values[9]{}; };
+// Downsamples, then narrow and wide blurs, then the bloom composite; sizes are source then
+// destination, and the kernel is blur direction and downsample factor.
 bool allocateFilters(const Resources &r, FilterBlocks &blocks) {
-    const unsigned halfW = (r.width+1)/2, halfH = (r.height+1)/2;
-    const unsigned wideW = (r.width+3)/4, wideH = (r.height+3)/4;
-    for (unsigned i = 0; i < 9; ++i) {
-        const bool narrow = i < 3;
-        const unsigned width = narrow ? halfW : wideW, height = narrow ? halfH : wideH;
-        const bool downsample = i == 0 || i == 3;
-        FilterUniforms uniform{{float(downsample || i == 8 ? r.width : width),
-                                 float(downsample || i == 8 ? r.height : height),
-                                 float(i == 8 ? r.width : width), float(i == 8 ? r.height : height)},
-                                {i == 1 || i == 4 || i == 6 ? 1.f : 0.f,
-                                 i == 2 || i == 5 || i == 7 ? 1.f : 0.f,
-                                 downsample ? narrow ? 2.f : 4.f : 0.f, 0.f}};
-        if (!(blocks.values[i] = uniformBlock(uniform)))
+    const float fullW = float(r.width), fullH = float(r.height);
+    const float halfW = float((r.width+1)/2), halfH = float((r.height+1)/2);
+    const float wideW = float((r.width+3)/4), wideH = float((r.height+3)/4);
+    const FilterUniforms uniforms[9]{
+        {{fullW, fullH, halfW, halfH}, {0, 0, 2, 0}}, {{halfW, halfH, wideW, wideH}, {0, 0, 2, 0}},
+        {{halfW, halfH, halfW, halfH}, {1, 0, 0, 0}}, {{halfW, halfH, halfW, halfH}, {0, 1, 0, 0}},
+        {{wideW, wideH, wideW, wideH}, {1, 0, 0, 0}}, {{wideW, wideH, wideW, wideH}, {0, 1, 0, 0}},
+        {{wideW, wideH, wideW, wideH}, {1, 0, 0, 0}}, {{wideW, wideH, wideW, wideH}, {0, 1, 0, 0}},
+        {{fullW, fullH, fullW, fullH}, {0, 0, 0, 0}}};
+    for (unsigned i = 0; i < 9; ++i)
+        if (!(blocks.values[i] = uniformBlock(uniforms[i])))
             return refuse(29);
-    }
     return true;
 }
 void postprocess(const Resources &r, void *context, void *drawContext, const FilterBlocks &blocks) {
@@ -387,20 +402,21 @@ void postprocess(const Resources &r, void *context, void *drawContext, const Fil
     const auto textureBarrier = [&]() {
         barrier(r.command, NVN_BARRIER_ORDER_FRAGMENTS_BIT | NVN_BARRIER_INVALIDATE_TEXTURE_BIT);
     };
-    using namespace targets;
-    constexpr Image sources[]{Bright, NarrowA, NarrowB, Bright, WideA, WideB, WideA, WideB};
-    constexpr Image destinations[]{NarrowA, NarrowB, NarrowA, WideA, WideB, WideA, WideB, WideA};
+    using namespace totk::render;
+    // The wide chain starts from NarrowA, so NarrowB and the wide images can reuse Bright's memory.
+    constexpr targets::Image sources[]{Bright, NarrowA, NarrowA, NarrowB, WideA, WideB, WideA, WideB};
+    constexpr targets::Image destinations[]{NarrowA, WideA, NarrowB, NarrowA, WideB, WideA, WideB, WideA};
     alignas(8) unsigned char state[128]{};
     resetState(state);
     state[0] = state[1] = 0;
     write<unsigned>(state, 4, 0);
     applyState(state, drawContext);
-    meshDepth(r.command, false);
+    targets::meshDepth(r.command, false);
     for (unsigned i = 0; i < 8; ++i) {
         textureBarrier(); bindImage(0, sources[i]);
-        const unsigned divisor = i < 3 ? 2 : 4;
-        bind(r.command, destinations[i], (r.width+divisor-1)/divisor, (r.height+divisor-1)/divisor);
-        bindProgram(r.command, i == 0 || i == 3 ? &downsampleProgram : &blurProgram, 63);
+        const unsigned divisor = i == 0 || i == 2 || i == 3 ? 2 : 4;
+        targets::bind(r.command, destinations[i], (r.width+divisor-1)/divisor, (r.height+divisor-1)/divisor);
+        bindProgram(r.command, i < 2 ? &downsampleProgram : &blurProgram, 63);
         bindBlock(i);
         drawArrays(r.command, NVN_DRAW_PRIMITIVE_TRIANGLES, 0, 3);
     }
@@ -409,12 +425,13 @@ void postprocess(const Resources &r, void *context, void *drawContext, const Fil
     viewport(r.command, 0, 0, float(r.width), float(r.height)); scissor(r.command, 0, 0, r.width, r.height);
     blend(state, 1, NVN_BLEND_FUNC_ONE, NVN_BLEND_FUNC_ONE_MINUS_SRC_ALPHA);
     applyState(state, drawContext);
-    bindImage(0, Surface); bindImage(1, NarrowA); bindImage(2, WideA);
+    bindImage(1, NarrowA); bindImage(2, WideA);
     bindProgram(r.command, &compositeProgram, 63); bindBlock(8);
     drawArrays(r.command, NVN_DRAW_PRIMITIVE_TRIANGLES, 0, 3);
     static bool reported{};
     if (!reported) {
-        Logging.Log("[remote-bomb] MULTIPASS_DRAW width=%u height=%u programs=6 mesh_depth=private bloom=2", r.width, r.height);
+        Logging.Log("[remote-bomb] MULTIPASS_DRAW width=%u height=%u programs=6 mesh_depth=private16 bloom=2 frame=direct",
+                    r.width, r.height);
         reported = true;
     }
 }
@@ -434,6 +451,14 @@ void draw(void *drawContext, void *scene, void *context, const Camera &camera) {
         refuse(21);
         return;
     }
+    std::array<float, 3> live[2]{};
+    unsigned liveCount = 0;
+    for (const auto &bomb : frame.bombs)
+        if (bomb.live)
+            live[liveCount++] = {bomb.position.x, bomb.position.y, bomb.position.z};
+    const auto span = render_policy::depthRange(camera, live, liveCount);
+    r.depth[0] = span[0];
+    r.depth[1] = span[1];
     // [form][part][pass]: pass 0 is the body, pass 1 the Ultrahand outline shell (highlighted bombs only).
     std::uint64_t blocks[2][2][2]{};
     unsigned passes[2]{};
@@ -456,6 +481,8 @@ void draw(void *drawContext, void *scene, void *context, const Camera &camera) {
             std::memcpy(uniform.highlight, tint.data(), sizeof(float) * 3);
             std::memcpy(uniform.outline, centres[form], sizeof(centres[form]));
             uniform.outline[3] = kOutlineHeight;
+            uniform.depth[0] = r.depth[0];
+            uniform.depth[1] = r.depth[1];
             for (unsigned pass = 0; pass < passes[form]; ++pass) {
                 uniform.highlight[3] = passes[form] == 1 ? 0.f : float(pass + 1);
                 if (!(blocks[form][part][pass] = uniformBlock(uniform))) { refuse(23); return; }
@@ -472,7 +499,22 @@ void draw(void *drawContext, void *scene, void *context, const Camera &camera) {
     graphics[101] = NVN_FACE_NONE;
     write<unsigned>(graphics, 4, 0);
     applyState(graphics, drawContext);
-    targets::begin(r.command, r.width, r.height);
+    // Another glow pass in the same module may still be sampling the shared targets.
+    barrier(r.command, NVN_BARRIER_ORDER_FRAGMENTS_BIT | NVN_BARRIER_INVALIDATE_TEXTURE_BIT);
+    // The game's own bind first, then the bomb draws straight onto its frame. The body is opaque:
+    // it replaces the frame's colour and keeps the frame's alpha.
+    native<void (*)(void *, void *)>(0xC5A6FC)(context, drawContext);
+    bool bloom{};
+    if (!targets::begin(r.command, context, r.width, r.height, bloom)) {
+        refuse(30);
+        native<void (*)(void *, void *)>(0x962C18)(context, drawContext);
+        native<void (*)(void *, void *)>(0xC4B7AC)(read<void *>(context, 0x540), drawContext);
+        resetState(graphics);
+        applyState(graphics, drawContext);
+        return;
+    }
+    blend(graphics, 1, NVN_BLEND_FUNC_ONE, NVN_BLEND_FUNC_ONE_MINUS_SRC_ALPHA);
+    applyState(graphics, drawContext);
     targets::meshDepth(r.command, true);
     bindProgram(r.command, &program, 63);
     for (unsigned form = 0; form < 2; ++form) {
@@ -494,7 +536,8 @@ void draw(void *drawContext, void *scene, void *context, const Camera &camera) {
         targets::effectsDepth(r.command);
         drawEffects(r, camera, frame.effects);
     }
-    postprocess(r, context, drawContext, filters);
+    if (bloom)
+        postprocess(r, context, drawContext, filters);
     native<void (*)(void *, void *)>(0x962C18)(context, drawContext);
     native<void (*)(void *, void *)>(0xC4B7AC)(read<void *>(context, 0x540), drawContext);
     resetState(graphics);
@@ -524,16 +567,24 @@ std::uint64_t pfx(void *extension, void *args) {
 }
 bool install(std::uintptr_t mainBase) {
     base = mainBase;
-    constexpr engine::CodeGuard guards[]{
+    constexpr totk::engine::CodeSite guards[]{
         {0x7F91E0, 0xD10283FF, 0xA9047BFD}, {0xA5B0B4, 0xD101C3FF, 0xA9017BFD},
         {0x95F604, 0xD103C3FF, 0xA9097BFD}, {0x95EF6C, 0xD10143FF, 0xA9017BFD},
         {0x74C19C, 0x52802028, 0xD280A0A9}, {0xC5A6FC, 0xA9BE7BFD, 0xA9014FF4},
         {0x756A08, 0xD10243FF, 0xA9037BFD}, {0x962C18, 0xF942A000, 0xB4000080},
         {0xC4B7AC, 0xA9BE7BFD, 0xA9014FF4},
     };
-    return engine::codeMatches(base, guards, "RENDER_GUARD") &&
+    return totk::engine::codeMatches(base, guards, "remote-bomb", "RENDER_GUARD") &&
            totk::render::installPfxHook(base, pfx, previous, "remote-bomb");
 }
+// The HUD icon's centre and half size in the game's 1280x720 layout.
+#ifdef REMOTE_BOMB_HUD_BESIDE_STASIS
+// BotW Abilities: one place right of Stasis's countdown ring (stasis.frag: centred at 10.5% and 14%
+// of the screen, outer edge 27 of 900 lines), at its size: the recharge ring's edge is 97% of the half size.
+constexpr float kHudRect[4]{0.105f * 1280.f + 50.f, 0.14f * 720.f, 22.f, 22.f};
+#else
+constexpr float kHudRect[4]{515.f, 510.f, 40.f, 40.f};
+#endif
 void drawHud(std::uintptr_t module, std::uintptr_t args, hud_policy::View view, float alpha) {
     if (!view.visible || !module || !args)
         return;
@@ -559,7 +610,7 @@ void drawHud(std::uintptr_t module, std::uintptr_t args, hud_policy::View view, 
         return;
     }
     struct alignas(16) HudUniforms {
-        float rect[4]{515.f, 510.f, 40.f, 40.f};
+        float rect[4]{kHudRect[0], kHudRect[1], kHudRect[2], kHudRect[3]};
         float gauge[4]{};
         float tint[4]{1.f, 1.f, 1.f, 1.f};
     } uniform;

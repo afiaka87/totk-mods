@@ -38,6 +38,34 @@ int main() {
     const auto exit = control::transition(tap.next, context);
     check(exit.aim == control::AimChange::Exit && exit.next.recent.remembered,
           "L release exits while preserving memory");
+    context.buttons = input::L;
+    context.pressed = input::L;
+    context.otherHoldsL = true;
+    const auto yielded = control::transition(memory, context);
+    check(yielded.aim == control::AimChange::None && !yielded.next.recent.tap &&
+              yielded.next.recent.remembered,
+          "L held by another ability is left to it");
+    check(yielded.next.yieldedPress, "a press during another ability's hold is noted");
+    context.otherHoldsL = false;
+    context.pressed = 0;
+    const auto adopted = control::transition(yielded.next, context);
+    check(adopted.next.recent.tap && !adopted.next.yieldedPress &&
+              adopted.aim == control::AimChange::None,
+          "the press is kept once the other ability hands L back");
+    context.buttons = 0;
+    const auto handedRelease = control::transition(adopted.next, context);
+    check(handedRelease.aim == control::AimChange::Exit && handedRelease.next.recent.remembered,
+          "releasing the handed-back press acts like a normal tap");
+    context.buttons = input::L;
+    context.otherHoldsL = true;
+    const auto released = control::transition(
+        control::transition(memory, context).next,
+        {context.wheel, 0, 0, true, true, false, true, false, false});
+    check(!released.next.yieldedPress && !released.next.recent.tap,
+          "a press released while still held elsewhere is not kept");
+    context.otherHoldsL = false;
+    context.buttons = 0;
+    context.pressed = 0;
     context.aiming = false;
     context.swimming = true;
     context.buttons = input::L;

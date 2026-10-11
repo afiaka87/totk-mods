@@ -36,6 +36,13 @@ struct RecentAbility {
     bool remembered{}, tap{};
     std::uint32_t epoch{}, acceptedEpoch{};
     void cancelTap() { tap = false; }
+    // A press that began while another ability held L, kept by this ability once that one lets go.
+    void adopt(std::uint32_t wheelEpoch) {
+        if (remembered) {
+            tap = true;
+            epoch = wheelEpoch;
+        }
+    }
     void remember() {
         remembered = true;
         tap = false;

@@ -14,7 +14,7 @@ std::uintptr_t follow(std::uintptr_t address) {
 }
 }
 void configurePrompt(std::uintptr_t base) {
-    g_promptReady = signatures::codeMatches(base, signatures::kPrompt, "HUD_REFUSED");
+    g_promptReady = totk::engine::codeMatches(base, signatures::kPrompt, "cryonis", "HUD_REFUSED");
 }
 NativePrompt::NativePrompt(bool hide) {
     if (!hide || !g_promptReady)

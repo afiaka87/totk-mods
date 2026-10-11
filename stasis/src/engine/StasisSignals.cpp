@@ -29,7 +29,7 @@ bool firstRefusal(unsigned bit) { return !(signals.motionRefused.fetch_or(bit) &
 } // namespace
 
 bool validate(std::uintptr_t base) {
-    return signatures::codeMatches(base, signatures::kRuntime, "BUILD_REFUSED");
+    return totk::engine::codeMatches(base, signatures::kRuntime, "stasis", "BUILD_REFUSED");
 }
 void wheelOpened(std::uintptr_t screen) {
     const auto epoch = signals.wheelEpoch.fetch_add(1, std::memory_order_relaxed) + 1;

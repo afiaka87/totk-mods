@@ -148,11 +148,33 @@ void bombOutAfterNativeChoice() {
     result = transition(held, accept);
     require(!result.next.remembered && !result.next.reclaimed, "a later native choice ends the borrowed L");
 }
+void handBackToMod() {
+    State state;
+    state.remembered = state.reclaimed = true;
+    Sample press{{6}, L, L, true, true, true};
+    press.modChosen = true;
+    auto result = transition(state, press);
+    require(!result.next.remembered && !result.next.reclaimed && result.next.handing &&
+                blocksNative(result.next) && !result.use,
+            "handing L back to another mod's ability keeps the game's own ability off that press");
+    auto held = press;
+    held.pressed = 0;
+    result = transition(result.next, held);
+    require(result.next.handing && !result.use, "the block lasts while L stays down");
+    auto release = press;
+    release.buttons = release.pressed = 0;
+    result = transition(result.next, release);
+    require(!result.next.handing && !blocksNative(result.next) && !result.use, "letting go of L ends the block");
+    press.modChosen = false;
+    result = transition(state, press);
+    require(!result.next.handing && !blocksNative(result.next), "a native choice gets L back on the same press");
+}
 }
 int main() {
     activation();
     nativePriority();
     failedHandoffs();
     bombOutAfterNativeChoice();
+    handBackToMod();
     std::cout << checks << " bomb input checks passed\n";
 }

@@ -14,6 +14,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT/'scripts'))
+from totk_mod_tools.textures import gpu
 from totk_mod_tools.textures.bntx import Bank
 
 ICONS = ('Obj_RemoteBombBall', 'Obj_RemoteBombCube',
@@ -25,7 +26,7 @@ def decoded(raw: bytes) -> bytes:
     return bytes(oead.yaz0.decompress(raw)) if raw[:4] == b'Yaz0' else raw
 
 
-def pixels(bank: Bank, name: str) -> tuple[Image.Image, dict]:
+def pixels(bank: Bank, name: str) -> tuple[Image.Image, dict, gpu.GpuTexture]:
     texture = bank.get(name)
     image = bank.decode(texture)
     rgba = Image.frombytes('RGBA', (image.width, image.height),
@@ -38,8 +39,13 @@ def pixels(bank: Bank, name: str) -> tuple[Image.Image, dict]:
         raise ValueError('Unexpected original HUD dimensions: ' + texture.name)
     if rgba.getchannel('A').getextrema()[0] != 0 or rgba.getchannel('A').getextrema()[1] == 0:
         raise ValueError('Expected a transparent original icon/mask: ' + texture.name)
+    # The game samples the original blocks; a recharge mask reads as white with the mask as alpha.
+    upload = gpu.original(bank, name, (gpu.ONE, gpu.ONE, gpu.ONE, gpu.R) if texture.format_name == 'BC4' else None)
+    if gpu.expand(upload) != rgba.tobytes():
+        raise ValueError('Original HUD texture does not sample as its decode: ' + texture.name)
     return rgba, {'name': texture.name, 'width': image.width, 'height': image.height,
-                  'format': texture.format_name, 'pixels_sha256': hashlib.sha256(rgba.tobytes()).hexdigest()}
+                  'format': texture.format_name, 'pixels_sha256': hashlib.sha256(rgba.tobytes()).hexdigest(),
+                  'upload': upload.receipt()}, upload
 
 
 def build(source: Path, output: Path) -> dict:
@@ -74,12 +80,10 @@ def build(source: Path, output: Path) -> dict:
              '#pragma once', '#include "RemoteBombAssets.hpp"',
              'namespace remote_bomb::hud_assets {']
     textures = []
-    for i, (image, info) in enumerate(recovered):
-        raw = image.tobytes()
-        lines.append(f'alignas(16) inline constexpr unsigned char image{i}[]={{')
-        lines.extend(','.join(str(value) for value in raw[j:j+48])+',' for j in range(0,len(raw),48))
-        lines.append('};')
-        textures.append(f'{{image{i},{image.width},{image.height}}}')
+    for i, (image, info, upload) in enumerate(recovered):
+        array, value = gpu.cxx(f'image{i}', upload)
+        lines.extend(array)
+        textures.append(value)
         image.save(output/f'hud-{i}.png')
         receipt['images'].append(info)
     lines += ['inline constexpr assets::Texture textures[]{'+','.join(textures)+'};','}']

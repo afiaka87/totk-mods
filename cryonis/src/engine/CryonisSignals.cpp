@@ -23,7 +23,7 @@ template <class Change> void updateWheel(HookContext hook, std::uintptr_t screen
 }
 }
 bool validate(std::uintptr_t base) {
-    return signatures::codeMatches(base, signatures::kRuntime, "BUILD_REFUSED");
+    return totk::engine::codeMatches(base, signatures::kRuntime, "cryonis", "BUILD_REFUSED");
 }
 
 void publishPhysicsTime(HookContext hook, float frames) {

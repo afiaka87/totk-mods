@@ -34,7 +34,7 @@ void main(){
     // The outline shell keeps only its far side, so the body drawn after it covers the inside.
     bool shell=highlight.w>1.5,facing=dot(normal,towardEye)>0.0;
     if((lighting.w>.5&&albedo.a<.5)||distance<dimensions.z||distance>depth+.005||facing==shell)discard;
-    gl_FragDepth=clamp((distance-dimensions.z)/(dimensions.w-dimensions.z),0.0,1.0);
+    gl_FragDepth=privateDepthOf(distance);
     if(shell){
         color=highlight.rgb;
         glow=highlight.rgb*.35;

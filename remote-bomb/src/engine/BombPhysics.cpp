@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
 #include "BombPhysics.hpp"
-#include "CodeGuard.hpp"
+#include "totk/engine/CodeCheck.hpp"
 #include "BombMotion.hpp"
 #include "BombMotionRequest.hpp"
 #include "BombIdentity.hpp"
@@ -13,7 +13,7 @@ namespace remote_bomb::physics {
 namespace eng = totk::engine;
 namespace {
 std::uintptr_t mainBase{};
-constexpr engine::CodeGuard guards[]{
+constexpr totk::engine::CodeSite guards[]{
     {0xAAD62C, 0xD10143FF, 0xA9017BFD},
     {0xFCE23C, 0xF9408808, 0x9001B30A},
     {0x67E8C8, 0xD101C3FF, 0xA9017BFD},
@@ -103,7 +103,7 @@ bool initialize(std::uintptr_t base) {
         Logging.Log("[remote-bomb] PHYSICS_BIND_REFUSED base=0");
         return false;
     }
-    if (!engine::codeMatches(base, guards, "PHYSICS_BIND_REFUSED"))
+    if (!totk::engine::codeMatches(base, guards, "remote-bomb", "PHYSICS_BIND_REFUSED"))
         return false;
     mainBase = base;
     return true;

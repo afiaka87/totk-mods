@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
 #include "BombSignals.hpp"
-#include "CodeGuard.hpp"
+#include "totk/engine/CodeCheck.hpp"
 #include "BombInput.hpp"
 #include "NativePlayerKeys.hpp"
 #include "NativeAbilityAdmission.hpp"
@@ -12,7 +12,7 @@
 namespace remote_bomb::engine {
 namespace eng = totk::engine;
 namespace {
-constexpr CodeGuard guards[]{
+constexpr totk::engine::CodeSite guards[]{
     {0x7EDC00, 0xF9400828, 0xB40002A8}, {0x2A267BC, 0xD102C3FF, 0xA9057BFD},
     {0x1B1DC94, 0xD10283FF, 0xFD001BE8}, {0x1B1E65C, 0xD10203FF, 0x6D032BEB},
     {0x19AD3F4, 0xA9BE7BFD, 0xA9014FF4}, {0x1B1EEF8, 0xD10103FF, 0xA9017BFD},
@@ -51,7 +51,7 @@ bool validateRuntime(std::uintptr_t base) {
         Logging.Log("[remote-bomb] BUILD_REFUSED base=0");
         return false;
     }
-    return codeMatches(base, guards, "BUILD_REFUSED");
+    return totk::engine::codeMatches(base, guards, "remote-bomb", "BUILD_REFUSED");
 }
 void publishPhysicsTime(std::uintptr_t base, Signals &signals, float frames) {
     const auto system = eng::readMemory<std::uintptr_t>(base + 0x471DCB0);
@@ -126,9 +126,22 @@ void maskRecentAbilityKey(std::uintptr_t base, const Signals &signals, std::uint
         Logging.Log("[remote-bomb] NATIVE_ABILITY_MASKED outputs=%u", result.changed);
 }
 std::uint64_t nativeAbilityAdmission(std::uint64_t (*original)(std::uintptr_t),
-                                    const Signals &signals, std::uintptr_t actor) {
+                                    const Signals &signals, std::uintptr_t actor, std::uintptr_t caller) {
     return recentAbilityAdmission(actor, signals.remembered.load(std::memory_order_acquire),
-        signals.player.load(std::memory_order_acquire), original, [&signals](std::uintptr_t player) {
+        signals.player.load(std::memory_order_acquire), original, [&signals, caller](std::uintptr_t player) {
+            // Each game routine refused is named once, by its call site in the game's code.
+            static std::atomic<std::uintptr_t> callers[16]{};
+            for (auto &seen : callers) {
+                auto expected = std::uintptr_t{};
+                if (seen.load(std::memory_order_relaxed) == caller)
+                    break;
+                if (seen.compare_exchange_strong(expected, caller, std::memory_order_relaxed)) {
+                    Logging.Log("[remote-bomb] NATIVE_ABILITY_CALLER site=0x%lx", caller);
+                    break;
+                }
+                if (expected == caller)
+                    break;
+            }
             // One line per run of refusals: the first after a third of a second without one.
             static std::atomic<std::uint64_t> last{};
             static std::atomic<unsigned> reports{};

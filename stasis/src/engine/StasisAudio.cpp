@@ -97,7 +97,7 @@ std::uintptr_t speaker() {
 }
 } // namespace
 void install() {
-    if (!signatures::codeMatches(engine::moduleBase, signatures::kAudio, "AUDIO_REFUSED"))
+    if (!totk::engine::codeMatches(engine::moduleBase, signatures::kAudio, "stasis", "AUDIO_REFUSED"))
         return;
     AssetNameHook::InstallAtOffset(offsets::kEventCallbackSLinkReplaceAssetInfo);
     g_ready = true;

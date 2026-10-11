@@ -30,12 +30,16 @@ struct State {
     std::uint64_t consumed{}, lastButtons{};
     unsigned pendingSamples{};
     bool remembered{}, tap{}, reclaimed{};
+    // L was just handed back to another mod's ability; the game's own stays blocked until L is let go.
+    bool handing{};
 };
 struct Sample {
     Wheel wheel;
     std::uint64_t buttons{}, pressed{};
     bool fresh{}, running{}, available{}, nativeAccepted{};
     bool bombOut{};
+    // The latest choice went to another mod's ability rather than a native one.
+    bool modChosen{};
 };
 struct Decision {
     State next;
@@ -55,11 +59,13 @@ inline Decision transition(State previous, Sample sample) {
         sample.buttons = next.lastButtons;
         sample.pressed = 0;
     }
+    if (!(sample.buttons & L) || !sample.running)
+        next.handing = false;
     const bool accepted = sample.nativeAccepted ||
         (wheel.exited && !wheel.cancelled && wheel.epoch != next.acceptedEpoch);
     if (accepted) {
         next.acceptedEpoch = wheel.epoch;
-        next.remembered = next.tap = next.reclaimed = false;
+        next.remembered = next.tap = next.reclaimed = next.handing = false;
         next.pendingEpoch = 0;
         result.event = Event::NativeTakeover;
     } else if (next.pendingEpoch) {
@@ -104,8 +110,10 @@ inline Decision transition(State previous, Sample sample) {
         !wheel.open && (sample.pressed & L) && !(next.consumed & L) && !(sample.buttons & B);
     if (pressedL && sample.bombOut && !next.remembered)
         next.remembered = next.reclaimed = true;
-    else if (pressedL && !sample.bombOut && next.reclaimed && !next.tap)
+    else if (pressedL && !sample.bombOut && next.reclaimed && !next.tap) {
         next.remembered = next.reclaimed = false;
+        next.handing = sample.modChosen;
+    }
     if (!sample.running || !sample.available || next.pendingEpoch ||
         (next.consumed & L) || wheel.open || (sample.pressed & B))
         next.tap = false;
@@ -131,6 +139,8 @@ inline Decision transition(State previous, Sample sample) {
     }
     return result;
 }
+// Whether the game's own ability is kept from L and from its ability check.
+inline constexpr bool blocksNative(const State &state) { return state.remembered || state.handing; }
 inline constexpr std::uint64_t gameplayKeys(std::uint64_t keys, bool remembered) {
     return remembered ? keys & ~kMappedAbilityKey : keys;
 }

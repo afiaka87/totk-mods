@@ -5,6 +5,7 @@
 #include "StasisAudio.hpp"
 #include "StasisInput.hpp"
 #include "StasisSignals.hpp"
+#include "totk/engine/AbilityChoice.hpp"
 #include "totk/engine/ActorRoster.hpp"
 #include "totk/engine/Npad.hpp"
 #include <lib.hpp>
@@ -399,8 +400,10 @@ void tick(void *device) {
                     unsigned(wheel.exited), unsigned(wheel.cancelled), unsigned(wheel.closed),
                     unsigned(clock.running), double(g.cooldown),
                     unsigned(decision.releaseFreeze || g_activation.pendingRelease), g.generation);
-    if (decision.beginAim)
+    if (decision.beginAim) {
+        totk::engine::chooseAbility(totk::engine::Ability::Stasis);
         setAiming(true);
+    }
     std::uint64_t owned = decision.mask;
     if (decision.releaseFreeze)
         release("manual Camera wheel release");

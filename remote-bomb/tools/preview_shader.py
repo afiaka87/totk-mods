@@ -32,7 +32,7 @@ def render(reference: Path, output: Path, icons=False):
     for name, unit in [('sceneDepth', 0), ('originalAlbedo', 1), ('originalEmission', 2),
                        ('originalNormal', 3), ('originalSpecular', 4)]:
         program[name].value = unit
-    uniforms = ctx.buffer(reserve=10*16)
+    uniforms = ctx.buffer(reserve=13*16)
     uniforms.bind_to_uniform_block(0)
     receipt = {}
     for form in ('sphere', 'cube'):
@@ -61,8 +61,9 @@ def render(reference: Path, output: Path, icons=False):
             right /= np.linalg.norm(right)
             up = np.cross(backward, right)
             basis = np.stack([right, up, backward], axis=1)
-            values = np.zeros((10, 4), dtype='f4')
+            values = np.zeros((13, 4), dtype='f4')
             values[0] = [w, h, .1, 1000]
+            values[12] = [.1, 1000, 0, 0]  # private depth range
             values[1:4, :3] = basis
             values[1:4, 3] = eye
             values[4] = [2.2, 2.2, 0, 0]

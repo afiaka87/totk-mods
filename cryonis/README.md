@@ -40,9 +40,9 @@ guarantee that it builds or works as-is; you set up the toolchain and framework 
 - Framework: [exlaunch](https://github.com/shadowninja108/exlaunch) (GPL-2.0, not included).
   Known-good base: commit `f698816d`. The mod uses no inline hooks.
 - The renderer includes `nvn/nvn.h`; supply compatible NVN declarations. They are not included.
-- Layout: place `src/program/main.cpp` and the `src/engine`, `src/feature`, `src/presentation` and
-  `src/pure` folders in an exlaunch project, with those four folders and
-  `../runtime-support/include` on the include path.
+- Layout: place the `src/program`, `src/engine`, `src/feature`, `src/presentation` and `src/pure`
+  folders in an exlaunch project, with those five folders and `../runtime-support/include` on the
+  include path.
 - Use exlaunch's own `source/program/{setting,loggers,version,offsets}.hpp`. In `setting.hpp` set
   `EXL_MODULE_NAME "totk-cryonis"`, keep `EXL_USE_FAKEHEAP`, remove `EXL_DEBUG`, and use
   `HeapSize 0x40000`, `JitSize 0x8000`, `InlinePoolSize 0x2000`, `LogBufferSize 1024`. Every hook

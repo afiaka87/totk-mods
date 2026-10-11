@@ -36,7 +36,7 @@ class Pipeline:
                                   fragment_shader=fragment)
             self.programs[name] = program
             self.vaos[name] = ctx.vertex_array(program, [])
-            for unit, texture in enumerate(('surface', 'narrowBloom', 'wideBloom') if name == 'composite' else ('source',)):
+            for unit, texture in enumerate(('narrowBloom', 'wideBloom') if name == 'composite' else ('source',)):
                 program[texture].value = unit
 
     def begin(self, depth=True):
@@ -55,14 +55,18 @@ class Pipeline:
         ctx = self.ctx
         ctx.disable(moderngl.DEPTH_TEST | moderngl.BLEND)
         self.uniform.bind_to_uniform_block(0)
-        sources = (1, 2, 3, 1, 4, 5, 4, 5)
-        destinations = (2, 3, 2, 4, 5, 4, 5, 4)
+        # Image 0 stands in for the game's frame. The wide chain starts from NarrowA (image 2), as in
+        # BombRender, so the game can keep NarrowB and the wide images inside Bright's memory.
+        sources = (1, 2, 2, 3, 4, 5, 4, 5)
+        destinations = (2, 4, 3, 2, 5, 4, 5, 4)
         for i, (source, destination) in enumerate(zip(sources, destinations)):
-            divisor = 2 if i < 3 else 4
+            divisor = 2 if i in (0, 2, 3) else 4
             w, h = (self.width+divisor-1)//divisor, (self.height+divisor-1)//divisor
-            downsample = i in (0, 3)
-            values = np.array([[self.width if downsample else w, self.height if downsample else h, w, h],
-                               [int(i in (1, 4, 6)), int(i in (2, 5, 7)), divisor if downsample else 0, 0]], dtype='f4')
+            downsample = i < 2
+            sw, sh = ((self.width, self.height) if i == 0 else
+                      ((self.width+1)//2, (self.height+1)//2) if i == 1 else (w, h))
+            values = np.array([[sw, sh, w, h],
+                               [int(i in (2, 4, 6)), int(i in (3, 5, 7)), 2 if downsample else 0, 0]], dtype='f4')
             self.filters[destination].use()
             ctx.viewport = (0, 0, w, h)
             self.images[source].use(0)
@@ -70,11 +74,15 @@ class Pipeline:
             self.vaos['downsample' if downsample else 'blur'].render(moderngl.TRIANGLES, vertices=3)
         self.output.use()
         ctx.viewport = (0, 0, self.width, self.height)
-        for unit, image in enumerate((0, 2, 4)):
+        self.output.clear(0, 0, 0, 0)
+        for unit, image in enumerate((2, 4)):
             self.images[image].use(unit)
         self.uniform.write(np.array([[self.width, self.height, self.width, self.height], [0, 0, 0, 0]], dtype='f4').tobytes())
         self.vaos['composite'].render(moderngl.TRIANGLES, vertices=3)
-        return self.read(self.output)
+        # The game blends the bloom onto its frame with ONE, ONE_MINUS_SRC_ALPHA and alpha zero.
+        frame, bloom = self.read(self.filters[0]), self.read(self.output)
+        frame[:, :, :3] = np.maximum(frame[:, :, :3]+bloom[:, :, :3], 0)
+        return frame
 
     def read(self, fbo):
         raw = fbo.read(viewport=(0, 0, self.width, self.height), components=4, dtype='f4')
@@ -96,7 +104,7 @@ def validate(output: Path):
         rows[i*3+2] = (1, 0, 0, 1)
     geometry = ctx.buffer(rows.tobytes())
     geometry.bind_to_uniform_block(1)
-    uniforms = ctx.buffer(reserve=160)
+    uniforms = ctx.buffer(reserve=13*16)
     depth = ctx.texture((w, h), 1, np.ones((h, w), dtype='f4').tobytes(), dtype='f4')
     maps = [ctx.texture((1, 1), 4, np.array(value, dtype='f4').tobytes(), dtype='f4')
             for value in ((.2, .2, .2, 1), (1, 1, 1, 1), (.5, .5, 0, 1), (0, 0, 0, 1))]
@@ -111,8 +119,9 @@ def validate(output: Path):
         for unit, image in enumerate(maps, 1):
             image.use(unit)
         for index in order:
-            values = np.zeros((10, 4), dtype='f4')
+            values = np.zeros((13, 4), dtype='f4')
             values[0] = (w, h, .1, 100)
+            values[12] = (.1, 100, 0, 0)  # private depth range
             values[1:4, :3] = np.eye(3)
             values[1:4, 3] = (0, 0, 3)
             values[4] = (2, 2, 0, 0)

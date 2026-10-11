@@ -99,7 +99,7 @@ std::uintptr_t speaker() {
 }
 }
 void install(std::uintptr_t base) {
-    if (!signatures::codeMatches(base, signatures::kAudio, "AUDIO_REFUSED"))
+    if (!totk::engine::codeMatches(base, signatures::kAudio, "cryonis", "AUDIO_REFUSED"))
         return;
     AssetNameHook::InstallAtOffset(offsets::kEventCallbackSLinkReplaceAssetInfo);
     g_ready = true;

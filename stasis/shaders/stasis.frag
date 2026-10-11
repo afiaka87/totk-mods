@@ -66,7 +66,8 @@ void main() {
         e+=border;color.rgb+=border;color.a=max(color.a,(inner+outer*nearTarget)*.45);
     }
     emission=vec4(e,0);
-    vec2 hud=p-vec2(dimensions.x*0.105,dimensions.y*0.14);
+    // In 900-line units, so the ring keeps its screen size at any render height.
+    vec2 hud=(p-vec2(dimensions.x*0.105,dimensions.y*0.14))*(900.0/dimensions.y);
     float hudAngle=atan(hud.x,-hud.y);if(hudAngle<0.0) hudAngle+=tau;
     color=over(color,vec3(0.08,0.06,0.015),band(length(hud)-23.0,4.0)*0.8);
     float progress=flags.y>0.5?timing.x:1.0-extra.y;

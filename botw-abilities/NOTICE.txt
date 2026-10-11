@@ -1,0 +1,12 @@
+BotW Abilities' original source is MIT licensed, copyright Clay Mullis.
+
+The compiled module includes exlaunch, licensed under GPL-2.0.
+Upstream source: https://github.com/shadowninja108/exlaunch
+Mod source: https://github.com/afiaka87/totk-mods/tree/main/botw-abilities
+
+The romfs files in the release archives are edited copies of Tears of the Kingdom 1.2.1 data files
+(interface sound bank, RSDB tables, save-data schema, English text archive, effect and sound link
+tables, effect file list, actor packs, models, inventory icons and the resource-size table). The
+module and the sound bank also carry textures, geometry and sounds converted from Breath of the
+Wild 1.5.0. They only work with a legally owned copy of the game and are not relicensed. Native
+builds use devkitPro/devkitA64.

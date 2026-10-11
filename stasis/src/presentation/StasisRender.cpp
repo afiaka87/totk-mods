@@ -6,6 +6,7 @@
 #include "StasisSignals.hpp"
 #include "StasisSurface.hpp"
 #include "StasisShaders.hpp"
+#include "totk/render/GlowTargets.hpp"
 #include "totk/render/PfxHook.hpp"
 #include <lib.hpp>
 #include <nvn/nvn.h>
@@ -62,14 +63,10 @@ constexpr unsigned kShaderCount = sizeof(kShaders) / sizeof(kShaders[0]);
 std::size_t g_codeOffsets[kShaderCount]{};
 enum Pass { Surface, Chain, Arrow, Particle, Burst, Blur, Composite, Downsample, PassCount };
 alignas(8) NVNprogram g_programs[PassCount]{};
-// Fixed storage avoids reallocating render textures still referenced by GPU work.
-// Explicit pixel fetches use only the active viewport rectangle.
-constexpr unsigned kMaxWidth = 1920, kMaxHeight = 1080;
-constexpr std::size_t kTargetPoolBytes = 64 * 1024 * 1024;
-alignas(65536) unsigned char g_targetMemory[kTargetPoolBytes]{};
-alignas(8) NVNmemoryPool g_targetPool{};
-alignas(8) NVNtexture g_targets[6]{};
-int g_textureIds[6]{-1, -1, -1, -1, -1, -1};
+// Fixed storage, shared with other glow passes in the module, avoids reallocating render
+// textures still referenced by GPU work. Explicit pixel fetches use only the active viewport.
+constexpr unsigned kMaxWidth = totk::render::kGlowWidth, kMaxHeight = totk::render::kGlowHeight;
+const totk::render::GlowTargets *g_targets{};
 PFNNVNCOMMANDBUFFERSETRENDERTARGETSPROC g_setTargets{};
 PFNNVNCOMMANDBUFFERSETVIEWPORTPROC g_setViewport{};
 PFNNVNCOMMANDBUFFERCLEARCOLORPROC g_clearColor{};
@@ -108,6 +105,8 @@ void *variable(std::uintptr_t offset) {
 
 // Log each render failure once.
 std::uint32_t g_refusalsLogged{};
+// The countdown ring is logged once per freeze, when the pass that draws it first runs.
+bool g_ringLogged{};
 
 void refuse(unsigned reason, unsigned detail = 0) {
     g_lastRefusal = reason;
@@ -216,33 +215,8 @@ bool initializeGpuStorage() {
 
     write<std::uint32_t>(g_samplerBindings, 0x68, 2);
     write<const void *>(g_samplerBindings, 0x70, g_samplerLocation);
-    PFNNVNTEXTUREBUILDERSETDEFAULTSPROC texDefaults{};
-    PFNNVNTEXTUREBUILDERSETDEVICEPROC texDevice{};
-    PFNNVNTEXTUREBUILDERSETTARGETPROC texTarget{};
-    PFNNVNTEXTUREBUILDERSETSIZE2DPROC texSize{};
-    PFNNVNTEXTUREBUILDERSETFORMATPROC texFormat{};
-    PFNNVNTEXTUREBUILDERGETSTORAGESIZEPROC texBytes{};
-    PFNNVNTEXTUREBUILDERGETSTORAGEALIGNMENTPROC texAlignment{};
-    PFNNVNTEXTUREBUILDERSETSTORAGEPROC texStorage{};
-    PFNNVNTEXTUREINITIALIZEPROC texInitialize{};
-    if (!resolve(texDefaults, "nvnTextureBuilderSetDefaults") ||
-        !resolve(texDevice, "nvnTextureBuilderSetDevice") ||
-        !resolve(texTarget, "nvnTextureBuilderSetTarget") ||
-        !resolve(texSize, "nvnTextureBuilderSetSize2D") ||
-        !resolve(texFormat, "nvnTextureBuilderSetFormat") ||
-        !resolve(texBytes, "nvnTextureBuilderGetStorageSize") ||
-        !resolve(texAlignment, "nvnTextureBuilderGetStorageAlignment") ||
-        !resolve(texStorage, "nvnTextureBuilderSetStorage") ||
-        !resolve(texInitialize, "nvnTextureInitialize") || !g_setScissor) {
+    if (!g_setScissor) {
         refuse(3);
-        return false;
-    }
-    builderDefaults(&builder);
-    builderDevice(&builder, g_device);
-    builderStorage(&builder, g_targetMemory, sizeof(g_targetMemory));
-    builderFlags(&builder, NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_GPU_CACHED);
-    if (!poolInitialize(&g_targetPool, &builder)) {
-        refuse(21);
         return false;
     }
     // This slot holds a pointer to the manager pointer.
@@ -251,39 +225,12 @@ bool initializeGpuStorage() {
         refuse(22);
         return false;
     }
-    std::size_t used = 0;
-    for (unsigned i = 0; i < 6; ++i) {
-        alignas(8) NVNtextureBuilder textureBuilder{};
-        texDefaults(&textureBuilder);
-        texDevice(&textureBuilder, g_device);
-        texTarget(&textureBuilder, NVN_TEXTURE_TARGET_2D);
-        texFormat(&textureBuilder, NVN_FORMAT_RGBA16F);
-        const unsigned divisor = i < 2 ? 1 : i < 4 ? 2 : 4;
-        texSize(&textureBuilder, (kMaxWidth + divisor - 1) / divisor,
-                (kMaxHeight + divisor - 1) / divisor);
-        const auto alignment = texAlignment(&textureBuilder), bytes = texBytes(&textureBuilder);
-        if (!alignment || (alignment & (alignment - 1)) || !bytes || alignment > kTargetPoolBytes) {
-            refuse(23);
-            return false;
-        }
-        used = (used + alignment - 1) & ~(alignment - 1);
-        if (used > kTargetPoolBytes || bytes > kTargetPoolBytes - used) {
-            refuse(23, unsigned(bytes));
-            return false;
-        }
-        texStorage(&textureBuilder, &g_targetPool, used);
-        used += bytes;
-        if (!texInitialize(&g_targets[i], &textureBuilder)) {
-            refuse(24, i);
-            return false;
-        }
-        g_textureIds[i] = call<int (*)(void *, NVNtexture *, NVNtextureView *)>(
-            offsets::kNVNMgrRegisterTexture)(manager, &g_targets[i], nullptr);
-        if (g_textureIds[i] < 0) {
-            refuse(25, i);
-            return false;
-        }
-    }
+    // Without the glow images Stasis still draws onto the game's frame, only without bloom.
+    g_targets = totk::render::glowTargets(
+        g_device, g_getProc, manager,
+        call<totk::render::RegisterTexture>(offsets::kNVNMgrRegisterTexture), "stasis");
+    if (!g_targets)
+        refuse(21);
     g_ready = true;
     return true;
 }
@@ -349,6 +296,8 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
     Presentation snapshot{};
     if (!engine::presentation(snapshot))
         return;
+    if (!snapshot.frozen)
+        g_ringLogged = false;
     if (!snapshot.aiming && !snapshot.frozen && snapshot.cooldownFrames <= 0.0f &&
         snapshot.releaseFlash <= 0.0f && !snapshot.trail.visible())
         return;
@@ -387,10 +336,8 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
         refuse(14, width);
         return;
     }
-    if (width > kMaxWidth || height > kMaxHeight) {
-        refuse(26, width);
-        return;
-    }
+    // A frame larger than the glow images is drawn without bloom.
+    bool bloom = width <= kMaxWidth && height <= kMaxHeight;
     if (!readCamera(context, camera)) {
         refuse(15);
         return;
@@ -436,7 +383,7 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
                    wideH = (height + 3) / 4;
     const float blurParameters[8][4]{
         {float(width), float(height), 2, 0}, {float(halfW), float(halfH), 1, 0},
-        {float(halfW), float(halfH), 0, 1},  {float(width), float(height), 4, 0},
+        {float(halfW), float(halfH), 0, 1},  {float(halfW), float(halfH), 2, 0},
         {float(wideW), float(wideH), 1, 0},  {float(wideW), float(wideH), 0, 1},
         {float(wideW), float(wideH), 1, 0},  {float(wideW), float(wideH), 0, 1}};
     for (unsigned i = 0; i < 8; ++i)
@@ -470,7 +417,7 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
         const int samplerId = read<std::int16_t>(sampler, 234);
         const auto bindPrivate = [&](unsigned location, unsigned texture) {
             g_bindTexture(command, NVN_SHADER_STAGE_FRAGMENT, location,
-                          g_textureHandle(g_device, g_textureIds[texture], samplerId));
+                          g_textureHandle(g_device, g_targets->ids[texture], samplerId));
         };
         const auto stateFor = [&](unsigned blendMask, bool preserveAlpha) {
             call<void (*)(void *)>(offsets::kGraphicsContextGraphicsContext)(state);
@@ -505,58 +452,91 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
             bindBlock(block);
             g_drawArrays(command, NVN_DRAW_PRIMITIVE_TRIANGLES, 0, vertices * instances);
         };
-        g_barrier(command, NVN_BARRIER_INVALIDATE_TEXTURE_DESCRIPTOR_BIT);
-        const NVNtexture *targets[]{&g_targets[0], &g_targets[1]};
-        g_setTargets(command, 2, targets, nullptr, nullptr, nullptr);
-        g_setViewport(command, 0, 0, width, height);
-        g_setScissor(command, 0, 0, width, height);
-        const float zero[]{0, 0, 0, 0};
-        g_clearColor(command, 0, zero, 15);
-        g_clearColor(command, 1, zero, 15);
-        stateFor(3, false);
-        fullscreen(Surface, 0);
-        if (snapshot.frozen || snapshot.releaseFlash > .24f)
-            geometry(Chain, 48 * 10 * 6, 6 * 46, 0);
-        if (snapshot.frozen) {
-            if (uniforms.tip[3] > .5f)
-                geometry(Arrow, 6, 1, 0);
-            if (snapshot.activationAge >= 0 && snapshot.activationAge < 1)
-                geometry(Particle, 6, 48, 0);
-            fullscreen(Burst, 0);
-        }
-        if (snapshot.trail.visible()) {
-            geometry(Particle, 6, int(snapshot.trail.count * 7), 1);
-        }
-        // The fragment-order and texture invalidation barrier separates every
-        // render-to-texture write from its following sampling pass.
-        const auto textureBarrier = [&]() {
-            g_barrier(command,
-                      NVN_BARRIER_ORDER_FRAGMENTS_BIT | NVN_BARRIER_INVALIDATE_TEXTURE_BIT);
-        };
-        stateFor(0, false);
-        constexpr unsigned source[]{1, 2, 3, 1, 4, 5, 4, 5}, destination[]{2, 3, 2, 4, 5, 4, 5, 4};
-        for (unsigned i = 0; i < 8; ++i) {
-            textureBarrier();
-            bindPrivate(2, source[i]);
-            const NVNtexture *targetTexture = &g_targets[destination[i]];
-            g_setTargets(command, 1, &targetTexture, nullptr, nullptr, nullptr);
-            const auto bw = i < 3 ? halfW : wideW, bh = i < 3 ? halfH : wideH;
-            g_setViewport(command, 0, 0, bw, bh);
-            g_setScissor(command, 0, 0, bw, bh);
-            fullscreen((i == 0 || i == 3) ? Downsample : Blur, i + 2);
-        }
-        textureBarrier();
-        // Binds the game's framebuffer and viewport.
+        // Another glow pass in the module may still be sampling the shared targets.
+        g_barrier(command, NVN_BARRIER_ORDER_FRAGMENTS_BIT | NVN_BARRIER_INVALIDATE_TEXTURE_BIT |
+                               NVN_BARRIER_INVALIDATE_TEXTURE_DESCRIPTOR_BIT);
+        // Binds the game's framebuffer and viewport. Stasis draws straight onto the game's frame
+        // and writes its emission into Bright beside it.
         call<void (*)(void *, void *)>(offsets::kModelRenderContextBindDefaultFrameBuffer)(
             context, drawContext);
-        g_setViewport(command, 0, 0, width, height);
-        g_setScissor(command, 0, 0, width, height);
-        stateFor(1, true);
-        bindPrivate(2, 0);
-        bindPrivate(3, 2);
-        bindPrivate(4, 4);
-        fullscreen(Composite, 0);
-        g_lastRefusal = 0;
+        totk::render::GameFrame frame{};
+        const bool framed = totk::render::gameFrame(engine::moduleBase, context, frame);
+        if (!framed)
+            refuse(27);
+        else if (!bloom)
+            refuse(26, (width << 16) | height);
+        bloom = bloom && framed && g_targets;
+        if (framed) {
+            if (bloom) {
+                const NVNtexture *targets[]{frame.texture, &g_targets->images[totk::render::Bright]};
+                const NVNtextureView *views[]{frame.view, &g_targets->views[totk::render::Bright]};
+                g_setTargets(command, 2, targets, views, nullptr, nullptr);
+            } else
+                g_setTargets(command, 1, &frame.texture, &frame.view, nullptr, nullptr);
+            g_setViewport(command, 0, 0, width, height);
+            g_setScissor(command, 0, 0, width, height);
+            const float zero[]{0, 0, 0, 0};
+            if (bloom)
+                g_clearColor(command, 1, zero, 15);
+            stateFor(3, true);
+            fullscreen(Surface, 0);
+            if (snapshot.frozen && !g_ringLogged) {
+                g_ringLogged = true;
+                Logging.Log("[stasis] HUD_RING drawn progress_permille=%u remaining=%u centre=%u,%u "
+                            "size=%u,%u bloom=%u",
+                            unsigned(uniforms.timing[0] * 1000.0f), unsigned(snapshot.remainingFrames),
+                            unsigned(width * 0.105f), unsigned(height * 0.14f), width, height,
+                            unsigned(bloom));
+            }
+            if (snapshot.frozen || snapshot.releaseFlash > .24f)
+                geometry(Chain, 48 * 10 * 6, 6 * 46, 0);
+            if (snapshot.frozen) {
+                if (uniforms.tip[3] > .5f)
+                    geometry(Arrow, 6, 1, 0);
+                if (snapshot.activationAge >= 0 && snapshot.activationAge < 1)
+                    geometry(Particle, 6, 48, 0);
+                fullscreen(Burst, 0);
+            }
+            if (snapshot.trail.visible()) {
+                geometry(Particle, 6, int(snapshot.trail.count * 7), 1);
+            }
+            if (bloom) {
+                // The fragment-order and texture invalidation barrier separates every
+                // render-to-texture write from its following sampling pass.
+                const auto textureBarrier = [&]() {
+                    g_barrier(command,
+                              NVN_BARRIER_ORDER_FRAGMENTS_BIT | NVN_BARRIER_INVALIDATE_TEXTURE_BIT);
+                };
+                using namespace totk::render;
+                stateFor(0, false);
+                // Both downsamples come first: the wide chain starts from NarrowA, and NarrowB and
+                // the wide images reuse Bright's memory once it has been read.
+                constexpr unsigned order[]{0, 3, 1, 2, 4, 5, 6, 7};
+                constexpr GlowImage source[]{Bright, NarrowA, NarrowB, NarrowA, WideA, WideB, WideA, WideB},
+                    destination[]{NarrowA, NarrowB, NarrowA, WideA, WideB, WideA, WideB, WideA};
+                for (const unsigned i : order) {
+                    textureBarrier();
+                    bindPrivate(2, source[i]);
+                    const NVNtexture *targetTexture = &g_targets->images[destination[i]];
+                    g_setTargets(command, 1, &targetTexture, nullptr, nullptr, nullptr);
+                    const auto bw = i < 3 ? halfW : wideW, bh = i < 3 ? halfH : wideH;
+                    g_setViewport(command, 0, 0, bw, bh);
+                    g_setScissor(command, 0, 0, bw, bh);
+                    fullscreen((i == 0 || i == 3) ? Downsample : Blur, i + 2);
+                }
+                textureBarrier();
+                // Adds the bloom to the game's frame.
+                call<void (*)(void *, void *)>(offsets::kModelRenderContextBindDefaultFrameBuffer)(
+                    context, drawContext);
+                g_setViewport(command, 0, 0, width, height);
+                g_setScissor(command, 0, 0, width, height);
+                stateFor(1, true);
+                bindPrivate(3, NarrowA);
+                bindPrivate(4, WideA);
+                fullscreen(Composite, 0);
+            }
+            g_lastRefusal = 0;
+        }
     } else
         refuse(19);
     if (masked) {

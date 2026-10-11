@@ -2,15 +2,9 @@
 // Copyright (c) Clay Mullis
 #pragma once
 #include "Totk121Offsets.hpp"
-#include "totk/engine/Pointer.hpp"
-#include <lib.hpp>
-#include <span>
+#include "totk/engine/CodeCheck.hpp"
 namespace cryonis::signatures {
-// The first two instructions of a TotK 1.2.1 function; a zero second word checks only the first.
-struct Site {
-    std::uintptr_t offset;
-    std::uint32_t first, second;
-};
+using Site = totk::engine::CodeSite;
 inline constexpr Site kRuntime[]{
     {offsets::kPhysicsModuleUpdateDeltaFrame, 0xF9400828, 0xB40002A8},
     {offsets::kNinJoyNpadDeviceCalc, 0xD102C3FF, 0xA9057BFD},
@@ -62,18 +56,4 @@ inline constexpr Site kAudio[]{
     {offsets::kUserResourceSearchAssetCallTableByName, 0xA9BA7BFD, 0},
     {offsets::kUserInstanceEmitImpl, 0xA9BA7BFD, 0},
     {offsets::kHandleFade, 0xA9BB7BFD, 0xF9000BF9}};
-// True when every site matches the running game; the first mismatch is logged under tag.
-inline bool codeMatches(std::uintptr_t base, std::span<const Site> sites, const char *tag) {
-    for (const auto site : sites) {
-        const auto first = totk::engine::readMemory<std::uint32_t>(base + site.offset);
-        const auto second = totk::engine::readMemory<std::uint32_t>(base + site.offset + 4);
-        if (first != site.first || (site.second && second != site.second)) {
-            Logging.Log("[cryonis] %s offset=%p expected=%08x,%08x actual=%08x,%08x", tag,
-                        reinterpret_cast<void *>(site.offset), site.first, site.second, first,
-                        second);
-            return false;
-        }
-    }
-    return true;
-}
 }

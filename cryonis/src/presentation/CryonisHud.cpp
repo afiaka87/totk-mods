@@ -60,7 +60,7 @@ HOOK_DEFINE_TRAMPOLINE(UiHook) {
 };
 }
 void install(std::uintptr_t base) {
-    if (!signatures::codeMatches(base, signatures::kUi, "HUD_REFUSED"))
+    if (!totk::engine::codeMatches(base, signatures::kUi, "cryonis", "HUD_REFUSED"))
         return;
     engine::configurePrompt(base);
     if (font::configure(base, totk::ui::native_font_data::atlas(),

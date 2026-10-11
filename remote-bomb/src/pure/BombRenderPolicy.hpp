@@ -7,13 +7,13 @@
 
 namespace remote_bomb::render_policy {
 struct Camera { float view[12]{}, projection[16]{}, near{}, far{}; };
-// highlight: linear colour and pass (0 none, 1 body tint, 2 outline shell); outline: the mesh centre
-// the shell is pushed out from, and its width in screen pixels.
+// highlight: colour and pass (0 none, 1 tint, 2 outline); outline: shell centre and pixel width;
+// depth: the view distances the private depth buffer spans.
 struct Uniforms {
     float dimensions[4]{}, view[3][4]{}, projection[4]{}, actor[3][4]{}, lighting[4]{}, emission[4]{},
-        highlight[4]{}, outline[4]{};
+        highlight[4]{}, outline[4]{}, depth[4]{};
 };
-static_assert(sizeof(Uniforms) == 12 * 16);
+static_assert(sizeof(Uniforms) == 13 * 16);
 inline bool valid(const Camera &camera) {
     for (float value : camera.view)
         if (!std::isfinite(value))
@@ -39,6 +39,25 @@ inline bool orientable(const std::array<float, 9> &m) {
 // A bomb whose orientation the game has not set yet is drawn upright instead of collapsed.
 inline std::array<float, 9> drawRotation(const std::array<float, 9> &m) {
     return orientable(m) ? m : std::array<float, 9>{1,0,0, 0,1,0, 0,0,1};
+}
+// The 16-bit private depth spans only the live bombs and their outline shells, keeping each step
+// under a millimetre; the margin covers a shell that widens with distance.
+inline std::array<float, 2> depthRange(const Camera &camera, const std::array<float, 3> *positions,
+                                       unsigned count) {
+    if (!count)
+        return {camera.near, camera.far};
+    float low = 0.f, high = 0.f;
+    for (unsigned i = 0; i < count; ++i) {
+        const auto &p = positions[i];
+        const float distance = -(camera.view[8] * p[0] + camera.view[9] * p[1] + camera.view[10] * p[2] +
+                                 camera.view[11]);
+        low = i == 0 || distance < low ? distance : low;
+        high = i == 0 || distance > high ? distance : high;
+    }
+    const float margin = 1.f + .01f * (high > 0.f ? high : 0.f);
+    low = low - margin > camera.near ? low - margin : camera.near;
+    high = high + margin < camera.far ? high + margin : camera.far;
+    return {low, high > low + .01f ? high : low + .01f};
 }
 // Centre of the vertices a mesh's indices reach (rows are three vec4 per vertex, position first).
 inline std::array<float, 3> centre(const float (*rows)[4], const std::uint16_t *indices, unsigned count) {
@@ -83,6 +102,8 @@ inline Uniforms uniforms(const Camera &camera, std::array<float, 3> position,
     out.lighting[0] = -.4f;
     out.lighting[1] = .8f;
     out.lighting[2] = .3f;
+    out.depth[0] = camera.near;
+    out.depth[1] = camera.far;
     return out;
 }
 }

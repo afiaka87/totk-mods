@@ -33,7 +33,7 @@ STAGES += tuple((name, "frag", "native-" + name + ".frag") for name in ("burst",
 for name, stage, _ in STAGES[2:]:
     bindings={"DCL CONST[2][0..152]"}
     locations=([0] if name in ("chainfrag", "arrowfrag", "particlesfrag") else
-               [2] if name in ("blur","downsample") else [2,3,4] if name=="composite" else [])
+               [2] if name in ("blur","downsample") else [3,4] if name=="composite" else [])
     for location in locations:
         bindings.update({f"DCL SAMP[{location}]",f"DCL SVIEW[{location}], 2D, FLOAT"})
     EXPECTED_BINDINGS[name]=bindings

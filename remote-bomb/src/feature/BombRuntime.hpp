@@ -30,7 +30,8 @@ void wheelExited(std::uintptr_t screen, bool cancelled);
 void wheelClosed(std::uintptr_t screen);
 bool wheelCancelRequested(std::uintptr_t screen);
 void nativeSelectionAccepted(std::uintptr_t screen);
-std::uint64_t nativeAbilityAdmission(std::uint64_t (*original)(std::uintptr_t), std::uintptr_t actor);
+std::uint64_t nativeAbilityAdmission(std::uint64_t (*original)(std::uintptr_t), std::uintptr_t actor,
+                                    std::uintptr_t caller);
 void maskRecentAbilityKey(std::uintptr_t node);
 void cancelOwnedAmiibo(std::uintptr_t node);
 bool presentation(Presentation &out);

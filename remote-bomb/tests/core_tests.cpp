@@ -144,6 +144,15 @@ void nativeProjection() {
             "native actor orientation and translation survive rendering conversion");
     require(near(result.projection[2], .15f) && near(result.projection[3], -.11f),
             "camera off-axis terms survive conversion");
+    const std::array<float, 3> bombs[]{{-7, 0, 0}, {-11, 5, 2}};
+    const auto span = depthRange(camera, bombs, 2);
+    require(near(span[0], 10 - 1.14f) && near(span[1], 14 + 1.14f),
+            "the private depth spans the live bombs' view distances with a margin");
+    require(depthRange(camera, bombs, 0) == std::array<float, 2>{.1f, 2000.f},
+            "with no bombs the private depth spans the camera range");
+    const std::array<float, 3> close[]{{2.95f, 0, 0}};
+    const auto clamped = depthRange(camera, close, 1);
+    require(near(clamped[0], .1f) && clamped[1] > clamped[0], "the span never starts before the near plane");
     camera.view[0] = std::numeric_limits<float>::quiet_NaN();
     require(!valid(camera), "invalid camera cannot emit GPU geometry");
     const std::array<float, 9> turned{0,0,1, 0,1,0, -1,0,0};

@@ -19,8 +19,8 @@ DEFAULT_SIZE_LIMIT = 65536
 SIZE_LIMITS = {}
 
 EXPECTED_BINDINGS = {
-    'bombvert': {'DCL CONST[2][0..11]', 'DCL CONST[3][0..3419]'},
-    'bombfrag': {'DCL CONST[2][0..11]',
+    'bombvert': {'DCL CONST[2][0..12]', 'DCL CONST[3][0..3419]'},
+    'bombfrag': {'DCL CONST[2][0..12]',
                  'DCL SAMP[0]', 'DCL SVIEW[0], 2D, FLOAT',
                  'DCL SAMP[1]', 'DCL SVIEW[1], 2D, FLOAT',
                  'DCL SAMP[2]', 'DCL SVIEW[2], 2D, FLOAT',
@@ -31,8 +31,8 @@ EXPECTED_BINDINGS = {
                 'DCL SAMP[0]', 'DCL SVIEW[0], 2D, FLOAT',
                 'DCL SAMP[1]', 'DCL SVIEW[1], 2D, FLOAT',
                 'DCL SAMP[2]', 'DCL SVIEW[2], 2D, FLOAT'},
-    'effectsvert': {'DCL CONST[2][0..11]'},
-    'effectsfrag': {'DCL CONST[2][0..11]',
+    'effectsvert': {'DCL CONST[2][0..12]'},
+    'effectsfrag': {'DCL CONST[2][0..12]',
                     'DCL SAMP[0]', 'DCL SVIEW[0], 2D, FLOAT',
                     'DCL SAMP[1]', 'DCL SVIEW[1], 2D, FLOAT',
                     'DCL SAMP[2]', 'DCL SVIEW[2], 2D, FLOAT',
@@ -40,7 +40,6 @@ EXPECTED_BINDINGS = {
     'blur': {'DCL CONST[2][0..1]', 'DCL SAMP[0]', 'DCL SVIEW[0], 2D, FLOAT'},
     'downsample': {'DCL CONST[2][0..1]', 'DCL SAMP[0]', 'DCL SVIEW[0], 2D, FLOAT'},
     'composite': {'DCL CONST[2][0..1]',
-                  'DCL SAMP[0]', 'DCL SVIEW[0], 2D, FLOAT',
                   'DCL SAMP[1]', 'DCL SVIEW[1], 2D, FLOAT',
                   'DCL SAMP[2]', 'DCL SVIEW[2], 2D, FLOAT'},
 }
