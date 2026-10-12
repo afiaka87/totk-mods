@@ -32,7 +32,8 @@ void main(){
     }
     if(lighting.z>5.5&&lighting.z<6.5)mask=texture(originalMask,vec2(1.0)-abs(q)).r;
     if(lighting.z>6.5)mask=texture(originalMask,uv).g;
-    float depth=dimensions.z+texelFetch(sceneDepth,ivec2(gl_FragCoord.xy),0).r*(dimensions.w-dimensions.z);
+    vec2 depthScale=vec2(privateDepth.z>0?privateDepth.z:1,privateDepth.w>0?privateDepth.w:1);
+    float depth=dimensions.z+texelFetch(sceneDepth,ivec2(gl_FragCoord.xy*depthScale),0).r*(dimensions.w-dimensions.z);
     float alpha=clamp(mask*lighting.w,0.0,1.0);
     if(-viewPosition(position).z>depth+.005)alpha=0.0;
     gl_FragDepth=privateDepthOf(-viewPosition(position).z);

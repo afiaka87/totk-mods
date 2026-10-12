@@ -61,7 +61,7 @@ constexpr Blob kBlobs[]{BLOB(watervert),   BLOB(waterfrag),   BLOB(icevert), BLO
 alignas(4096) unsigned char g_codeMemory[128 * 1024]{};
 alignas(4096) unsigned char g_meshMemory[53248]{};
 // The Cryonis textures are the original compressed blocks and need 542,720 bytes.
-alignas(65536) unsigned char g_textureMemory[640 * 1024]{};
+alignas(65536) unsigned char g_textureMemory[9 * 65536]{};
 NVNmemoryPool g_codePool{}, g_meshPool{}, g_texturePool{};
 NVNprogram g_waterProgram{}, g_iceProgram{}, g_effectsProgram{}, g_hudProgram{};
 NVNtexture g_textures[3]{};
@@ -234,7 +234,11 @@ bool initializeTextures() {
     }
     const unsigned widths[]{assets::tex0Width, assets::tex1Width, assets::tex2Width},
         heights[]{assets::tex0Height, assets::tex1Height, assets::tex2Height};
+#if defined(BOTW_ABILITIES_STREAM_TEXTURES)
+    const totk::assets::Slice pixels[]{assets::tex0, assets::tex1, assets::tex2};
+#else
     const unsigned char *pixels[]{assets::tex0, assets::tex1, assets::tex2};
+#endif
     const unsigned formats[]{assets::tex0Format, assets::tex1Format, assets::tex2Format};
     const unsigned char *swizzles[]{assets::tex0Swizzle, assets::tex1Swizzle, assets::tex2Swizzle};
     auto manager = read<void *>(variable(offsets::kNvnManagerSlot), 0);
@@ -271,8 +275,16 @@ bool initializeTextures() {
             return false;
         }
         NVNcopyRegion region{0, 0, 0, int(widths[i]), int(heights[i]), 1};
+#if defined(BOTW_ABILITIES_STREAM_TEXTURES)
+        if (!totk::assets::withTexture(totk::assets::kCryonisTexturePath, pixels[i],
+                [&](const unsigned char *source) {
+                    texWrite(&g_textures[i], nullptr, &region, source);
+                    texFlush(&g_textures[i], nullptr, &region);
+                })) { refuse(13); return false; }
+#else
         texWrite(&g_textures[i], nullptr, &region, pixels[i]);
         texFlush(&g_textures[i], nullptr, &region);
+#endif
         g_textureIds[i] = call<int (*)(void *, NVNtexture *, NVNtextureView *)>(
             offsets::kNVNMgrRegisterTexture)(manager, &g_textures[i], nullptr);
         if (g_textureIds[i] < 0) {
@@ -516,12 +528,6 @@ void draw(void *drawContext, void *scene, void *context, const Camera &c) {
     if (!bindTextures(drawContext, r.sampler, r.command))
         return;
     issuePasses(drawContext, context, r, blocks, snapshot);
-    static bool reported{};
-    if (!reported) {
-        Logging.Log("[cryonis] DRAW_READY %u,%u pillars=%u water=%u", r.width, r.height,
-                    blocks.pillarCount, unsigned(snapshot.aiming));
-        reported = true;
-    }
 }
 struct Pfx {
     inline static totk::render::PfxCallback previous{};

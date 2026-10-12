@@ -4,8 +4,7 @@
 #include "StasisCore.hpp"
 #include <cstdint>
 namespace stasis::hit_adapter {
-// BotW's player strike direction: keep the vertical force and horizontal magnitude, and point
-// the horizontal part from the player to the object's centre of mass.
+// BotW's player strike direction: keep the vertical force and horizontal magnitude, and point the horizontal part from the player to the object's centre of mass.
 inline Vec3 playerDirection(Vec3 force, Vec3 player, Vec3 centre) {
     const float x = centre.x - player.x, z = centre.z - player.z;
     const float distance = std::sqrt((x * x + 0.0f) + z * z);

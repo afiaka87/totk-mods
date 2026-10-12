@@ -17,8 +17,7 @@ struct Record { const char *name{}; int quantity{}; };
 inline bool validName(const char *name) {
     return totk::engine::isPlausibleStringAddress(reinterpret_cast<std::uintptr_t>(name));
 }
-// Native Materials sort nodes come from a 0x18-stride pool at list+0x2C (1A76A28), so
-// their links are only 4-byte aligned.
+// Native Materials sort nodes come from a 0x18-stride pool at list+0x2C (1A76A28), so their links are only 4-byte aligned.
 inline bool validNode(const void *address) {
     const auto value = reinterpret_cast<std::uintptr_t>(address);
     return totk::engine::isPlausibleStringAddress(value) && (value & 3) == 0;

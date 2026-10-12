@@ -9,21 +9,22 @@
 #include <type_traits>
 
 namespace totk::render {
-// Shared glow images: Bright (R11G11B10F, 1600x900) and an RGBA16F half/quarter blur chain; each
-// pass clears what it uses and finishes sampling, and NarrowB, WideA and WideB reuse Bright's memory.
+// Each pass clears shared glow storage and finishes sampling before the next pass reuses it.
 enum GlowImage : unsigned { Bright, NarrowA, NarrowB, WideA, WideB, kGlowTargets };
-inline constexpr unsigned kGlowWidth = 1600, kGlowHeight = 900;
-// Bright needs 6,553,600 bytes and NarrowA 3,276,800.
-inline constexpr std::size_t kGlowPoolBytes = 9830400;
+inline constexpr unsigned kGlowSceneWidth = 1600, kGlowSceneHeight = 900, kGlowDivisor = 2;
+inline constexpr unsigned kGlowWidth = 800, kGlowHeight = 450;
+// Bright needs 1,638,400 bytes; scratch retains 3,276,800 for full-resolution bomb depth.
+inline constexpr std::size_t kGlowPoolBytes = 4915200;
 
 struct GlowTargets {
+    NVNmemoryPool* pool{};
+    std::size_t scratchOffset{}, scratchBytes{};
     NVNtexture images[kGlowTargets];
     NVNtextureView views[kGlowTargets];
     int ids[kGlowTargets];
     std::size_t bytes;
 };
 
-// Gives a texture a descriptor in the game's texture registry.
 using RegisterTexture = int (*)(void* manager, NVNtexture*, NVNtextureView*);
 
 namespace detail {
@@ -38,8 +39,7 @@ template <class T> T load(std::uintptr_t address) {
 }
 }  // namespace detail
 
-// The shared targets, created by the first caller. A failure is logged once as
-// "[owner] GLOW_TARGETS_FAILED" and every later call returns nullptr.
+// Initialization is attempted once; a failed pool remains unavailable.
 inline const GlowTargets* glowTargets(NVNdevice* device, PFNNVNDEVICEGETPROCADDRESSPROC getProc,
                                       void* manager, RegisterTexture registerTexture,
                                       const char* owner) {
@@ -91,7 +91,8 @@ inline const GlowTargets* glowTargets(NVNdevice* device, PFNNVNDEVICEGETPROCADDR
     poolDefaults(&pool);
     poolDevice(&pool, device);
     poolStorage(&pool, g_glowMemory, sizeof(g_glowMemory));
-    poolFlags(&pool, NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_GPU_CACHED);
+    poolFlags(&pool, NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_GPU_CACHED |
+                     NVN_MEMORY_POOL_FLAGS_COMPRESSIBLE);
     if (!poolInit(&g_glowPool, &pool)) return fail("pool", unsigned(sizeof(g_glowMemory)));
     // Bright and NarrowA have their own storage; the later images are placed inside Bright's.
     std::size_t used = 0, brightEnd = 0, aliased = 0;
@@ -113,6 +114,10 @@ inline const GlowTargets* glowTargets(NVNdevice* device, PFNNVNDEVICEGETPROCADDR
         if (cursor > limit || bytes > limit - cursor)
             return fail(shared ? "shared" : "capacity", unsigned(cursor + bytes));
         texStorage(&texture, &g_glowPool, cursor);
+        if (i == NarrowA) {
+            g_glow.scratchOffset = cursor;
+            g_glow.scratchBytes = kGlowPoolBytes - cursor;
+        }
         cursor += bytes;
         if (i == Bright) brightEnd = used;
         if (!texInit(&g_glow.images[i], &texture)) return fail("texture", i);
@@ -121,6 +126,7 @@ inline const GlowTargets* glowTargets(NVNdevice* device, PFNNVNDEVICEGETPROCADDR
         if (g_glow.ids[i] < 0) return fail("descriptor", i);
     }
     g_glow.bytes = used;
+    g_glow.pool = &g_glowPool;
     g_glowReady = true;
     Logging.Log("[%s] GLOW_TARGETS_READY bytes=%u shared=%u pool=%u", owner, unsigned(used),
                 unsigned(aliased), unsigned(kGlowPoolBytes));
@@ -133,8 +139,7 @@ struct GameFrame {
     const NVNtextureView* view;
 };
 
-// Reads colour target 0 of the context's render buffer and resolves its texture through the
-// game's texture registry, the same lookup the game's own bind performs.
+// Resolve colour target zero through the same registry lookup as the native framebuffer bind.
 inline bool gameFrame(std::uintptr_t moduleBase, void* context, GameFrame& out) {
     using detail::load;
     const auto address = reinterpret_cast<std::uintptr_t>(context);

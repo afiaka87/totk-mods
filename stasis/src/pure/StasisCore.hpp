@@ -58,8 +58,7 @@ struct ChargeState {
     static constexpr std::uint32_t capacity = 8;
 };
 
-// BotW's charge routine, rewritten instruction by instruction; actorScalar is the body's mass.
-// Returns true when BotW would send its damage-queue notification.
+// BotW's charge routine, rewritten instruction by instruction; actorScalar is the body's mass. Returns true when BotW would send its damage-queue notification.
 inline bool acceptStrike(ChargeState &state, const Strike &strike, float actorScalar,
                          bool playerAvailable, const Parameters &parameters = {}) {
     state.point = strike.point;

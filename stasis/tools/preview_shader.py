@@ -14,13 +14,15 @@ parser.add_argument('--output',type=Path,default=root/'build'/'shader-preview-na
 parser.add_argument('--width',type=int,default=960)
 parser.add_argument('--height',type=int,default=640)
 parser.add_argument('--mask-scale',type=float,default=1)
+parser.add_argument('--native-origin',action='store_true')
 parser.add_argument('--geometry-baseline',type=Path,help='Optional expanded vertex shaders from a retained build to compare on GPU')
 args=parser.parse_args();out=args.output;out.mkdir(parents=True,exist_ok=True)
 spec=importlib.util.spec_from_file_location('compiler',root/'tools/compile_shaders.py')
 compiler=importlib.util.module_from_spec(spec);spec.loader.exec_module(compiler)
 ctx=moderngl.create_standalone_context(require=450)
 def shader(name):
-    return compiler.expanded_source(root/'shaders'/name).replace('#version 450','#version 450\n#define STASIS_PREVIEW')
+    source=compiler.expanded_source(root/'shaders'/name)
+    return source if args.native_origin else source.replace('#version 450','#version 450\n#define STASIS_PREVIEW')
 programs={}
 for name,vertex,fragment in [('surface','stasis.vert','stasis.frag'),('burst','stasis.vert','native-burst.frag'),
     ('blur','stasis.vert','native-blur.frag'),('downsample','stasis.vert','native-downsample.frag'),('composite','stasis.vert','native-composite.frag')]+[
@@ -28,9 +30,12 @@ for name,vertex,fragment in [('surface','stasis.vert','stasis.frag'),('burst','s
     program=ctx.program(vertex_shader=shader(vertex),fragment_shader=shader(fragment))
     programs[name]=ctx.vertex_array(program,[])
 w,h=args.width,args.height
-sizes=[(w,h),(w,h),((w+1)//2,(h+1)//2),((w+1)//2,(h+1)//2),((w+3)//4,(h+3)//4),((w+3)//4,(h+3)//4)]
+gw,gh=800,450
+sizes=[(w,h),(gw,gh),((gw+1)//2,(gh+1)//2),((gw+1)//2,(gh+1)//2),((gw+3)//4,(gh+3)//4),((gw+3)//4,(gh+3)//4)]
 textures=[ctx.texture(size,4,dtype='f2') for size in sizes]
-mrt=ctx.framebuffer(textures[:2]);fbos={i:ctx.framebuffer([t]) for i,t in enumerate(textures)}
+mrt=ctx.framebuffer([textures[0],ctx.texture((w,h),4,dtype='f2')])
+glowMrt=ctx.framebuffer([ctx.texture((gw,gh),4,dtype='f2'),textures[1]])
+fbos={i:ctx.framebuffer([t]) for i,t in enumerate(textures)}
 finaltex=ctx.texture((w,h),4,dtype='f4');final=ctx.framebuffer([finaltex])
 ubo=ctx.buffer(reserve=153*16);ubo.bind_to_uniform_block(0)
 y,x=np.mgrid[0:h,0:w]
@@ -102,14 +107,30 @@ def read(fbo):
 def bloom_passes(a):
     ctx.disable(moderngl.BLEND)
     halfW,halfH=sizes[2];wideW,wideH=sizes[4]
-    passes=[(1,2,(w,h,2,0),'downsample'),(2,3,(halfW,halfH,1,0),'blur'),(3,2,(halfW,halfH,0,1),'blur'),
-        (1,4,(w,h,4,0),'downsample'),(4,5,(wideW,wideH,1,0),'blur'),(5,4,(wideW,wideH,0,1),'blur'),
-        (4,5,(wideW,wideH,1,0),'blur'),(5,4,(wideW,wideH,0,1),'blur')]
+    passes=[(1,2,(gw,gh,2,0),'downsample'),(2,3,(halfW,halfH,gw/w,0),'blur'),(3,2,(halfW,halfH,0,gh/h),'blur'),
+        (2,4,(halfW,halfH,2,0),'downsample'),(4,5,(wideW,wideH,gw/w,0),'blur'),(5,4,(wideW,wideH,0,gh/h),'blur'),
+        (4,5,(wideW,wideH,gw/w,0),'blur'),(5,4,(wideW,wideH,0,gh/h),'blur')]
     for src,dst,parameters,program in passes:
         textures[src].use(2);fbos[dst].use();ctx.viewport=(0,0,*sizes[dst])
         copy=a.copy();copy[54]=parameters;ubo.write(copy.tobytes());programs[program].render(vertices=3)
 def render(a,bloom=True,chains=True,arrow=True,burst=True,particles=True):
-    mrt.use();ctx.viewport=(0,0,w,h);mrt.clear()
+    drawObjects(a,chains,arrow,burst,particles)
+    direct=read(fbos[0])
+    glowMrt.use();ctx.viewport=(0,0,gw,gh);glowMrt.clear()
+    drawObjects(a,chains,arrow,burst,particles,begin=False)
+    bloom_passes(a)
+    if not bloom:
+        for i in [2,4]:fbos[i].use();fbos[i].clear()
+    final.use();ctx.viewport=(0,0,w,h);final.clear()
+    textures[0].use(2);textures[2].use(3);textures[4].use(4)
+    composite=a.copy();composite[54]=[gw,gh,2,0];ubo.write(composite.tobytes())
+    programs['composite'].render(vertices=3)
+    image=read(final)+direct
+    assert np.isfinite(image).all() and image.min()>=-.0001 and image.max()<32
+    assert image[:,:,3].max()<=1.001
+    return image,direct
+def drawObjects(a,chains,arrow,burst,particles,begin=True):
+    if begin: mrt.use();ctx.viewport=(0,0,w,h);mrt.clear()
     ctx.enable(moderngl.BLEND)
     ctx.blend_func=(moderngl.ONE,moderngl.ONE_MINUS_SRC_ALPHA,moderngl.ONE,moderngl.ONE_MINUS_SRC_ALPHA)
     ubo.write(a.tobytes());programs['surface'].render(vertices=3)
@@ -121,17 +142,6 @@ def render(a,bloom=True,chains=True,arrow=True,burst=True,particles=True):
     if particles and a[53,2]>0:
         copy=a.copy();copy[53,3]=1;ubo.write(copy.tobytes())
         programs['particles'].render(vertices=6*int(a[53,2])*7)
-    direct=read(fbos[0])
-    bloom_passes(a)
-    if not bloom:
-        for i in [2,4]:fbos[i].use();fbos[i].clear()
-    final.use();ctx.viewport=(0,0,w,h);final.clear()
-    textures[0].use(2);textures[2].use(3);textures[4].use(4);ubo.write(a.tobytes())
-    programs['composite'].render(vertices=3)
-    image=read(final)
-    assert np.isfinite(image).all() and image.min()>=-.0001 and image.max()<32
-    assert image[:,:,3].max()<=1.001
-    return image,direct
 checks=[];panels=[]
 def save(name,image,bg):
     composite=np.maximum(image[:,:,:3]+bg*(1-image[:,:,3:4]),0)
@@ -191,8 +201,21 @@ a[53,1]=5;expired,_=render(a);probe=(x>w*.3)&(x<w*.8)&(y>h*.1)&(y<h*.8);assert n
 checks.append({'actual_supplied_path_particles':True,'expired_trail_zero':True})
 for t in borrowed:t.release()
 
+# Poison every private image before a normal frame; full coverage must remove all stale contents.
+mask,bg,world,borrowed=fixtures()
+a=uniforms(True,True)
+reference,_=render(a)
+for texture in textures[1:]:
+    poison=np.zeros((texture.height,texture.width,4),dtype='f2')
+    poison[:,:,:3]=[24,3,19]
+    texture.write(poison.tobytes())
+poisoned,_=render(a)
+assert np.array_equal(reference,poisoned)
+checks.append({'poisoned_private_storage_unchanged':True,'full_private_coverage':[gw,gh]})
+for t in borrowed:t.release()
+
 # A single filtered texel must form a smooth mound, not separated box lobes.
-impulse=np.zeros((h,w,4),dtype='f2');cx,cy=(w//8)*4,(h//8)*4
+impulse=np.zeros((gh,gw,4),dtype='f2');cx,cy=(gw//8)*4,(gh//8)*4
 impulse[cy:cy+4,cx:cx+4,:3]=1;textures[1].write(impulse.tobytes())
 bloom_passes(uniforms())
 wideW,wideH=sizes[4]
@@ -269,7 +292,8 @@ if args.geometry_baseline:
 sheet=Image.new('RGB',(w*2,h*((len(panels)+1)//2)))
 for i,panel in enumerate(panels):sheet.paste(panel,((i%2)*w,(i//2)*h))
 sheet.save(out/'native-preview.png')
-receipt={'renderer':ctx.info['GL_RENDERER'],'dimensions':[w,h],'mask_scale':args.mask_scale,
+receipt={'renderer':ctx.info['GL_RENDERER'],'dimensions':[w,h],'glow_dimensions':[gw,gh],'mask_scale':args.mask_scale,
+    'native_origin_sampling':args.native_origin,
     'stages':{n:hashlib.sha256(compiler.expanded_source(root/'shaders'/f).encode()).hexdigest() for n,s,f in compiler.STAGES},
     'checks':checks,'native_runtime_observed':False}
 (out/'preview-checks.json').write_text(json.dumps(receipt,indent=2)+'\n')

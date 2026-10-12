@@ -12,7 +12,7 @@ void main() {
     // Contiguous taps avoid ghost images from dilating a five-tap kernel.
     for(int i=-6;i<=6;++i) {
         float weight=exp(-float(i*i)/8.0);
-        sum+=texelFetch(source,privatePixel(pixel+pipeline.zw*float(i),pipeline.xy),0).rgb*weight;
+        sum+=privateSample(source,(pixel+pipeline.zw*float(i)+.5)/pipeline.xy,pipeline.xy).rgb*weight;
         total+=weight;
     }
     colour=vec4(sum/total,0);

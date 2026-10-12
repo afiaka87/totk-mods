@@ -31,6 +31,24 @@ bool firstRefusal(unsigned bit) { return !(signals.motionRefused.fetch_or(bit) &
 bool validate(std::uintptr_t base) {
     return totk::engine::codeMatches(base, signatures::kRuntime, "stasis", "BUILD_REFUSED");
 }
+void nativeSelectionAccepted(std::uintptr_t screen) {
+    const auto count = readGame.template operator()<int>(screen + 0x1A8);
+    const auto cursor = readGame.template operator()<int>(screen + 0x23C);
+    if (count < 1 || count > 8 || cursor < 0 || cursor >= count)
+        return;
+    signals.recentOwned.store(false, std::memory_order_release);
+    signals.nativeSelections.fetch_add(1, std::memory_order_release);
+    Logging.Log("[stasis] NATIVE_SELECTION cursor=%d", cursor);
+}
+std::uint64_t nativeAbilityAdmission(std::uint64_t (*original)(std::uintptr_t), std::uintptr_t actor) {
+    const input::RecentAbility recent{signals.recentOwned.load(std::memory_order_acquire)};
+    if (!recent.ownsNative(actor, signals.recentPlayer.load(std::memory_order_acquire)))
+        return original(actor);
+    static std::atomic<unsigned> reports{};
+    if (reports.fetch_add(1, std::memory_order_relaxed) < 8)
+        Logging.Log("[stasis] NATIVE_ABILITY_SUPPRESSED player=%p", reinterpret_cast<void *>(actor));
+    return 0;
+}
 void wheelOpened(std::uintptr_t screen) {
     const auto epoch = signals.wheelEpoch.fetch_add(1, std::memory_order_relaxed) + 1;
     signals.wheelOwner.store(screen, std::memory_order_release);
@@ -157,8 +175,7 @@ void holdEnemyPhysics(void *component) {
     stasis::holdEnemyPhysics(
         held, address, [](std::uintptr_t field) { return read<std::uintptr_t>(field); },
         [](std::uintptr_t actor) {
-            // Runs after the game's movement and impulse requests, even when the character
-            // update skips applying velocity.
+            // Runs after the game's movement and impulse requests, even when the character update skips applying velocity.
             const auto collection = bodies(controllerSet(actor));
             if (collection.overflow || !collection.count) {
                 if (firstRefusal(2))
@@ -214,8 +231,7 @@ void frameAimCamera(std::uintptr_t state, float *output, float frameScale) {
     }
     if (!request.aiming && g_cameraBlend.amount == 0)
         return;
-    // The player camera's resolve state sits 1096 bytes into its component, whose target
-    // record at +3144 holds the followed actor at +24.
+    // The player camera's resolve state sits 1096 bytes into its component, whose target record at +3144 holds the followed actor at +24.
     const auto component = state - 1096;
     const auto target = valid(component) ? read<std::uintptr_t>(component + 3144) : 0;
     const auto actor = valid(target) ? read<std::uintptr_t>(target + 24) : 0;

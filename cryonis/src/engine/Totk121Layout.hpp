@@ -13,7 +13,7 @@ inline constexpr std::size_t kLayout = 0x28, kRoot = 0x18, kFlags = 0x58;
 }
 namespace actor {
 inline constexpr std::size_t kComponents = 0x228, kPhysics = 0x50, kControllerSet = 0x20,
-                             kRotation = 0x2C0;
+                             kRotation = 0x2C0, kDynamicEquipment = 0x208;
 }
 namespace physics {
 inline constexpr std::size_t kTime = 0xC8, kPausedFlags = 0x18;

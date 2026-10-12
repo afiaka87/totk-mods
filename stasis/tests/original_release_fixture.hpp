@@ -1,6 +1,5 @@
 #pragma once
-// Release results recorded from the original BotW 1.5.0 routines with engine calls intercepted.
-// No game code is included.
+// Release results recorded from the original BotW 1.5.0 routines with engine calls intercepted. No game code is included.
 #include "StasisCore.hpp"
 struct OriginalReleaseCase {
     const char *name;

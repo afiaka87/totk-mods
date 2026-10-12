@@ -48,6 +48,9 @@ struct State {
 eng::NpadReader g_npad;
 eng::SceneTracker g_scenes;
 input::Activation g_activation;
+input::RecentAbility g_recent;
+eng::AbilityChoiceWatch g_otherAbilities;
+unsigned g_seenSelections{};
 
 const Handle *inRoster(std::uintptr_t address, std::uintptr_t name) {
     for (std::size_t i = 0; i < g.rosterCount; ++i)
@@ -103,6 +106,9 @@ void selectTarget() {
     }
 }
 void resetSession(const char *reason) {
+    g_recent.reset();
+    signals.recentOwned.store(false, std::memory_order_release);
+    signals.recentPlayer.store(0, std::memory_order_release);
     signals.cameraSession.fetch_add(1, std::memory_order_acq_rel);
     signals.cameraRequest.tryWrite({});
     g_activation.reset();
@@ -123,6 +129,11 @@ void resetSession(const char *reason) {
     Logging.Log("[stasis] SESSION_RESET reason=%s generation=%u", reason, g.generation);
 }
 void activate() {
+    if (!input::canFreeze(g.frozen.address != 0, g.cooldown)) {
+        Logging.Log("[stasis] ACTIVATE_REFUSED cooldown=%f frozen=%u", double(g.cooldown),
+                    unsigned(g.frozen.address != 0));
+        return;
+    }
     if (!seen(g.selected) || !eligible(g.selected)) {
         Logging.Log("[stasis] ACTIVATE_REFUSED target=%p roster=%u",
                     reinterpret_cast<void *>(g.selected.address), unsigned(g.rosterCount));
@@ -380,6 +391,16 @@ void tick(void *device) {
     if (!actors)
         return unavailable("player unavailable");
     g.player = actors.value.player;
+    signals.recentPlayer.store(g.player.address, std::memory_order_release);
+    const auto selections = signals.nativeSelections.load(std::memory_order_acquire);
+    const bool otherChosen = g_otherAbilities.chosenElsewhere(eng::Ability::Stasis);
+    if (selections != g_seenSelections || otherChosen) {
+        g_seenSelections = selections;
+        g_recent.reset();
+        setAiming(false);
+        signals.recentOwned.store(false, std::memory_order_release);
+        Logging.Log("[stasis] RECENT_RELEASED mod=%u", unsigned(otherChosen));
+    }
     g.ready = true;
     g.rosterCount = snapshotRoster(g.scene.token, g.roster, kRosterCapacity);
     const float delta = static_cast<float>(clock.elapsedFrames - g.previousClock);
@@ -402,15 +423,20 @@ void tick(void *device) {
                     unsigned(decision.releaseFreeze || g_activation.pendingRelease), g.generation);
     if (decision.beginAim) {
         totk::engine::chooseAbility(totk::engine::Ability::Stasis);
+        g_recent.remember();
         setAiming(true);
     }
+    const bool quick = g_recent.step(wheel, buttons, fresh, freshSample, clock.running,
+        !g.frozen.address && !eng::lHeldElsewhere(eng::Ability::Stasis),
+        g_activation.pendingEpoch || g_activation.suppressL || decision.beginAim);
+    if (quick) {
+        setAiming(!g.aiming);
+        Logging.Log("[stasis] RECENT_TAP aiming=%u", unsigned(g.aiming));
+    }
+    signals.recentOwned.store(g_recent.remembered, std::memory_order_release);
     std::uint64_t owned = decision.mask;
     if (decision.releaseFreeze)
         release("manual Camera wheel release");
-    if (g.aiming)
-        owned |= L;
-    if (clock.running && (fresh & L) && g.aiming && !decision.beginAim)
-        setAiming(false);
     if (g.aiming) {
         owned |= A | B;
         selectTarget();

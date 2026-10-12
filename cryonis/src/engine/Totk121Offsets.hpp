@@ -32,6 +32,7 @@ inline constexpr std::uintptr_t kUserInstanceEmitImpl = 0xAFD244;
 inline constexpr std::uintptr_t kUIModuleDraw2D = 0xB0F844;
 inline constexpr std::uintptr_t kActorBaseGetModel = 0xBADE58;
 inline constexpr std::uintptr_t kExecuteBaseGetActor = 0xBC7610;
+inline constexpr std::uintptr_t kNativeAbilityAdmission = 0x932610;
 inline constexpr std::uintptr_t kModelSceneExtensionDrawPfx = 0xC30C48;
 inline constexpr std::uintptr_t kRestoreRenderBuffers = 0xC4B7AC;
 inline constexpr std::uintptr_t kModelRenderContextBindDefaultFrameBuffer = 0xC5A6FC;

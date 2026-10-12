@@ -2,14 +2,40 @@
 // Copyright (c) Clay Mullis
 #include "CryonisWorld.hpp"
 #include "CryonisEngine.hpp"
+#include "CryonisEquipment.hpp"
 #include <lib.hpp>
 #include "Totk121Offsets.hpp"
 #include "Totk121Layout.hpp"
 #include <cstring>
 #include <span>
+#include <type_traits>
 namespace cryonis::engine {
 namespace eng = totk::engine;
+namespace {
+// TotK 1.2.1 returns this nontrivial value through X8, even though it is only eight bytes.
+struct NativeGroup : target::Group {
+    ~NativeGroup() {}
+};
+static_assert(sizeof(NativeGroup) == sizeof(target::Group));
+static_assert(!std::is_trivially_destructible_v<NativeGroup>);
+}
 std::uintptr_t moduleBase{};
+bool heapPointer(std::uintptr_t address) {
+    const auto &heap = exl::util::mem_layout::s_Heap;
+    return valid(address) && heap.m_Size >= sizeof(std::uintptr_t) && address >= heap.m_Start &&
+           address - heap.m_Start <= heap.m_Size - sizeof(std::uintptr_t);
+}
+bool readableActorName(std::uintptr_t address) {
+    MemoryInfo region{};
+    std::uint32_t page{};
+    if (R_FAILED(svcQueryMemory(&region, &page, address)) || !(region.perm & Perm_R))
+        return false;
+    return actorName(address,
+        [](std::uintptr_t pointer) { return read<unsigned char>(pointer); },
+        [&](std::uintptr_t pointer) {
+            return pointer >= region.addr && pointer - region.addr < region.size;
+        });
+}
 Vec3 position(Handle actor) { return read<Vec3>(actor.address + eng::layout::kActorPosition); }
 Water sample(WorldContext world, float x, float z) {
     if (!std::isfinite(x) || !std::isfinite(z))
@@ -86,6 +112,8 @@ void roster(WorldContext world) {
     }
     const auto walk =
         eng::visitActiveProcesses(access.value, [&](const eng::ActiveProcessView &actor) {
+            if (actor.processState != 4)
+                return eng::VisitControl::Continue;
             if (world.roster.count < 4096)
                 world.roster.actors[world.roster.count++] = actor.handle;
             const auto mark = [&](Riders &group) {
@@ -118,12 +146,8 @@ bool seen(WorldContext world, Handle h) {
 }
 
 std::uintptr_t body(Handle h) {
-    const auto registry = read<std::uintptr_t>(h.address + layout::actor::kComponents);
-    const auto physics =
-        valid(registry) ? read<std::uintptr_t>(registry + layout::actor::kPhysics) : 0;
-    const auto set =
-        valid(physics) ? read<std::uintptr_t>(physics + layout::actor::kControllerSet) : 0;
-    return valid(set) ? read<std::uintptr_t>(set + 0x150) : 0;
+    return physicalBody(h.address,
+        [](std::uintptr_t address) { return read<std::uintptr_t>(address); }, heapPointer);
 }
 
 bool shadowOnly(Handle actor) {
@@ -141,18 +165,40 @@ bool shadowOnly(Handle actor) {
 }
 
 bool riderEligible(WorldContext world, Handle actor) {
+    if (read<unsigned>(actor.address + eng::layout::kProcessState) != 4)
+        return false;
     if (actor.address == world.player.address)
         return true;
+    if (!readableActorName(actor.capturedNamePointer)) {
+        static unsigned refusedNames{};
+        if (refusedNames++ < 8)
+            Logging.Log("[cryonis] RIDER_NAME_REFUSED actor=%p name=%p",
+                        reinterpret_cast<void *>(actor.address),
+                        reinterpret_cast<void *>(actor.capturedNamePointer));
+        return false;
+    }
     const char *name = reinterpret_cast<const char *>(actor.capturedNamePointer);
     if (std::strcmp(name, kActor) == 0)
         return false;
-    const auto equipment =
-        call<std::uintptr_t (*)(std::uintptr_t)>(offsets::kGetDynamicEquipment)(actor.address);
+    const auto components = read<std::uintptr_t>(actor.address + layout::actor::kComponents);
+    if (!heapPointer(components)) {
+        static unsigned refused{};
+        if (refused++ < 8)
+            Logging.Log("[cryonis] RIDER_REFUSED name=%s components=%p", name,
+                        reinterpret_cast<void *>(components));
+        return false;
+    }
+    const auto b = body(actor);
+    if (!b) {
+        static unsigned refusedBodies{};
+        if (refusedBodies++ < 8)
+            Logging.Log("[cryonis] RIDER_BODY_REFUSED name=%s", name);
+        return false;
+    }
+    const auto equipment = equipmentComponent(actor.address,
+        [](std::uintptr_t address) { return read<std::uintptr_t>(address); }, heapPointer);
     if (valid(equipment) &&
         call<std::uintptr_t (*)(std::uintptr_t)>(offsets::kDynamicEquipmentGetUser)(equipment))
-        return false;
-    const auto b = body(actor);
-    if (!valid(b))
         return false;
     return call<unsigned (*)(std::uintptr_t)>(offsets::kRigidBodyBaseGetMotionType)(b) == 2 ||
            std::strncmp(name, "Animal_", 7) == 0 || std::strncmp(name, "Enemy_", 6) == 0 ||
@@ -161,12 +207,15 @@ bool riderEligible(WorldContext world, Handle actor) {
 
 Riders captureRiders(WorldContext world, Vec3 base, float yaw) {
     Riders group{};
-    unsigned overflow{};
+    unsigned overflow{}, inspected{};
     // This runs once per accepted construction, outside the process-list lock.
     for (unsigned i = 0; i < world.roster.count; ++i) {
         const auto actor = world.roster.actors[i];
         if (!actor.isCurrent(world.scene.token) || !riderEligible(world, actor))
             continue;
+        if (inspected++ < 8)
+            Logging.Log("[cryonis] RIDER_SCAN name=%s",
+                        reinterpret_cast<const char *>(actor.capturedNamePointer));
         const auto b = body(actor);
         lift::Bounds bounds{};
         if (valid(b))
@@ -308,7 +357,7 @@ void fixBody(std::uintptr_t body) {
         reinterpret_cast<void *>(body), 1);
 }
 target::Group collisionGroup(Handle actor) {
-    return call<target::Group (*)(const std::uintptr_t *)>(
+    return call<NativeGroup (*)(const std::uintptr_t *)>(
         offsets::kActorReferenceGetSystemGroupID)(&actor.address);
 }
 bool spawnPillar(const Target &target) {

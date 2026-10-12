@@ -63,9 +63,8 @@ constexpr unsigned kShaderCount = sizeof(kShaders) / sizeof(kShaders[0]);
 std::size_t g_codeOffsets[kShaderCount]{};
 enum Pass { Surface, Chain, Arrow, Particle, Burst, Blur, Composite, Downsample, PassCount };
 alignas(8) NVNprogram g_programs[PassCount]{};
-// Fixed storage, shared with other glow passes in the module, avoids reallocating render
-// textures still referenced by GPU work. Explicit pixel fetches use only the active viewport.
-constexpr unsigned kMaxWidth = totk::render::kGlowWidth, kMaxHeight = totk::render::kGlowHeight;
+// Fixed storage, shared with other glow passes in the module, avoids reallocating render textures still referenced by GPU work. Explicit pixel fetches use only the active viewport.
+constexpr unsigned kMaxWidth = totk::render::kGlowSceneWidth, kMaxHeight = totk::render::kGlowSceneHeight;
 const totk::render::GlowTargets *g_targets{};
 PFNNVNCOMMANDBUFFERSETRENDERTARGETSPROC g_setTargets{};
 PFNNVNCOMMANDBUFFERSETVIEWPORTPROC g_setViewport{};
@@ -105,8 +104,6 @@ void *variable(std::uintptr_t offset) {
 
 // Log each render failure once.
 std::uint32_t g_refusalsLogged{};
-// The countdown ring is logged once per freeze, when the pass that draws it first runs.
-bool g_ringLogged{};
 
 void refuse(unsigned reason, unsigned detail = 0) {
     g_lastRefusal = reason;
@@ -296,8 +293,6 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
     Presentation snapshot{};
     if (!engine::presentation(snapshot))
         return;
-    if (!snapshot.frozen)
-        g_ringLogged = false;
     if (!snapshot.aiming && !snapshot.frozen && snapshot.cooldownFrames <= 0.0f &&
         snapshot.releaseFlash <= 0.0f && !snapshot.trail.visible())
         return;
@@ -372,20 +367,20 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
         refuse(17);
         return;
     }
-    // Allocate all variants before binding a private framebuffer. An allocation
-    // failure leaves the game's target and render state untouched.
+    // Allocate all variants before binding a private framebuffer. An allocation failure leaves the game's target and render state untouched.
     void *blocks[10]{};
     Uniforms variants[10];
     for (auto &variant : variants)
         variant = uniforms;
     variants[1].effects[3] = 1;
-    const unsigned halfW = (width + 1) / 2, halfH = (height + 1) / 2, wideW = (width + 3) / 4,
-                   wideH = (height + 3) / 4;
+    const unsigned glowW = totk::render::kGlowWidth, glowH = totk::render::kGlowHeight;
+    const unsigned halfW = (glowW+1)/2, halfH = (glowH+1)/2, wideW = (glowW+3)/4, wideH = (glowH+3)/4;
+    const float kernelX = float(glowW)/width, kernelY = float(glowH)/height;
     const float blurParameters[8][4]{
-        {float(width), float(height), 2, 0}, {float(halfW), float(halfH), 1, 0},
-        {float(halfW), float(halfH), 0, 1},  {float(halfW), float(halfH), 2, 0},
-        {float(wideW), float(wideH), 1, 0},  {float(wideW), float(wideH), 0, 1},
-        {float(wideW), float(wideH), 1, 0},  {float(wideW), float(wideH), 0, 1}};
+        {float(glowW), float(glowH), 2, 0}, {float(halfW), float(halfH), kernelX, 0},
+        {float(halfW), float(halfH), 0, kernelY},  {float(halfW), float(halfH), 2, 0},
+        {float(wideW), float(wideH), kernelX, 0},  {float(wideW), float(wideH), 0, kernelY},
+        {float(wideW), float(wideH), kernelX, 0},  {float(wideW), float(wideH), 0, kernelY}};
     for (unsigned i = 0; i < 8; ++i)
         std::memcpy(variants[i + 2].pipeline, blurParameters[i], sizeof(blurParameters[i]));
     for (unsigned i = 0; i < 10; ++i) {
@@ -455,8 +450,7 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
         // Another glow pass in the module may still be sampling the shared targets.
         g_barrier(command, NVN_BARRIER_ORDER_FRAGMENTS_BIT | NVN_BARRIER_INVALIDATE_TEXTURE_BIT |
                                NVN_BARRIER_INVALIDATE_TEXTURE_DESCRIPTOR_BIT);
-        // Binds the game's framebuffer and viewport. Stasis draws straight onto the game's frame
-        // and writes its emission into Bright beside it.
+        // Native surfaces precede the separate reduced-resolution emission pass.
         call<void (*)(void *, void *)>(offsets::kModelRenderContextBindDefaultFrameBuffer)(
             context, drawContext);
         totk::render::GameFrame frame{};
@@ -467,50 +461,43 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
             refuse(26, (width << 16) | height);
         bloom = bloom && framed && g_targets;
         if (framed) {
-            if (bloom) {
-                const NVNtexture *targets[]{frame.texture, &g_targets->images[totk::render::Bright]};
-                const NVNtextureView *views[]{frame.view, &g_targets->views[totk::render::Bright]};
-                g_setTargets(command, 2, targets, views, nullptr, nullptr);
-            } else
-                g_setTargets(command, 1, &frame.texture, &frame.view, nullptr, nullptr);
+            g_setTargets(command, 1, &frame.texture, &frame.view, nullptr, nullptr);
             g_setViewport(command, 0, 0, width, height);
             g_setScissor(command, 0, 0, width, height);
-            const float zero[]{0, 0, 0, 0};
-            if (bloom)
-                g_clearColor(command, 1, zero, 15);
-            stateFor(3, true);
-            fullscreen(Surface, 0);
-            if (snapshot.frozen && !g_ringLogged) {
-                g_ringLogged = true;
-                Logging.Log("[stasis] HUD_RING drawn progress_permille=%u remaining=%u centre=%u,%u "
-                            "size=%u,%u bloom=%u",
-                            unsigned(uniforms.timing[0] * 1000.0f), unsigned(snapshot.remainingFrames),
-                            unsigned(width * 0.105f), unsigned(height * 0.14f), width, height,
-                            unsigned(bloom));
-            }
-            if (snapshot.frozen || snapshot.releaseFlash > .24f)
-                geometry(Chain, 48 * 10 * 6, 6 * 46, 0);
-            if (snapshot.frozen) {
-                if (uniforms.tip[3] > .5f)
-                    geometry(Arrow, 6, 1, 0);
-                if (snapshot.activationAge >= 0 && snapshot.activationAge < 1)
-                    geometry(Particle, 6, 48, 0);
-                fullscreen(Burst, 0);
-            }
-            if (snapshot.trail.visible()) {
-                geometry(Particle, 6, int(snapshot.trail.count * 7), 1);
-            }
+            stateFor(1, true);
+            const auto drawObjects = [&]() {
+                fullscreen(Surface, 0);
+                if (snapshot.frozen || snapshot.releaseFlash > .24f)
+                    geometry(Chain, 48 * 10 * 6, 6 * 46, 0);
+                if (snapshot.frozen) {
+                    if (uniforms.tip[3] > .5f)
+                        geometry(Arrow, 6, 1, 0);
+                    if (snapshot.activationAge >= 0 && snapshot.activationAge < 1)
+                        geometry(Particle, 6, 48, 0);
+                    fullscreen(Burst, 0);
+                }
+                if (snapshot.trail.visible()) {
+                    geometry(Particle, 6, int(snapshot.trail.count * 7), 1);
+                }
+            };
+            drawObjects();
             if (bloom) {
-                // The fragment-order and texture invalidation barrier separates every
-                // render-to-texture write from its following sampling pass.
+                const NVNtexture *targets[]{nullptr, &g_targets->images[totk::render::Bright]};
+                g_setTargets(command, 2, targets, nullptr, nullptr, nullptr);
+                g_setViewport(command, 0, 0, glowW, glowH);
+                g_setScissor(command, 0, 0, glowW, glowH);
+                const float zero[4]{};
+                g_clearColor(command, 1, zero, 15);
+                stateFor(2, false);
+                drawObjects();
+                // The fragment-order and texture invalidation barrier separates every render-to-texture write from its following sampling pass.
                 const auto textureBarrier = [&]() {
                     g_barrier(command,
                               NVN_BARRIER_ORDER_FRAGMENTS_BIT | NVN_BARRIER_INVALIDATE_TEXTURE_BIT);
                 };
                 using namespace totk::render;
                 stateFor(0, false);
-                // Both downsamples come first: the wide chain starts from NarrowA, and NarrowB and
-                // the wide images reuse Bright's memory once it has been read.
+                // Both downsamples come first: the wide chain starts from NarrowA, and NarrowB and the wide images reuse Bright's memory once it has been read.
                 constexpr unsigned order[]{0, 3, 1, 2, 4, 5, 6, 7};
                 constexpr GlowImage source[]{Bright, NarrowA, NarrowB, NarrowA, WideA, WideB, WideA, WideB},
                     destination[]{NarrowA, NarrowB, NarrowA, WideA, WideB, WideA, WideB, WideA};
@@ -533,7 +520,7 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
                 stateFor(1, true);
                 bindPrivate(3, NarrowA);
                 bindPrivate(4, WideA);
-                fullscreen(Composite, 0);
+                fullscreen(Composite, 2);
             }
             g_lastRefusal = 0;
         }

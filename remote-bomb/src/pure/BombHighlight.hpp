@@ -5,8 +5,7 @@
 #include <cmath>
 #include <cstdint>
 
-// The mod's own Ultrahand highlight: the game never highlights the bombs,
-// so the renderer draws vanilla's orange (in reach) and green (aimed at or held) itself.
+// The mod's own Ultrahand highlight: the game never highlights the bombs, so the renderer draws vanilla's orange (in reach) and green (aimed at or held) itself.
 namespace remote_bomb::highlight {
 enum class Level : unsigned { None, InReach, Focused };
 struct Inputs {
@@ -26,8 +25,7 @@ inline Level decide(const Inputs &in) {
         return Level::InReach;
     return Level::None;
 }
-// Linear colours of vanilla's outlines, sampled from screenshots: orange sRGB 253,163,2
-// on a rock in reach, green sRGB 54,240,124 on a held apple.
+// Linear colours of vanilla's outlines, sampled from screenshots: orange sRGB 253,163,2 on a rock in reach, green sRGB 54,240,124 on a held apple.
 inline std::array<float, 3> colour(Level level) {
     switch (level) {
     case Level::InReach: return {.983f, .366f, .001f};

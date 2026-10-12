@@ -56,6 +56,18 @@ HOOK_DEFINE_TRAMPOLINE(StasisPhysicsClockHook) {
         engine::publishPhysicsTime(frameScale);
     }
 };
+HOOK_DEFINE_TRAMPOLINE(StasisNativeSelectionHook) {
+    static std::uintptr_t Callback(std::uintptr_t screen) {
+        const auto result = Orig(screen);
+        engine::nativeSelectionAccepted(screen);
+        return result;
+    }
+};
+HOOK_DEFINE_TRAMPOLINE(StasisAbilityAdmissionHook) {
+    static std::uint64_t Callback(std::uintptr_t actor) {
+        return engine::nativeAbilityAdmission([](std::uintptr_t player) { return Orig(player); }, actor);
+    }
+};
 HOOK_DEFINE_TRAMPOLINE(StasisAcceptedHitHook) {
     static std::uint64_t Callback(void *record, void *contact, void *victimComponent,
                                   void *attackInfo) {
@@ -128,6 +140,8 @@ bool stasis::install(std::uintptr_t base) {
     StasisWheelUpdateHook::InstallAtOffset(offsets::kUIShortCutMainItemScreenUpdateImpl);
     StasisWheelExitHook::InstallAtOffset(offsets::kUIShortCutMainItemScreenDoOutBefore);
     StasisWheelCloseHook::InstallAtOffset(offsets::kUIShortCutMainItemScreenCloseEndImpl);
+    StasisNativeSelectionHook::InstallAtOffset(offsets::kUIShortCutMainItemScreenDoOutBeforeImpl);
+    StasisAbilityAdmissionHook::InstallAtOffset(offsets::kNativeAbilityAdmission);
     StasisAimCameraHook::InstallAtOffset(offsets::kUpdateAimCamera);
     Logging.Log("[stasis] v0.1.17 installed");
     return true;

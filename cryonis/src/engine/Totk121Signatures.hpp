@@ -6,6 +6,7 @@
 namespace cryonis::signatures {
 using Site = totk::engine::CodeSite;
 inline constexpr Site kRuntime[]{
+    {offsets::kNativeAbilityAdmission, 0xD10143FF, 0xA9017BFD},
     {offsets::kPhysicsModuleUpdateDeltaFrame, 0xF9400828, 0xB40002A8},
     {offsets::kNinJoyNpadDeviceCalc, 0xD102C3FF, 0xA9057BFD},
     {offsets::kRayCast, 0xD10743FF, 0xA9187BFD},

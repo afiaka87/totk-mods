@@ -37,7 +37,7 @@ function(support_test name source)
     set(SUPPORT_TEST_TARGETS ${SUPPORT_TEST_TARGETS} ${target} PARENT_SCOPE)
 endfunction()
 
-# The public source export contains only the coexistence and code-check suites.
+# The public source export contains only the three coexistence suites.
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_overlay_layout.cpp")
     support_test(overlay_layout test_overlay_layout.cpp)
     support_test(harness_contract test_harness_contract.cpp)
@@ -45,12 +45,19 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_overlay_layout.cpp")
     support_test(input_raycast test_input_raycast.cpp)
     support_test(transform_gamedata test_transform_gamedata.cpp)
     support_test(render_geometry test_primitive_geometry.cpp)
+    support_test(native_fonts test_native_fonts.cpp)
+    target_sources(runtime_support_native_fonts_test PRIVATE
+        ../src/NativeFont.cpp ../src/NativeFontRenderer.cpp)
+    target_compile_definitions(runtime_support_native_fonts_test PRIVATE
+        NATIVE_FONT_PROOF_PATH="${CMAKE_CURRENT_SOURCE_DIR}/native-font-diagnostic/proof.toml")
 endif()
 
 support_test(pfx_hook test_pfx_hook.cpp)
 support_test(grip_hook test_grip_hook.cpp)
 support_test(flight_clock_hook test_flight_clock_hook.cpp)
 support_test(code_check test_code_check.cpp)
+support_test(texture_source test_texture_source.cpp)
+target_include_directories(runtime_support_texture_source_test PRIVATE stubs)
 target_include_directories(runtime_support_code_check_test PRIVATE stubs)
 target_include_directories(runtime_support_grip_hook_test PRIVATE "${GLIDESHOT_SOURCE}/engine")
 target_include_directories(runtime_support_flight_clock_hook_test PRIVATE ../../arrowbound/src/engine)

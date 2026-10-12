@@ -10,7 +10,7 @@ void main(){
     vec3 sum=vec3(0);float total=0;
     for(int i=-6;i<=6;++i){
         float weight=exp(-float(i*i)/8.0);
-        sum+=texelFetch(source,imagePixel(pixel+kernel.xy*float(i),sizes.xy),0).rgb*weight;
+        sum+=sampleImage(source,(pixel+kernel.xy*float(i)+.5)/sizes.xy,sizes.xy).rgb*weight;
         total+=weight;
     }
     result=vec4(sum/total,0);

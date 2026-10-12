@@ -13,7 +13,8 @@ layout(location=4) in vec3 bitangent;
 layout(location=0) out vec4 result;
 layout(location=1) out vec4 bright;
 void main(){
-    float depth=dimensions.z+texelFetch(sceneDepth,ivec2(gl_FragCoord.xy),0).r*
+    vec2 depthScale=vec2(privateDepth.z>0?privateDepth.z:1,privateDepth.w>0?privateDepth.w:1);
+    float depth=dimensions.z+texelFetch(sceneDepth,ivec2(gl_FragCoord.xy*depthScale),0).r*
                 (dimensions.w-dimensions.z);
     vec4 albedo=texture(originalAlbedo,uv);
     vec2 mapped=texture(originalNormal,uv).rg*2.0-1.0;

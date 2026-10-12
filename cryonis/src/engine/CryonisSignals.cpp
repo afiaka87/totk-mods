@@ -2,6 +2,7 @@
 // Copyright (c) Clay Mullis
 #include "CryonisHooks.hpp"
 #include "CryonisEngine.hpp"
+#include "CryonisNode.hpp"
 #include "CryonisWheel.hpp"
 #include "Totk121Layout.hpp"
 #include "Totk121Signatures.hpp"
@@ -11,7 +12,14 @@ namespace cryonis::engine {
 namespace {
 constexpr auto readGame = []<class T>(std::uintptr_t address) { return read<T>(address); };
 std::uintptr_t nodeActor(std::uintptr_t node) {
-    return call<std::uintptr_t (*)(std::uintptr_t)>(offsets::kExecuteBaseGetActor)(node);
+    const auto actor = executeActor(node,
+        [](std::uintptr_t address) { return read<std::uintptr_t>(address); }, heapPointer);
+    if (!actor) {
+        static std::atomic<unsigned> refused{};
+        if (refused.fetch_add(1, std::memory_order_relaxed) < 8)
+            Logging.Log("[cryonis] NODE_ACTOR_REFUSED node=%p", reinterpret_cast<void *>(node));
+    }
+    return actor;
 }
 template <class Change> void updateWheel(HookContext hook, std::uintptr_t screen, Change change) {
     if (hook.signals.wheelOwner.load() != screen)
@@ -110,21 +118,40 @@ void nativeSelectionAccepted(HookContext hook, std::uintptr_t screen) {
 
 void maskRecentAbilityKey(HookContext hook, std::uintptr_t node) {
     if (!hook.signals.recentKeyOwned.load(std::memory_order_acquire) ||
-        !hook.signals.running.load(std::memory_order_acquire) ||
-        nodeActor(node) != hook.signals.keyPlayer.load(std::memory_order_acquire))
+        !hook.signals.running.load(std::memory_order_acquire))
+        return;
+    const auto actor = nodeActor(node);
+    if (!actor || actor != hook.signals.keyPlayer.load(std::memory_order_acquire))
+        return;
+    if (!heapPointer(node + layout::node::kOutputs))
         return;
     const auto output = read<std::uintptr_t>(node + layout::node::kOutputs);
-    const auto keys = valid(output) ? read<std::uintptr_t>(output) : 0;
-    if (!valid(keys))
+    const auto keys = heapPointer(output) ? read<std::uintptr_t>(output) : 0;
+    if (!heapPointer(keys))
         return;
     auto &value = *reinterpret_cast<std::uint64_t *>(keys);
     value = input::recentGameplayKeys(value, true);
+}
+
+std::uint64_t nativeAbilityAdmission(HookContext hook,
+    std::uint64_t (*original)(std::uintptr_t), std::uintptr_t actor) {
+    return recentAbilityAdmission(actor,
+        hook.signals.recentNativeOwned.load(std::memory_order_acquire),
+        hook.signals.keyPlayer.load(std::memory_order_acquire), original,
+        [](std::uintptr_t player) {
+            static std::atomic<unsigned> reports{};
+            if (reports.fetch_add(1, std::memory_order_relaxed) < 8)
+                Logging.Log("[cryonis] NATIVE_ABILITY_SUPPRESSED player=%p",
+                            reinterpret_cast<void *>(player));
+        });
 }
 
 void cancelOwnedAmiibo(HookContext hook, std::uintptr_t node) {
     if (!hook.signals.recentNativeOwned.load(std::memory_order_acquire) || !valid(node))
         return;
     const auto actor = nodeActor(node);
+    if (!actor)
+        return;
     const auto state = read<unsigned>(node + layout::node::kState);
     if (!input::cancelNativeAmiibo(true, hook.signals.running.load(std::memory_order_acquire),
                                    actor == hook.signals.keyPlayer.load(std::memory_order_acquire),

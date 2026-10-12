@@ -34,8 +34,7 @@ constexpr Shader shaderStages[]{BOMB_SHADER(bombvert), BOMB_SHADER(bombfrag),
 constexpr unsigned kTextureCount = 36;
 // Bomb glow strength relative to the original material emission (surface glow and bloom both scale).
 constexpr float kGlowScale = .15f;
-// Glow colour: a lighter, less saturated blue than the material's deep (0.025, 0.25, 1.0) at the
-// same luminance, so kGlowScale alone sets the brightness.
+// Glow colour: a lighter, less saturated blue than the material's deep (0.025, 0.25, 1.0) at the same luminance, so kGlowScale alone sets the brightness.
 constexpr float kGlowColor[3]{.136f, .272f, .453f};
 // Ultrahand outline width as a share of the screen height (about 4 pixels at 1080p).
 constexpr float kOutlineHeight = .004f;
@@ -45,7 +44,7 @@ int textureIds[kTextureCount]{}, samplerId = -1;
 alignas(4096) unsigned char codeMemory[65536]{};
 alignas(4096) unsigned char meshMemory[131072]{};
 // The bomb textures are the original compressed blocks and need 1,380,352 bytes.
-alignas(65536) unsigned char textureMemory[1536 * 1024]{};
+alignas(65536) unsigned char textureMemory[22 * 65536]{};
 NVNbufferAddress meshAddress{}, indexAddress[2]{};
 bool initialized{}, attempted{};
 unsigned refusals{};
@@ -212,8 +211,16 @@ bool initializeTextures() {
         if (!init(&textures[i], &builder))
             return refuse(13);
         NVNcopyRegion region{0, 0, 0, int(source.width), int(source.height), 1};
+#if defined(BOTW_ABILITIES_STREAM_TEXTURES)
+        if (!totk::assets::withTexture(totk::assets::kBombTexturePath, source.data,
+                [&](const unsigned char *pixels) {
+                    writePixels(&textures[i], nullptr, &region, pixels);
+                    flush(&textures[i], nullptr, &region);
+                })) return refuse(15);
+#else
         writePixels(&textures[i], nullptr, &region, source.data);
         flush(&textures[i], nullptr, &region);
+#endif
         textureIds[i] = native<int (*)(void *, NVNtexture *, NVNtextureView *)>(0xA5B0B4)(manager, &textures[i], nullptr);
         if (textureIds[i] < 0)
             return refuse(14);
@@ -232,7 +239,7 @@ bool initialize() {
     initialized = initializePools() && initializeTextures() && targets::initialize(device, getProc, base);
     return initialized;
 }
-struct Resources { NVNcommandBuffer *command{}; void *sampler{}; unsigned width{}, height{}; float depth[2]{}; };
+struct Resources { NVNcommandBuffer *command{}; void *sampler{}; unsigned width{}, height{}; float depth[2]{}, sampleScale[2]{1,1}; };
 bool resources(void *drawContext, void *scene, void *context, Resources &out) {
     if (!drawContext || !scene || !context || !read<void *>(context, 0x540) || !read<void *>(context, 0x548))
         return refuse(15);
@@ -318,8 +325,7 @@ bool allocatorReady() {
 // The game's 128-byte graphics state: resetState loads its defaults, applyState sends it to the GPU.
 void resetState(void *state) { native<void (*)(void *)>(0x74C19C)(state); }
 void applyState(void *state, void *drawContext) { native<void (*)(void *, void *)>(0x756A08)(state, drawContext); }
-// Blends the render targets in mask (the word at +4) from the given colour factors, keeping the
-// destination alpha. Each target's factors and equations are six bytes from 40 + 6 * target.
+// Blends the render targets in mask (the word at +4) from the given colour factors, keeping the destination alpha. Each target's factors and equations are six bytes from 40 + 6 * target.
 void blend(unsigned char *state, unsigned mask, NVNblendFunc source, NVNblendFunc destination) {
     write<unsigned>(state, 4, mask);
     for (unsigned target = 0; target < 2; ++target) {
@@ -347,6 +353,7 @@ void drawEffectLayer(const Resources &r, const Camera &camera, effects::Position
         uniform.emission[channel] = curve(source.curves[0], progress, channel, source.colors[0][channel]);
     uniform.depth[0] = r.depth[0];
     uniform.depth[1] = r.depth[1];
+    uniform.depth[2] = r.sampleScale[0]; uniform.depth[3] = r.sampleScale[1];
     const auto block = uniformBlock(uniform);
     if (!block) { refuse(23); return; }
     for (unsigned map = 0; map < 3; ++map) {
@@ -377,17 +384,18 @@ void drawEffects(const Resources &r, const Camera &camera, const effects::Timeli
 }
 struct FilterUniforms { float sizes[4]{}, kernel[4]{}; };
 struct FilterBlocks { std::uint64_t values[9]{}; };
-// Downsamples, then narrow and wide blurs, then the bloom composite; sizes are source then
-// destination, and the kernel is blur direction and downsample factor.
+// Pass order: Bright to NarrowA, NarrowA to WideA, then the narrow and wide blurs; the last block is the bloom composite. Sizes are source then destination; the kernel is the blur direction and the downsample factor.
 bool allocateFilters(const Resources &r, FilterBlocks &blocks) {
-    const float fullW = float(r.width), fullH = float(r.height);
-    const float halfW = float((r.width+1)/2), halfH = float((r.height+1)/2);
-    const float wideW = float((r.width+3)/4), wideH = float((r.height+3)/4);
+    const unsigned glowW=totk::render::kGlowWidth, glowH=totk::render::kGlowHeight;
+    const float fullW=float(glowW), fullH=float(glowH);
+    const float halfW=float((glowW+1)/2), halfH=float((glowH+1)/2);
+    const float wideW=float((glowW+3)/4), wideH=float((glowH+3)/4);
+    const float kernelX=fullW/r.width, kernelY=fullH/r.height;
     const FilterUniforms uniforms[9]{
         {{fullW, fullH, halfW, halfH}, {0, 0, 2, 0}}, {{halfW, halfH, wideW, wideH}, {0, 0, 2, 0}},
-        {{halfW, halfH, halfW, halfH}, {1, 0, 0, 0}}, {{halfW, halfH, halfW, halfH}, {0, 1, 0, 0}},
-        {{wideW, wideH, wideW, wideH}, {1, 0, 0, 0}}, {{wideW, wideH, wideW, wideH}, {0, 1, 0, 0}},
-        {{wideW, wideH, wideW, wideH}, {1, 0, 0, 0}}, {{wideW, wideH, wideW, wideH}, {0, 1, 0, 0}},
+        {{halfW, halfH, halfW, halfH}, {kernelX, 0, 0, 0}}, {{halfW, halfH, halfW, halfH}, {0, kernelY, 0, 0}},
+        {{wideW, wideH, wideW, wideH}, {kernelX, 0, 0, 0}}, {{wideW, wideH, wideW, wideH}, {0, kernelY, 0, 0}},
+        {{wideW, wideH, wideW, wideH}, {kernelX, 0, 0, 0}}, {{wideW, wideH, wideW, wideH}, {0, kernelY, 0, 0}},
         {{fullW, fullH, fullW, fullH}, {0, 0, 0, 0}}};
     for (unsigned i = 0; i < 9; ++i)
         if (!(blocks.values[i] = uniformBlock(uniforms[i])))
@@ -412,10 +420,12 @@ void postprocess(const Resources &r, void *context, void *drawContext, const Fil
     write<unsigned>(state, 4, 0);
     applyState(state, drawContext);
     targets::meshDepth(r.command, false);
+    barrier(r.command, NVN_BARRIER_ORDER_PRIMITIVES_BIT | NVN_BARRIER_ORDER_FRAGMENTS_BIT |
+                       NVN_BARRIER_INVALIDATE_TEXTURE_BIT | NVN_BARRIER_INVALIDATE_ZCULL_BIT);
     for (unsigned i = 0; i < 8; ++i) {
         textureBarrier(); bindImage(0, sources[i]);
         const unsigned divisor = i == 0 || i == 2 || i == 3 ? 2 : 4;
-        targets::bind(r.command, destinations[i], (r.width+divisor-1)/divisor, (r.height+divisor-1)/divisor);
+        targets::bind(r.command, destinations[i], (kGlowWidth+divisor-1)/divisor, (kGlowHeight+divisor-1)/divisor);
         bindProgram(r.command, i < 2 ? &downsampleProgram : &blurProgram, 63);
         bindBlock(i);
         drawArrays(r.command, NVN_DRAW_PRIMITIVE_TRIANGLES, 0, 3);
@@ -428,12 +438,6 @@ void postprocess(const Resources &r, void *context, void *drawContext, const Fil
     bindImage(1, NarrowA); bindImage(2, WideA);
     bindProgram(r.command, &compositeProgram, 63); bindBlock(8);
     drawArrays(r.command, NVN_DRAW_PRIMITIVE_TRIANGLES, 0, 3);
-    static bool reported{};
-    if (!reported) {
-        Logging.Log("[remote-bomb] MULTIPASS_DRAW width=%u height=%u programs=6 mesh_depth=private16 bloom=2 frame=direct",
-                    r.width, r.height);
-        reported = true;
-    }
 }
 void draw(void *drawContext, void *scene, void *context, const Camera &camera) {
     runtime::Presentation frame;
@@ -460,7 +464,7 @@ void draw(void *drawContext, void *scene, void *context, const Camera &camera) {
     r.depth[0] = span[0];
     r.depth[1] = span[1];
     // [form][part][pass]: pass 0 is the body, pass 1 the Ultrahand outline shell (highlighted bombs only).
-    std::uint64_t blocks[2][2][2]{};
+    std::uint64_t blocks[2][2][2]{}, glowBlocks[2][2][2]{};
     unsigned passes[2]{};
     for (unsigned form = 0; form < 2; ++form) {
         if (!frame.bombs[form].live)
@@ -485,7 +489,11 @@ void draw(void *drawContext, void *scene, void *context, const Camera &camera) {
             uniform.depth[1] = r.depth[1];
             for (unsigned pass = 0; pass < passes[form]; ++pass) {
                 uniform.highlight[3] = passes[form] == 1 ? 0.f : float(pass + 1);
+                uniform.depth[2] = uniform.depth[3] = 1.f;
                 if (!(blocks[form][part][pass] = uniformBlock(uniform))) { refuse(23); return; }
+                uniform.depth[2] = float(r.width) / totk::render::kGlowWidth;
+                uniform.depth[3] = float(r.height) / totk::render::kGlowHeight;
+                if (!(glowBlocks[form][part][pass] = uniformBlock(uniform))) { refuse(23); return; }
             }
         }
     }
@@ -501,8 +509,7 @@ void draw(void *drawContext, void *scene, void *context, const Camera &camera) {
     applyState(graphics, drawContext);
     // Another glow pass in the same module may still be sampling the shared targets.
     barrier(r.command, NVN_BARRIER_ORDER_FRAGMENTS_BIT | NVN_BARRIER_INVALIDATE_TEXTURE_BIT);
-    // The game's own bind first, then the bomb draws straight onto its frame. The body is opaque:
-    // it replaces the frame's colour and keeps the frame's alpha.
+    // The game's own bind first, then the bomb draws straight onto its frame. The body is opaque: it replaces the frame's colour and keeps the frame's alpha.
     native<void (*)(void *, void *)>(0xC5A6FC)(context, drawContext);
     bool bloom{};
     if (!targets::begin(r.command, context, r.width, r.height, bloom)) {
@@ -515,26 +522,40 @@ void draw(void *drawContext, void *scene, void *context, const Camera &camera) {
     }
     blend(graphics, 1, NVN_BLEND_FUNC_ONE, NVN_BLEND_FUNC_ONE_MINUS_SRC_ALPHA);
     applyState(graphics, drawContext);
-    targets::meshDepth(r.command, true);
-    bindProgram(r.command, &program, 63);
-    for (unsigned form = 0; form < 2; ++form) {
-        if (!frame.bombs[form].live || !bindTextures(drawContext, r, form))
-            continue;
-        bindUniform(r.command, NVN_SHADER_STAGE_VERTEX, 1, meshAddress + form * 65536, 3420 * 16);
-        const auto &mesh = assets::meshes[form];
-        // The outline shell goes first so the body drawn over it covers everything inside the edge.
-        for (unsigned pass = passes[form]; pass-- > 0;)
-            for (unsigned part = 0; part < mesh.drawCount; ++part) {
-                bindUniforms(r.command, blocks[form][part][pass], sizeof(Uniforms));
-                drawElements(r.command, NVN_DRAW_PRIMITIVE_TRIANGLES, NVN_INDEX_TYPE_UNSIGNED_SHORT,
-                              mesh.draws[part].count, indexAddress[form] + mesh.draws[part].first * sizeof(std::uint16_t));
-            }
-    }
-    if (effects::visible(frame.effects)) {
-        blend(graphics, 3, NVN_BLEND_FUNC_ONE, NVN_BLEND_FUNC_ONE);
+    const auto drawObjects = [&](const std::uint64_t (&drawBlocks)[2][2][2], const Resources &drawResources) {
+        targets::meshDepth(r.command, true);
+        bindProgram(r.command, &program, 63);
+        for (unsigned form = 0; form < 2; ++form) {
+            if (!frame.bombs[form].live || !bindTextures(drawContext, r, form))
+                continue;
+            bindUniform(r.command, NVN_SHADER_STAGE_VERTEX, 1, meshAddress + form * 65536, 3420 * 16);
+            const auto &mesh = assets::meshes[form];
+            // The outline shell goes first so the body drawn over it covers everything inside the edge.
+            for (unsigned pass = passes[form]; pass-- > 0;)
+                for (unsigned part = 0; part < mesh.drawCount; ++part) {
+                    bindUniforms(r.command, drawBlocks[form][part][pass], sizeof(Uniforms));
+                    drawElements(r.command, NVN_DRAW_PRIMITIVE_TRIANGLES, NVN_INDEX_TYPE_UNSIGNED_SHORT,
+                                  mesh.draws[part].count, indexAddress[form] + mesh.draws[part].first * sizeof(std::uint16_t));
+                }
+        }
+        if (effects::visible(frame.effects)) {
+            blend(graphics, 3, NVN_BLEND_FUNC_ONE, NVN_BLEND_FUNC_ONE);
+            applyState(graphics, drawContext);
+            targets::effectsDepth(r.command);
+            drawEffects(drawResources, camera, frame.effects);
+        }
+    };
+    drawObjects(blocks, r);
+    if (bloom) {
+        barrier(r.command, NVN_BARRIER_ORDER_PRIMITIVES_BIT | NVN_BARRIER_ORDER_FRAGMENTS_BIT |
+                           NVN_BARRIER_INVALIDATE_TEXTURE_BIT | NVN_BARRIER_INVALIDATE_ZCULL_BIT);
+        targets::emission(r.command);
+        blend(graphics, 2, NVN_BLEND_FUNC_ONE, NVN_BLEND_FUNC_ONE_MINUS_SRC_ALPHA);
         applyState(graphics, drawContext);
-        targets::effectsDepth(r.command);
-        drawEffects(r, camera, frame.effects);
+        auto glowResources = r;
+        glowResources.sampleScale[0] = float(r.width) / totk::render::kGlowWidth;
+        glowResources.sampleScale[1] = float(r.height) / totk::render::kGlowHeight;
+        drawObjects(glowBlocks, glowResources);
     }
     if (bloom)
         postprocess(r, context, drawContext, filters);
@@ -579,8 +600,7 @@ bool install(std::uintptr_t mainBase) {
 }
 // The HUD icon's centre and half size in the game's 1280x720 layout.
 #ifdef REMOTE_BOMB_HUD_BESIDE_STASIS
-// BotW Abilities: one place right of Stasis's countdown ring (stasis.frag: centred at 10.5% and 14%
-// of the screen, outer edge 27 of 900 lines), at its size: the recharge ring's edge is 97% of the half size.
+// BotW Abilities: one place right of Stasis's countdown ring (stasis.frag: centred at 10.5% and 14% of the screen, outer edge 27 of 900 lines), at its size: the recharge ring's edge is 97% of the half size.
 constexpr float kHudRect[4]{0.105f * 1280.f + 50.f, 0.14f * 720.f, 22.f, 22.f};
 #else
 constexpr float kHudRect[4]{515.f, 510.f, 40.f, 40.f};

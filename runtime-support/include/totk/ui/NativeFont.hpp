@@ -15,7 +15,11 @@ enum class Face : std::uint8_t { RodinRegular, RodinBold, Raglan };
 constexpr unsigned kFaces = 3, kCells = 96, kCellPixels = 48;
 constexpr unsigned kCellsPerBank = 16, kBanksPerFace = 6, kBanks = 18;
 constexpr unsigned kBankBytes = 36864, kAtlasBytes = kBanks * kBankBytes;
+#if defined(BOTW_ABILITIES_COMPACT_UI)
+constexpr unsigned kLines = 2, kTextBytes = 64, kBatch = 64, kQuads = 128;
+#else
 constexpr unsigned kLines = 16, kTextBytes = 192, kBatch = 128, kQuads = 1152;
+#endif
 
 [[nodiscard]] inline bool faceFromName(std::string_view name, Face& face) noexcept {
     if (name == "rodin_regular") face = Face::RodinRegular;
@@ -30,6 +34,7 @@ struct Atlas {
     unsigned char* pixels = nullptr;
     std::size_t bytes = 0;
     const std::uint16_t (*advances)[kCells] = nullptr;
+    const std::uint16_t (*glyphSlots)[kCells] = nullptr;
 };
 
 struct Line {
@@ -85,8 +90,7 @@ unsigned buildQuads(const Frame&, const Atlas&, PixelGrid, Quad*, unsigned capac
 
 enum class DocumentError { None, TooLarge, Syntax, UnknownField, InvalidValue, Capacity };
 struct DocumentResult { DocumentError error{}; unsigned line = 0; explicit operator bool() const { return error == DocumentError::None; } };
-// INI/TOML subset: [text.name], quoted text/font, numeric x/y/scale and optional 0xAABBGGRR rgba.
-// Parsing is atomic: any error leaves the previous Frame unchanged.
+// INI/TOML subset: [text.name], quoted text/font, numeric x/y/scale and optional 0xAABBGGRR rgba. Parsing is atomic: any error leaves the previous Frame unchanged.
 DocumentResult parseDocument(std::string_view source, Frame& output) noexcept;
 
 } // namespace totk::ui::native_font

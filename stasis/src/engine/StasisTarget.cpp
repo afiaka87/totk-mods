@@ -52,8 +52,7 @@ void Mailbox::observe(Cast original, const void *from, const void *object, Resol
     }
     std::memcpy(query_, object, sizeof(query_));
     query_[0x20] = 0;
-    // The group argument rewrites the filter at query+0x60; accept only the known inline layout
-    // and point the copy at its own filter so those writes stay off the donor.
+    // The group argument rewrites the filter at query+0x60; accept only the known inline layout and point the copy at its own filter so those writes stay off the donor.
     const auto source =
         eng::readMemory<std::uintptr_t>(reinterpret_cast<std::uintptr_t>(query_) + 0x60);
     hit_ = {};

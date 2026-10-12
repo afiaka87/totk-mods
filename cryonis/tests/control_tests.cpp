@@ -2,6 +2,7 @@
 // Copyright (c) Clay Mullis
 #include "CryonisControl.hpp"
 #include "CryonisRenderPolicy.hpp"
+#include "CryonisNode.hpp"
 #include <cstdlib>
 #include <cstdio>
 using namespace cryonis;
@@ -38,6 +39,26 @@ int main() {
     const auto exit = control::transition(tap.next, context);
     check(exit.aim == control::AimChange::Exit && exit.next.recent.remembered,
           "L release exits while preserving memory");
+    unsigned nativeCalls{}, suppressed{};
+    const auto originalAdmission = [&](std::uintptr_t) { ++nativeCalls; return std::uint64_t{0x1235}; };
+    const auto blockedAdmission = [&](std::uintptr_t) { ++suppressed; };
+    for (const auto &remembered : {enter.next, tap.next, exit.next})
+        check(engine::recentAbilityAdmission(0x100000, remembered.recent.remembered,
+                  0x100000, originalAdmission, blockedAdmission) == 0,
+              "Cryonis owns native admission through targeting, L press and closed preview");
+    auto nativeChosen = exit.next;
+    nativeChosen.recent.nativeAccepted();
+    check(engine::recentAbilityAdmission(0x100000, nativeChosen.recent.remembered,
+              0x100000, originalAdmission, blockedAdmission) == 0x1235,
+          "accepted vanilla selection restores original native result");
+    check(engine::recentAbilityAdmission(0x200000, true, 0x100000,
+              originalAdmission, blockedAdmission) == 0x1235,
+          "remembered Cryonis cannot suppress another actor");
+    check(engine::recentAbilityAdmission(0, true, 0,
+              originalAdmission, blockedAdmission) == 0x1235,
+          "cleared scene identity forwards native admission");
+    check(nativeCalls == 3 && suppressed == 3,
+          "blocked admission does not execute native activation side effects");
     context.buttons = input::L;
     context.pressed = input::L;
     context.otherHoldsL = true;

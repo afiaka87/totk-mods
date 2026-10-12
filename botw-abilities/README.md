@@ -1,4 +1,7 @@
-# BotW Abilities v0.1.0
+# BotW Abilities v0.1.2
+
+This update fixes Switch startup and repeated Cryonis activation, reduces memory to 9.02 MiB,
+and corrects recent-ability input on Ryubing. It keeps the `subsdk7` slot.
 
 Breath of the Wild's Stasis, Remote Bomb and Cryonis in Tears of the Kingdom 1.2.1, in one add-on,
 usable together. Each ability is the one from the standalone Stasis, Remote Bomb and Cryonis mods;
@@ -11,6 +14,8 @@ Freeze an object, strike it to build up force, and launch it when the freeze end
 - Hold L, highlight Camera in the ability wheel and click the right stick to aim. Holding L still
   opens the normal wheel.
 - A freezes the object under the reticle; B leaves aiming.
+- Tap L to reopen Stasis aiming while it is the most recent ability, or to leave aiming.
+  The reticle stays dim during cooldown; aiming is available, but freezing waits for recharge.
 - Repeat L, Camera, right-stick click during a freeze to release early.
 - While an object is frozen, B and L keep their normal uses, so Link can sprint or pick another
   ability.
@@ -73,20 +78,25 @@ surface is lifted with the ice.
 
 Requires Tears of the Kingdom **1.2.1**, build `9B4E43650501A4D4`.
 
-**Emulator:** extract `botw-abilities-v0.1.0-emulator-subsdk5.zip` and copy its `BotW Abilities`
+**Emulator:** extract `botw-abilities-v0.1.2-emulator-subsdk7.zip` and copy its `BotW Abilities`
 folder into the game's mod folder (right-click the game, **Open Mod Data Location**). Enable
 **BotW Abilities** in the game's add-on list.
 
-**Switch (Atmosphere):** extract `botw-abilities-v0.1.0-switch-subsdk5.zip` and copy its
+**Switch (Atmosphere):** extract `botw-abilities-v0.1.2-switch-subsdk7.zip` and copy its
 `0100F2C0115B6000` folder into `atmosphere/contents/` on the SD card.
 
-Both archives contain the same files: `exefs/subsdk5`, `exefs/main.npdm`, and 23 files under
-`romfs/`.
+**Upgrading from v0.1.0:** remove the old BotW Abilities add-on before installing this update.
+On Switch, remove this mod's old `exefs/subsdk5` before copying the new files. Leaving both
+modules installed loads the abilities twice. Preserve files belonging to other mods.
+
+Both archives contain the same files: `exefs/subsdk7`, `exefs/main.npdm`, and 25 files under
+`romfs/`. Keep both `romfs/BotwAbilities/Textures/*.bin` files; they contain the streamed
+texture sources used by the shared emulator/Switch build.
 
 ## Compatibility
 
-- BotW Abilities occupies the `subsdk5` code slot. Do not enable another mod that supplies
-  `subsdk5`; two of them can stop the game from booting.
+- BotW Abilities occupies the `subsdk7` code slot. Do not enable another mod that supplies
+  `subsdk7`; two of them can stop the game from booting.
 - Do not enable it together with the standalone Stasis, Remote Bomb or Cryonis mods.
 - It replaces the interface sound bank (`UI_Static`), five RSDB tables (actor, attachment, game
   actor, pouch and tag), the save-data schema (`GameDataList`), the English text archive, the
@@ -94,14 +104,13 @@ Both archives contain the same files: `exefs/subsdk5`, `exefs/main.npdm`, and 23
   actor packs, two models and four inventory icons. Mods that replace any of those files conflict
   unless their changes are merged. If you use
   another mod that ships its own resource-size table, merge the tables with a tool such as TKMM.
-- The glow on frozen objects and bombs is drawn at the game's normal resolution (up to 1600x900).
-  With a mod that raises the game's own render resolution above that, the effects draw without
-  glow.
+- Ice, bombs and interface elements retain their native resolution; glow uses an 800x450 buffer.
+  Game render resolutions above 1600x900 are outside the supported glow/depth capacity.
 
 ## Known issues
 
-- Tested on the Citron emulator only. The module is sized to fit a Switch's memory, but it has not
-  been tested on Switch hardware.
+- Tested individually on Switch hardware and in Citron and Ryubing. Combinations with other
+  code mods have not yet been tested on Switch.
 - At startup each ability checks the game code it uses and stays inactive on any other game
   version.
 - Stasis does not highlight nearby objects while aiming; only the selected target is highlighted.
@@ -119,18 +128,26 @@ no guarantee that it builds or works as-is; you set up the toolchain and framewo
 - Framework: [exlaunch](https://github.com/shadowninja108/exlaunch) (GPL-2.0, not included).
   Known-good base: commit `f698816d`. The abilities use no inline hooks.
 - The renderers include `nvn/nvn.h`; supply compatible NVN declarations. They are not included.
+  The shared font renderer also needs its `native-font/NvnAbi.hpp` declarations and a generated
+  `NativeFontShaders.hpp` from `runtime-support/shaders/nativefont.{vert,frag}`. SDK declarations,
+  compiled shader arrays and owned-game font artwork are not in the public source.
 - Layout: compile `src/program/main.cpp` from this folder with each ability's `src/engine`,
   `src/feature`, `src/presentation`, `src/pure` and `src/program` folders (leaving out each
   ability's own `src/program/main.cpp`), with those folders and `../runtime-support/include` on
   the include path.
 - Use exlaunch's own `source/program/{setting,loggers,version,offsets}.hpp`. In `setting.hpp` set
   `EXL_MODULE_NAME "botw-abilities"`, keep `EXL_USE_FAKEHEAP`, remove `EXL_DEBUG`, and use
-  `HeapSize 0xC0000`, `JitSize 0x8000`, `InlinePoolSize 0x2000`, `LogBufferSize 1024`. Every hook
+  `HeapSize 0x40000`, `JitSize 0x8000`, `InlinePoolSize 0x2000`, `LogBufferSize 1024`. Every hook
   is installed at a fixed offset, so the reloc table in `offsets.hpp` can stay empty.
-- Compile definitions: `TOTK_VERSION=121`; for the Remote Bomb sources also
+- Compile definitions: `TOTK_VERSION=121`, `BOTW_ABILITIES_COMPACT_UI=1` and
+  `BOTW_ABILITIES_STREAM_TEXTURES=1`; for the Remote Bomb sources also
   `REMOTE_BOMB_UPGRADED=1` and `REMOTE_BOMB_HUD_BESIDE_STASIS=1`. Compile with
-  `-ffp-contract=off`. Program ID `0100F2C0115B6000`, module `subsdk5`.
-- Build each ability's generated headers and game data as its own README describes.
+  `-ffp-contract=off`. Program ID `0100F2C0115B6000`, module `subsdk7`.
+- Build each ability's generated headers and game data as its own README describes. Run
+  `tools/stream_textures.py` and `tools/compact_font.py`; put their generated header directory
+  before member include directories and include both texture sidecars in RomFS. Link the
+  authored shared native-font sources and generate their shaders and atlas. The test-only SD
+  logger and periodic memory sampler are removed from this release.
   `tools/compose_resources.py` merges the three abilities' game data into one RomFS against your
   own TotK 1.2.1 dump, and `tools/build_release_restbl.py` builds the resource-size table for it.
   They use helper modules and a resource-table tool from the author's private repository, which

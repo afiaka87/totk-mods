@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) Clay Mullis
-"""Build the public download's resource-size table: the clean 1.2.1 table, every composed RomFS
-file sized, then the same parse budgets the local deploy sets."""
+"""Build a standalone resource table with the same parse budgets as the shared local table."""
 
 from __future__ import annotations
 

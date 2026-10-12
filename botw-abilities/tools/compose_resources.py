@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) Clay Mullis
-"""Merge the abilities' game data into one RomFS: shared sound bank and actor tables are merged
-against the clean game files, and each parse budget is the largest any ability asks for."""
+"""Merge ability resources against the clean game while preserving every parse-budget floor."""
 
 from __future__ import annotations
 

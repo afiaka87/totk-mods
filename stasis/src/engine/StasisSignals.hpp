@@ -26,14 +26,16 @@ struct CameraRequest {
     unsigned session{};
     bool aiming{};
 };
-// Everything the game's threads exchange. The input hook owns the hold and session fields; the
-// other hooks publish the physics clock, wheel state, accepted hits and the camera ray.
+// Everything the game's threads exchange. The input hook owns the hold and session fields; the other hooks publish the physics clock, wheel state, accepted hits and the camera ray.
 struct Signals {
     std::atomic<std::uint64_t> wheel{}, clockTicks{};
     std::atomic<std::uintptr_t> wheelOwner{}, frozenActor{}, pausedActor{}, pausedAnimation{};
     std::atomic<std::uint32_t> wheelEpoch{}, wheelRequest{}, generation{1}, hitDrops{};
     std::atomic<unsigned> cameraSession{1}, motionRefused{};
     std::atomic<bool> clockRunning{};
+    std::atomic<bool> recentOwned{};
+    std::atomic<std::uintptr_t> recentPlayer{};
+    std::atomic<unsigned> nativeSelections{};
     Shared<Ray> cameraRay;
     Shared<CameraRequest> cameraRequest;
     Shared<EnemyAnchor> enemyAnchor;
@@ -49,6 +51,8 @@ void wheelUpdated(std::uintptr_t screen);
 bool wheelCancelRequested(std::uintptr_t screen);
 void wheelExited(std::uintptr_t screen, bool cancelled);
 void wheelClosed(std::uintptr_t screen);
+void nativeSelectionAccepted(std::uintptr_t screen);
+std::uint64_t nativeAbilityAdmission(std::uint64_t (*original)(std::uintptr_t), std::uintptr_t actor);
 void publishPhysicsTime(float frameScale);
 void acceptedHit(void *record, void *victimComponent, void *attackInfo);
 bool pauseAiNode(std::uintptr_t node);

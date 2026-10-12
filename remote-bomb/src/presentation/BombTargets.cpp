@@ -8,12 +8,8 @@
 
 namespace remote_bomb::targets {
 namespace {
-// Compressible pool for the DEPTH16 1600x900 depth (3,276,800 bytes); an uncompressed depth
-// texture fails to initialize.
-constexpr std::size_t kDepthBytes = 3328 * 1024;
-alignas(65536) unsigned char depthMemory[kDepthBytes]{};
-NVNmemoryPool depthPool{};
-NVNtexture depthImage{};
+// Depth is dead before glow downsampling reuses NarrowA's compressible storage.
+NVNtexture depthImage{}, glowDepth{};
 bool depthReady{}, depthBound{};
 std::uintptr_t moduleBase{};
 const totk::render::GlowTargets *glow{};
@@ -41,11 +37,6 @@ bool initialize(NVNdevice *gpu, PFNNVNDEVICEGETPROCADDRESSPROC getProc, std::uin
         if (!function) Logging.Log("[remote-bomb] TARGET_FUNCTION_MISSING name=%s", name);
         return function != nullptr;
     };
-    PFNNVNMEMORYPOOLBUILDERSETDEFAULTSPROC poolDefaults{};
-    PFNNVNMEMORYPOOLBUILDERSETDEVICEPROC poolDevice{};
-    PFNNVNMEMORYPOOLBUILDERSETSTORAGEPROC poolStorage{};
-    PFNNVNMEMORYPOOLBUILDERSETFLAGSPROC poolFlags{};
-    PFNNVNMEMORYPOOLINITIALIZEPROC poolInit{};
     PFNNVNTEXTUREBUILDERSETDEFAULTSPROC defaults{};
     PFNNVNTEXTUREBUILDERSETDEVICEPROC setDevice{};
     PFNNVNTEXTUREBUILDERSETTARGETPROC target{};
@@ -60,12 +51,7 @@ bool initialize(NVNdevice *gpu, PFNNVNDEVICEGETPROCADDRESSPROC getProc, std::uin
     PFNNVNDEPTHSTENCILSTATESETDEPTHTESTENABLEPROC test{};
     PFNNVNDEPTHSTENCILSTATESETDEPTHWRITEENABLEPROC write{};
     PFNNVNDEPTHSTENCILSTATESETDEPTHFUNCPROC compare{};
-    if (!resolve(poolDefaults, "nvnMemoryPoolBuilderSetDefaults") ||
-        !resolve(poolDevice, "nvnMemoryPoolBuilderSetDevice") ||
-        !resolve(poolStorage, "nvnMemoryPoolBuilderSetStorage") ||
-        !resolve(poolFlags, "nvnMemoryPoolBuilderSetFlags") ||
-        !resolve(poolInit, "nvnMemoryPoolInitialize") ||
-        !resolve(defaults, "nvnTextureBuilderSetDefaults") ||
+    if (!resolve(defaults, "nvnTextureBuilderSetDefaults") ||
         !resolve(setDevice, "nvnTextureBuilderSetDevice") ||
         !resolve(target, "nvnTextureBuilderSetTarget") ||
         !resolve(size, "nvnTextureBuilderSetSize2D") ||
@@ -97,25 +83,25 @@ bool initialize(NVNdevice *gpu, PFNNVNDEVICEGETPROCADDRESSPROC getProc, std::uin
         "remote-bomb");
     if (!glow)
         Logging.Log("[remote-bomb] TARGET_GLOW_FALLBACK drawing without bloom");
-    NVNmemoryPoolBuilder depthBuilder{};
-    poolDefaults(&depthBuilder); poolDevice(&depthBuilder, device);
-    poolStorage(&depthBuilder, depthMemory, kDepthBytes);
-    poolFlags(&depthBuilder, NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_GPU_CACHED |
-                                 NVN_MEMORY_POOL_FLAGS_COMPRESSIBLE);
-    if (!poolInit(&depthPool, &depthBuilder)) {
-        Logging.Log("[remote-bomb] TARGET_DEPTH_POOL_FAILED bytes=%u", unsigned(kDepthBytes));
-    } else {
+    if (glow) {
         NVNtextureBuilder texture{};
         defaults(&texture); setDevice(&texture, device); target(&texture, NVN_TEXTURE_TARGET_2D);
         size(&texture, kWidth, kHeight);
         format(&texture, NVN_FORMAT_DEPTH16);
         flags(&texture, NVN_TEXTURE_FLAGS_COMPRESSIBLE);
         const auto align = alignment(&texture), count = bytes(&texture);
-        if (!align || (align & (align-1)) || align > kDepthBytes || !count || count > kDepthBytes)
+        if (!align || (align & (align - 1)) || !count || count > glow->scratchBytes ||
+            glow->scratchOffset % align)
             Logging.Log("[remote-bomb] TARGET_DEPTH_LAYOUT_FAILED alignment=%u bytes=%u", unsigned(align), unsigned(count));
         else {
-            storage(&texture, &depthPool, 0);
+            storage(&texture, glow->pool, glow->scratchOffset);
             depthReady = init(&depthImage, &texture);
+            size(&texture, (kWidth+1)/2, (kHeight+1)/2);
+            const auto glowBytes = bytes(&texture);
+            const auto glowAlignment = alignment(&texture);
+            depthReady = depthReady && glowAlignment && !(glowAlignment & (glowAlignment-1)) &&
+                         glow->scratchOffset % glowAlignment == 0 && glowBytes &&
+                         glowBytes <= glow->scratchBytes && init(&glowDepth, &texture);
             if (!depthReady)
                 Logging.Log("[remote-bomb] TARGET_DEPTH_TEXTURE_FAILED alignment=%u bytes=%u", unsigned(align), unsigned(count));
         }
@@ -123,12 +109,12 @@ bool initialize(NVNdevice *gpu, PFNNVNDEVICEGETPROCADDRESSPROC getProc, std::uin
     stateDefaults(&depthOn); test(&depthOn, true); write(&depthOn, true); compare(&depthOn, NVN_DEPTH_FUNC_LESS);
     stateDefaults(&depthOff); test(&depthOff, false); write(&depthOff, false);
     stateDefaults(&depthRead); test(&depthRead, true); write(&depthRead, false); compare(&depthRead, NVN_DEPTH_FUNC_LEQUAL);
-    // Without the private depth buffer the bomb is still drawn, only without self-occlusion between
-    // its own surfaces; native scene-depth clipping is in the shader and is unaffected.
+    // Missing private depth disables self-occlusion; shader-based scene clipping still applies.
     if (!depthReady)
         Logging.Log("[remote-bomb] TARGET_DEPTH_FALLBACK drawing without private depth");
     Logging.Log("[remote-bomb] TARGET_READY glow_bytes=%u cap=%u,%u depth=DEPTH16 depth_pool=%u depth_ready=%u",
-                glow ? unsigned(glow->bytes) : 0u, kWidth, kHeight, unsigned(kDepthBytes), unsigned(depthReady));
+                glow ? unsigned(glow->bytes) : 0u, kWidth, kHeight,
+                glow ? unsigned(glow->scratchBytes) : 0u, unsigned(depthReady));
     return true;
 }
 bool begin(NVNcommandBuffer *command, void *context, unsigned width, unsigned height, bool &bloom) {
@@ -138,17 +124,21 @@ bool begin(NVNcommandBuffer *command, void *context, unsigned width, unsigned he
     const bool fits = width <= kWidth && height <= kHeight;
     bloom = glow && fits;
     depthBound = depthReady && fits;
-    const NVNtexture *colors[]{frame.texture, glow ? &glow->images[totk::render::Bright] : nullptr};
-    const NVNtextureView *views[]{frame.view, glow ? &glow->views[totk::render::Bright] : nullptr};
-    setTargets(command, bloom ? 2 : 1, colors, views, depthBound ? &depthImage : nullptr, nullptr);
+    setTargets(command, 1, &frame.texture, &frame.view, depthBound ? &depthImage : nullptr, nullptr);
     viewport(command, 0, 0, float(width), float(height)); scissor(command, 0, 0, width, height);
     bindDepth(command, depthBound ? &depthOn : &depthOff);
-    const float zero[4]{};
-    if (bloom)
-        clearColor(command, 1, zero, 15);
     if (depthBound)
         clearDepth(command, 1.f, true, 0, 0);
     return true;
+}
+void emission(NVNcommandBuffer *command) {
+    const NVNtexture *colors[]{nullptr, &glow->images[totk::render::Bright]};
+    setTargets(command, 2, colors, nullptr, depthBound ? &glowDepth : nullptr, nullptr);
+    viewport(command, 0, 0, totk::render::kGlowWidth, totk::render::kGlowHeight);
+    scissor(command, 0, 0, totk::render::kGlowWidth, totk::render::kGlowHeight);
+    const float zero[4]{};
+    clearColor(command, 1, zero, 15);
+    if (depthBound) clearDepth(command, 1.f, true, 0, 0);
 }
 void bind(NVNcommandBuffer *command, Image image, unsigned width, unsigned height) {
     const NVNtexture *color = &glow->images[image];

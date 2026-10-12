@@ -194,8 +194,7 @@ void adoptInventoryActor(unsigned form) {
         return;
     }
 }
-// The game removes an exploded bomb about 0.3 s after the blast; one still alive a second later is
-// removed here so its body never lingers.
+// The game removes an exploded bomb about 0.3 s after the blast; one still alive a second later is removed here so its body never lingers.
 constexpr float kSpentFrames = 30.f;
 void removeSpent(unsigned form, float frames) {
     auto &spent = state.spent[form];
@@ -257,8 +256,7 @@ bool worldBomb(Shape shape) {
             return true;
     return false;
 }
-// Both readers are probed every 10 frames. A form missing for 3 checks together with the other
-// form is a whole-pouch replacement (save load); a single form needs 9 checks (about 3 s).
+// Both readers are probed every 10 frames. A form missing for 3 checks together with the other form is a whole-pouch replacement (save load); a single form needs 9 checks (about 3 s).
 constexpr float kStockCheckFrames = 10.f;
 constexpr unsigned kReplacedChecks = 3, kLostChecks = 9;
 bool watchStock(unsigned form, bool check) {
@@ -311,8 +309,7 @@ void repairStock(unsigned form, bool replaced) {
                 replaced ? "REPLACED" : "LOST", form, slot.ticket.serial, watch.checks, watch.repairs,
                 double(state.gameplay.slots[form].rechargeSeconds));
 }
-// Multi-shot bows fuse one copy per arrow; quick L sets off every copy of the form. Copies are
-// retired first so one is never adopted as the next inventory bomb.
+// Multi-shot bows fuse one copy per arrow; quick L sets off every copy of the form. Copies are retired first so one is never adopted as the next inventory bomb.
 unsigned detonateCopies(Shape shape) {
     unsigned count = 0;
     for (unsigned i = 0; i < state.roster.count; ++i) {
@@ -361,8 +358,7 @@ std::uintptr_t receiverOf(std::uintptr_t actor) {
     const auto receiver = eng::isPlausibleAddress(table) ? eng::readMemory<std::uintptr_t>(table + 0x480) : 0;
     return eng::isPlausibleAddress(receiver) ? receiver : 0;
 }
-// Receiver state bit seen only while Link holds the bomb from the Materials menu; the lifter's held
-// reference does not report that hold.
+// Receiver state bit seen only while Link holds the bomb from the Materials menu; the lifter's held reference does not report that hold.
 constexpr std::uint64_t kMaterialHoldFlag = 0x10000000;
 // The player's Ultrahand (actor component table -> SpecialPower -> UltraHand), or 0.
 std::uintptr_t ultraHandOf(std::uintptr_t player) {
@@ -371,8 +367,7 @@ std::uintptr_t ultraHandOf(std::uintptr_t player) {
     const auto hand = eng::isPlausibleAddress(power) ? eng::readMemory<std::uintptr_t>(power + 0x28) : 0;
     return eng::isPlausibleAddress(hand) ? hand : 0;
 }
-// +8 is 1 while Ultrahand is out; +184 is the aimed actor's id, with its link id at +208 (-1 when
-// nothing is aimed at).
+// +8 is 1 while Ultrahand is out; +184 is the aimed actor's id, with its link id at +208 (-1 when nothing is aimed at).
 Hand readHand(std::uintptr_t hand) {
     if (!hand)
         return {};
@@ -405,8 +400,7 @@ highlight::Level highlightOf(unsigned form, const Hand &hand, engine::Position b
     }
     return level;
 }
-// Diagnostic for ground pickup: an A press within 3 m of a bomb, and each change of the bomb's hold
-// state or of what Link carries while he stays that close. Ultrahand's per-frame bits are ignored.
+// Diagnostic for ground pickup: an A press within 3 m of a bomb, and each change of the bomb's hold state or of what Link carries while he stays that close. Ultrahand's per-frame bits are ignored.
 void tracePickup(unsigned form, engine::Position bomb) {
     if (!state.player.address || state.pickupLogs >= 80)
         return;
@@ -532,8 +526,7 @@ void tick(void *device) {
                     unsigned(controls.next.selected), unsigned(controls.next.remembered));
     if (available) {
         const auto target = detonationTarget(state.gameplay);
-        // The game holds a blast request while Link has the bomb in his hands and plays it once he
-        // sets the bomb down, so quick L does nothing while he is lifting or holding it.
+        // The game holds a blast request while Link has the bomb in his hands and plays it once he sets the bomb down, so quick L does nothing while he is lifting or holding it.
         const auto bomb = state.actors[index(target)];
         const bool lifted = controls.use && running && bomb.address &&
             engine::carriedActor(state.native, state.generation, borrow(state.player)).value == borrow(bomb).value;

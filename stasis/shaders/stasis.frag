@@ -81,7 +81,8 @@ void main() {
         float ticks=max(band(c.x,0.8)*step(21.0,abs(c.y))*step(abs(c.y),27.0),band(c.y,0.8)*step(21.0,abs(c.x))*step(abs(c.x),27.0));
         float dotMarker=1.0-smoothstep(1.0,2.5,length(c));
         color=over(color,vec3(0.03),max(square*corners,ticks)*0.95);
-        color=over(color,flags.w>0.5?vec3(0.72,1.0,0.18):gold,max(square*corners,max(ticks,dotMarker))*0.94);
+        vec3 reticleColor=(flags.w>0.5?vec3(0.72,1.0,0.18):gold)*(extra.y>0.0?0.35:1.0);
+        color=over(color,reticleColor,max(square*corners,max(ticks,dotMarker))*0.94);
     }
     outColor=color;
 }

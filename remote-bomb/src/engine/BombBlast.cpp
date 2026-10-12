@@ -226,8 +226,7 @@ static bool admitDamageContact(DamageContact contact, bool native) {
                 name ? name : "?", unsigned(native), double(source->sensor.radius), double(source->nativeAge));
     return true;
 }
-// Native damage for an admitted contact is calculated a few frames after the blast window closes,
-// and its target is a chemistry object rather than a body set, so it is reported but never gated.
+// Native damage for an admitted contact is calculated a few frames after the blast window closes, and its target is a chemistry object rather than a body set, so it is reported but never gated.
 void reportChemicalDamage(std::uintptr_t info) {
     const auto contact = chemicalDamageContact(info, []<class T>(std::uintptr_t address) { return read<T>(address); }, valid);
     if (!privateActor(contact.actor))

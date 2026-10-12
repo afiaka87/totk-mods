@@ -58,8 +58,7 @@ HOOK_DEFINE_TRAMPOLINE(SpecialCalcHook) {
         const auto previous = g_state.read();
         // The game's frame sequence owns model and material changes; no lock spans its calls.
         if (previous.active && reinterpret_cast<std::uintptr_t>(renderer) == previous.owner) {
-            // The game copies the requested mode into the current one each frame; restoring the
-            // request first lets the game's own abilities keep it.
+            // The game copies the requested mode into the current one each frame; restoring the request first lets the game's own abilities keep it.
             write(renderer, 372, previous.nativeRequest);
             if (!published || !previous.actor.isCurrent(p.scene))
                 for (unsigned i = 0; i < 4; ++i)

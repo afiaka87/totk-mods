@@ -26,6 +26,12 @@ HOOK_DEFINE_TRAMPOLINE(CryonisPlayerKeyHook) {
         return result;
     }
 };
+HOOK_DEFINE_TRAMPOLINE(CryonisAbilityAdmissionHook) {
+    static std::uint64_t Callback(std::uintptr_t actor) {
+        return engine::nativeAbilityAdmission(cn::hooks(),
+            [](std::uintptr_t player) { return Orig(player); }, actor);
+    }
+};
 HOOK_DEFINE_TRAMPOLINE(CryonisAmiiboHook) {
     static std::uintptr_t Callback(std::uintptr_t node) {
         const auto result = Orig(node);
@@ -118,6 +124,7 @@ bool cryonis::install(std::uintptr_t base) {
     CryonisWheelCloseHook::InstallAtOffset(offsets::kUIShortCutMainItemScreenCloseEndImpl);
     CryonisNativeSelectionHook::InstallAtOffset(offsets::kUIShortCutMainItemScreenDoOutBeforeImpl);
     CryonisPlayerKeyHook::InstallAtOffset(offsets::kExecutePlayerCalcKeyUpdateImpl);
+    CryonisAbilityAdmissionHook::InstallAtOffset(offsets::kNativeAbilityAdmission);
     CryonisAmiiboHook::InstallAtOffset(offsets::kExecutePlayerAmiiboUpdateImpl);
     CryonisModelInitHook::InstallAtOffset(offsets::kGameModelControllerPostInitialize);
     Logging.Log("[cryonis] water targeting and original-reference mesh renderer installed");

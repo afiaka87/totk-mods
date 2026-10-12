@@ -21,6 +21,34 @@ inline Wheel unpack(std::uint64_t value) {
             bool(value & 8),
             bool(value & 16)};
 }
+struct RecentAbility {
+    bool remembered{}, tap{};
+    std::uint32_t epoch{};
+    void remember() { remembered = true; tap = false; }
+    void reset() { *this = {}; }
+    bool step(Wheel wheel, std::uint64_t buttons, std::uint64_t pressed, bool fresh,
+              bool running, bool available, bool chordOwnsL) {
+        if (!running || !available || chordOwnsL || wheel.open || wheel.epoch != epoch)
+            tap = false;
+        if (!fresh || !running || !available || chordOwnsL)
+            return false;
+        if (pressed & B)
+            tap = false;
+        if (remembered && (pressed & L) && !(buttons & B) && !wheel.open) {
+            tap = true;
+            epoch = wheel.epoch;
+        }
+        if (tap && !(buttons & L)) {
+            tap = false;
+            return remembered;
+        }
+        return false;
+    }
+    bool ownsNative(std::uintptr_t actor, std::uintptr_t player) const {
+        return remembered && player && actor == player;
+    }
+};
+inline bool canFreeze(bool frozen, float cooldown) { return !frozen && cooldown <= 0.0f; }
 // Reads the ability wheel's item count, cursor and item IDs; ID 7 is the Camera.
 template <class Reader> bool cameraSelected(std::uintptr_t screen, Reader read) {
     const auto count = read.template operator()<std::int32_t>(screen + 0x1A8);
@@ -110,8 +138,7 @@ struct Activation {
         }
         if (pendingEpoch) {
             out.mask |= A | B | StickR;
-            // B takes the game's normal cancel route. L is held through the cancel and then
-            // suppressed until released, so the Camera cannot be selected or reopened.
+            // B takes the game's normal cancel route. L is held through the cancel and then suppressed until released, so the Camera cannot be selected or reopened.
             if (wheel.open && !wheel.exited)
                 out.add |= B;
         }

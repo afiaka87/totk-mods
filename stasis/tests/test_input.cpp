@@ -17,6 +17,47 @@ template <class T> void put(std::uintptr_t p, T value) {
     std::memcpy(reinterpret_cast<void *>(p), &value, sizeof(T));
 }
 } // namespace
+TEST_CASE("Remembered Stasis recognizes taps without consuming held-L wheel activation") {
+    RecentAbility recent;
+    recent.remember();
+    CHECK_FALSE(recent.step(closed, L, L, true, true, true, false));
+    CHECK(recent.tap);
+    CHECK(recent.step(closed, 0, 0, true, true, true, false));
+    CHECK(recent.remembered);
+    CHECK_FALSE(recent.step(closed, L, L, true, true, true, false));
+    CHECK_FALSE(recent.step(camera, L, 0, true, false, true, false));
+    CHECK_FALSE(recent.step(closed, 0, 0, true, true, true, false));
+    CHECK(recent.remembered);
+    CHECK_FALSE(recent.step(closed, L, L, true, true, false, false));
+    CHECK_FALSE(recent.step(closed, 0, 0, true, true, true, false));
+    CHECK_FALSE(recent.step(closed, L, L, true, true, true, true));
+    CHECK_FALSE(recent.step(closed, 0, 0, true, true, true, false));
+    recent.step(closed, L, L, true, true, true, false);
+    CHECK_FALSE(recent.step(closed, B, B, true, true, true, false));
+    CHECK_FALSE(recent.step(closed, 0, 0, true, true, true, false));
+    recent.reset();
+    CHECK_FALSE(recent.step(closed, L, L, true, true, true, false));
+    CHECK_FALSE(recent.step(closed, 0, 0, true, true, true, false));
+}
+TEST_CASE("Stasis recent ownership gates only the current player's native ability") {
+    RecentAbility recent;
+    recent.remember();
+    CHECK(recent.ownsNative(0x100000, 0x100000));
+    CHECK_FALSE(recent.ownsNative(0x200000, 0x100000));
+    CHECK_FALSE(recent.ownsNative(0, 0));
+    recent.reset();
+    CHECK_FALSE(recent.ownsNative(0x100000, 0x100000));
+}
+TEST_CASE("Cooldown blocks freezing but does not consume a remembered aim tap") {
+    for (const float cooldown : {300.0f, 150.0f, 1.0f, 0.0f}) {
+        RecentAbility recent;
+        recent.remember();
+        CHECK_FALSE(recent.step(closed, L, L, true, true, true, false));
+        CHECK(recent.step(closed, 0, 0, true, true, true, false));
+        CHECK(canFreeze(false, cooldown) == (cooldown == 0.0f));
+        CHECK_FALSE(canFreeze(true, cooldown));
+    }
+}
 TEST_CASE("Camera detection reads native highlighted ability rather than a stick quadrant") {
     std::array<unsigned char, 672> screen{};
     const auto p = reinterpret_cast<std::uintptr_t>(screen.data());

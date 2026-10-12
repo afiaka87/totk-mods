@@ -8,6 +8,8 @@ launch it when the freeze ends.
 - Hold L, highlight Camera in the ability wheel and click the right stick to aim. Holding L still
   opens the normal wheel.
 - A freezes the object under the reticle; B leaves aiming.
+- Tap L to reopen Stasis aiming while it is the most recent ability, or to leave aiming.
+  The reticle dims during cooldown; freezing waits for recharge.
 - Repeat L, Camera, right-stick click during a freeze to release early.
 - While an object is frozen, B and L keep their normal uses, so Link can sprint or pick another
   ability.

@@ -45,8 +45,7 @@ struct Transition {
 };
 
 inline constexpr unsigned index(Shape shape) { return shape == Shape::Sphere ? 0u : 1u; }
-// Quick L targets the selected form while its bomb is out, otherwise the other form's live bomb, so
-// a bomb left out after switching forms can always be set off.
+// Quick L targets the selected form while its bomb is out, otherwise the other form's live bomb, so a bomb left out after switching forms can always be set off.
 inline Shape detonationTarget(const State &state) {
     const auto other = state.selected == Shape::Sphere ? Shape::Cube : Shape::Sphere;
     const auto phase = state.slots[index(state.selected)].phase;

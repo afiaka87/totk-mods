@@ -6,6 +6,8 @@
 namespace stasis::signatures {
 using Site = totk::engine::CodeSite;
 inline constexpr Site kRuntime[]{
+    {offsets::kNativeAbilityAdmission, 0xD10143FF, 0xA9017BFD},
+    {offsets::kUIShortCutMainItemScreenDoOutBeforeImpl, 0xD10103FF, 0xA9017BFD},
     {offsets::kPhysicsModuleUpdateDeltaFrame, 0xF9400828, 0xB40002A8},
     {offsets::kTgHitInfoSetHitInfo, 0xD102C3FF, 0xFD002BEA},
     {offsets::kRigidBodyGetCenterOfMass, 0xD100C3FF, 0xA9017BFD},

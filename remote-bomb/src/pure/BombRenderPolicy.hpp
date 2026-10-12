@@ -7,8 +7,7 @@
 
 namespace remote_bomb::render_policy {
 struct Camera { float view[12]{}, projection[16]{}, near{}, far{}; };
-// highlight: colour and pass (0 none, 1 tint, 2 outline); outline: shell centre and pixel width;
-// depth: the view distances the private depth buffer spans.
+// highlight: linear colour and pass (0 none, 1 body tint, 2 outline shell); outline: the mesh centre the shell is pushed out from, and its width in screen pixels; depth: the view distances the private depth buffer spans.
 struct Uniforms {
     float dimensions[4]{}, view[3][4]{}, projection[4]{}, actor[3][4]{}, lighting[4]{}, emission[4]{},
         highlight[4]{}, outline[4]{}, depth[4]{};
@@ -40,8 +39,7 @@ inline bool orientable(const std::array<float, 9> &m) {
 inline std::array<float, 9> drawRotation(const std::array<float, 9> &m) {
     return orientable(m) ? m : std::array<float, 9>{1,0,0, 0,1,0, 0,0,1};
 }
-// The 16-bit private depth spans only the live bombs and their outline shells, keeping each step
-// under a millimetre; the margin covers a shell that widens with distance.
+// The private depth buffer is 16-bit, so it spans the live bombs and their outline shells rather than the camera's whole range: a few metres keep each step under a millimetre. The margin covers the bomb and a shell that widens with distance.
 inline std::array<float, 2> depthRange(const Camera &camera, const std::array<float, 3> *positions,
                                        unsigned count) {
     if (!count)

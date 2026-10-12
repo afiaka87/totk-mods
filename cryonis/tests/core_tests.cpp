@@ -6,6 +6,8 @@
 #include "../src/pure/CryonisWater.hpp"
 #include "../src/pure/CryonisInput.hpp"
 #include "CryonisWheel.hpp"
+#include "CryonisEquipment.hpp"
+#include "CryonisNode.hpp"
 #include "../src/pure/CryonisSelection.hpp"
 #include <cstring>
 #include <cstdio>
@@ -19,6 +21,90 @@ void check(bool value, const char *label) {
     }
 }
 int main() {
+    for (unsigned broken = 0; broken <= 3; ++broken) {
+        const std::uintptr_t pointers[]{0x100000, 0x200000, 0x300000, 0x400000};
+        const std::uintptr_t offsets[]{8, 8, 0x1F8};
+        unsigned inspected{};
+        const auto readNode = [&](std::uintptr_t address) {
+            check(inspected < 3 && address == pointers[inspected] + offsets[inspected],
+                  "execute owner lookup never reads through a rejected link");
+            const auto index = inspected++;
+            return index == broken ? std::uintptr_t{0x1000000} : pointers[index + 1];
+        };
+        const auto validNode = [](std::uintptr_t p) {
+            return p >= 0x100000 && p <= 0x500000 - sizeof(std::uintptr_t) && !(p & 7);
+        };
+        check(engine::executeActor(pointers[0], readNode, validNode) ==
+                  (broken == 3 ? pointers[3] : 0),
+              "native execute owner chain rejects the observed unmapped pointer");
+        check(inspected == (broken == 3 ? 3 : broken + 1),
+              "execute owner lookup stops at the first invalid pointer");
+    }
+    const std::uintptr_t chain[]{0x100000, 0x200000, 0x300000, 0x400000, 0x500000};
+    const std::size_t offsets[]{layout::actor::kComponents, layout::actor::kPhysics,
+                              layout::actor::kControllerSet, 0x150};
+    for (unsigned broken = 0; broken <= 4; ++broken) {
+        unsigned inspected{};
+        const auto validChain = [](std::uintptr_t p) {
+            return p >= 0x100000 && p <= 0x600000 - sizeof(std::uintptr_t) && !(p & 7);
+        };
+        const auto readChain = [&](std::uintptr_t p) {
+            check(inspected < 4 && p == chain[inspected] + offsets[inspected],
+                  "physics lookup never reads through a rejected chain link");
+            const auto index = inspected++;
+            return index == broken ? std::uintptr_t{0x10000} : chain[index + 1];
+        };
+        check(engine::physicalBody(chain[0], readChain, validChain) ==
+                  (broken == 4 ? chain[4] : 0),
+              "every low physics-chain pointer is rejected before dereference");
+        check(inspected == (broken == 4 ? 4 : broken + 1),
+              "physics lookup stops at the first invalid link");
+    }
+    for (const auto name : {"Animal_Fish_E", "Player", "Obj_Cryonis", "", "\xD8"}) {
+        const auto address = reinterpret_cast<std::uintptr_t>(name);
+        const auto length = std::strlen(name);
+        check(engine::actorName(address,
+                  [](std::uintptr_t p) { return *reinterpret_cast<const unsigned char *>(p); },
+                  [&](std::uintptr_t p) { return p >= address && p <= address + length; }) ==
+                  (length != 0 && static_cast<unsigned char>(name[0]) != 0xD8),
+              "binary process identity is not treated as an actor name");
+    }
+    check(!engine::actorName(0x10000,
+              [](std::uintptr_t) { check(false, "unmapped identity must not be read"); return 0; },
+              [](std::uintptr_t) { return false; }),
+          "unmapped identity is rejected before reading its first byte");
+    const std::uintptr_t actor = 0x100000, components = 0x200000, equipment = 0x300000;
+    unsigned reads{};
+    std::uintptr_t registry = components, slot = equipment;
+    const auto validAddress = [&](std::uintptr_t address) {
+        return address >= actor && address <= 0x400000 - sizeof(std::uintptr_t) &&
+               (address & 7) == 0;
+    };
+    const auto readSlot = [&](std::uintptr_t address) {
+        ++reads;
+        if (address == actor + layout::actor::kComponents)
+            return registry;
+        check(address == components + layout::actor::kDynamicEquipment,
+              "equipment reader never touches invalid registry memory");
+        return slot;
+    };
+    check(engine::equipmentComponent(actor, readSlot, validAddress) == equipment && reads == 2,
+          "native equipment slot resolves from a valid component registry");
+    registry = 0;
+    reads = 0;
+    check(engine::equipmentComponent(actor, readSlot, validAddress) == 0 && reads == 1,
+          "missing registry returns without dereferencing its equipment slot");
+    registry = 0x10000;
+    reads = 0;
+    check(engine::equipmentComponent(actor, readSlot, validAddress) == 0 && reads == 1,
+          "invalid registry is rejected before reading native memory");
+    registry = components;
+    slot = 0;
+    check(engine::equipmentComponent(actor, readSlot, validAddress) == 0,
+          "actor without equipment has no owner lookup");
+    reads = 0;
+    check(engine::equipmentComponent(0, readSlot, validAddress) == 0 && reads == 0,
+          "null actor does not trigger native reads");
     check(kOriginalWidth == 3 && kOriginalHeight == 4 && kSizePercent == 90,
           "percentage tuning preserves recovered dimensions");
     check(std::fabs(kWidth - 2.7f) < .00001f && std::fabs(kHeight - 3.6f) < .00001f &&

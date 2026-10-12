@@ -12,8 +12,7 @@ struct Point {
     float x{}, y{}, z{};
     bool valid{};
 };
-// The shader block keeps its availableMin/Max names: slots 0..3 carry the arrow basis and
-// availableMax[0].w the target's near depth.
+// The shader block keeps its availableMin/Max names: slots 0..3 carry the arrow basis and availableMax[0].w the target's near depth.
 inline constexpr unsigned kUniformSlots = 16;
 struct Uniforms {
     float dimensions[4]{}, target[4]{}, tail[4]{}, tip[4]{}, flags[4]{}, timing[4]{}, tint[4]{},

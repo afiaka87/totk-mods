@@ -15,6 +15,8 @@ bool wheelCancelRequested(HookContext hook, std::uintptr_t screen);
 void wheelExited(HookContext hook, std::uintptr_t screen, bool cancelled);
 void nativeSelectionAccepted(HookContext hook, std::uintptr_t screen);
 void maskRecentAbilityKey(HookContext hook, std::uintptr_t node);
+std::uint64_t nativeAbilityAdmission(HookContext hook,
+    std::uint64_t (*original)(std::uintptr_t), std::uintptr_t actor);
 void cancelOwnedAmiibo(HookContext hook, std::uintptr_t node);
 void wheelClosed(HookContext hook, std::uintptr_t screen);
 void frameAimCamera(HookContext hook, std::uintptr_t state, float *output, float frames);
