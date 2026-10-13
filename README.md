@@ -10,34 +10,38 @@ This is also to prevent any external GPL licensed code (shockingly common in the
 Exlaunch authors are owed attribution here. 
 
 
-| Project | Folder | What it does |
-|---|---|---|
-| Infinite Ascend | `infinite-ascend/` | Ascend reach extended from ~20 m to 10,000 m; native checks kept. |
-| Phantom Foothold | `phantom-foothold/` | Climb every surface with collision, ceilings included; no game files replaced. |
-| Self Recall | `self-recall/` | Recall Link through his own movement and animation history. |
-| Zonai Hookshot (formerly Glideshot) | `zonai-hookshot/` | A hookshot: chain to any climbable wall, zip along it, land in the native climb. Contains arrowbound as well. |
-| Bivouac | `bivouac/` | Eat a truffle or radish while climbing to build a persistent cliff or water camp you can travel back to. |
-| Arrowbound | `arrowbound/` | Shoot an arrow and Link glides along its path. |
-| Zonai Survey | `zonai-survey/` | Scan the landscape for collectibles with visible names and icons. |
-| Drive-by (formerly Free Rein) | `drive-by/` | Use the bow, sword and shield while holding a Zonai Steering Stick, and keep driving. |
+| Project | Folder | Version | Slot | What it does |
+|---|---|---|---|---|
+| Phantom Foothold | `phantom-foothold/` | | subsdk2 | Climb every surface with collision, ceilings included; no game files replaced. |
+| Infinite Ascend | `infinite-ascend/` | v1.1.0 | subsdk4 | Ascend reach extended from ~20 m to 10,000 m; native checks kept. |
+| Zonai Hookshot (formerly Glideshot) | `zonai-hookshot/` | v0.12.0 | subsdk5 | A hookshot: chain to any climbable wall, zip along it, land in the native climb. Contains Arrowbound as well. |
+| Fleet Sync | `fleet-sync/` | v0.2.2 | subsdk6 | Fly up to four identical receiver vehicles from one Steering Stick. |
+| Bivouac | `bivouac/` | v0.26.1 | subsdk7 | Eat a Hearty Truffle, Big Hearty Truffle or Big Hearty Radish while climbing to build a persistent cliff or water camp you can travel back to. |
+| BotW Abilities | `botw-abilities/` | v0.1.3 | subsdk7 | BotW's Stasis, Remote Bomb and Cryonis in one module, chosen from the ability wheel (second page: hold L, tap R). |
+| Self Recall | `self-recall/` | v1.1.1 | subsdk8 | Recall Link through his own movement and animation history. |
+| Zonai Survey | `zonai-survey/` | v0.3.0 | subsdk9 | Scan the landscape for collectibles with visible names and icons. |
+| Arrowbound (standalone) | `arrowbound/` | v0.2.3 | subsdk9 | Shoot an arrow and Link glides along its path. Also included in Zonai Hookshot. |
+| Stasis (standalone) | `stasis/` | | subsdk9 | BotW's Stasis on its own. The same ability is built into BotW Abilities. |
+| Remote Bomb (standalone) | `remote-bomb/` | | subsdk9 | BotW's sphere and cube Remote Bombs on their own. The same ability is built into BotW Abilities. |
+| Cryonis (standalone) | `cryonis/` | | subsdk9 | BotW's Cryonis on its own. The same ability is built into BotW Abilities. |
+| Drive-by (formerly Free Rein) | `drive-by/` | v0.9.0 | none (patch files only) | Use the bow, sword and shield while holding a Zonai Steering Stick, and keep driving. |
+| Runtime support | `runtime-support/` | | | Shared source used by several mods above (font and texture drawing, input, actor and hook helpers). Not a mod on its own. |
 
 
 All code here is MIT-licensed (see `LICENSE`). The feature mods use exlaunch. It is not included. See `NOTICE`.
 
 ## Executable slots
 
-| Mod | Slot |
-|---|---|
-| Phantom Foothold | subsdk2 |
-| Infinite Ascend | subsdk4 |
-| Zonai Hookshot (including Arrowbound) | subsdk5 |
-| Fleet Sync | subsdk6 |
-| Bivouac | subsdk7 |
-| Self Recall | subsdk8 |
-| Zonai Survey | subsdk9 |
-| Standalone Arrowbound | subsdk9 (intentional conflict) |
-| Drive-by | none (patch files only) |
+Each code mod loads from its own `subsdk` slot, so mods with different slots can be installed
+together. Only one mod per slot can be enabled:
+
+- Bivouac and BotW Abilities both use subsdk7. Enable one of them.
+- Zonai Survey, standalone Arrowbound and the standalone Stasis, Remote Bomb and Cryonis builds all
+  use subsdk9. Enable one of them. Arrowbound is already part of Zonai Hookshot, and the three
+  BotW abilities are already part of BotW Abilities.
 
 Slots 1 and 3 are left available for TKMM and UltraCam. These assignments apply to
 new slot-migrated packages, not older downloads. Remove each upgraded mod's old
 subsdk9 file; do not remove a different mod's slot 9 executable.
+
+Different slots avoid file collisions, not every hook or memory conflict.
