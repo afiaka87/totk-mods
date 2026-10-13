@@ -11,6 +11,7 @@ void observeRaycast(HookContext hook, target::Cast cast, const void *from, const
 Ray cameraRay(HookContext hook);
 void wheelOpened(HookContext hook, std::uintptr_t screen);
 void wheelUpdated(HookContext hook, std::uintptr_t screen);
+bool wheelChosen(HookContext hook, std::uintptr_t screen);
 bool wheelCancelRequested(HookContext hook, std::uintptr_t screen);
 void wheelExited(HookContext hook, std::uintptr_t screen, bool cancelled);
 void nativeSelectionAccepted(HookContext hook, std::uintptr_t screen);

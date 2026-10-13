@@ -71,19 +71,18 @@ void abilityAdmission() {
     };
     const auto blocked = [&](std::uintptr_t actor) { ++blockedCalls; lastActor = actor; };
     State controls;
-    controls.pendingEpoch = 7;
-    auto selected = transition(controls, {{7, false, false, true, true, true}, 0, 0,
-                                         true, true, true});
-    require(selected.event == Event::Equipped && selected.next.remembered,
-            "completed private wheel gesture owns recent ability admission");
+    controls.remembered = true;
+    auto selected = transition(controls, {{7}, 0, 0, true, true, true});
+    require(selected.event == Event::None && selected.next.remembered,
+            "a bomb taken from Materials owns recent ability admission");
     require(recentAbilityAdmission(128, selected.next.remembered, 128, original, blocked) == 0 &&
                 !originalCalls && blockedCalls == 1 && lastActor == 128,
             "owned player cannot enter native ability or execute its side effects");
-    auto paused = transition(selected.next, {{8, true, false}, L, L, true, false, true});
+    auto paused = transition(selected.next, {{8, true}, L, L, true, false, true});
     require(recentAbilityAdmission(128, paused.next.remembered, 128, original, blocked) == 0 &&
-                !originalCalls && paused.mask == 0,
-            "wheel pause retains admission ownership without consuming physical L");
-    auto cancelled = transition(paused.next, {{8, false, false, true, true, true}, 0, 0,
+                !originalCalls,
+            "wheel pause retains admission ownership");
+    auto cancelled = transition(paused.next, {{8, false, true, true, true}, 0, 0,
                                              true, true, true});
     require(recentAbilityAdmission(128, cancelled.next.remembered, 128, original, blocked) == 0 &&
                 !originalCalls && blockedCalls == 3,
@@ -91,7 +90,7 @@ void abilityAdmission() {
     require(recentAbilityAdmission(256, true, 128, original, blocked) == 0x123456789abcdef1ull &&
                 originalCalls == 1 && lastActor == 256 && blockedCalls == 3,
             "another actor preserves the original return value and side effects");
-    auto native = transition(cancelled.next, {{9, false, false, true, false, true}, 0, 0,
+    auto native = transition(cancelled.next, {{9, false, true, false, true}, 0, 0,
                                              true, true, true, true});
     require(recentAbilityAdmission(128, native.next.remembered, 128, original, blocked) ==
                 0x123456789abcdef1ull && originalCalls == 2 && blockedCalls == 3,

@@ -1,7 +1,7 @@
-# BotW Abilities v0.1.2
+# BotW Abilities v0.1.3
 
-This update fixes Switch startup and repeated Cryonis activation, reduces memory to 9.02 MiB,
-and corrects recent-ability input on Ryubing. It keeps the `subsdk7` slot.
+This update moves Stasis+ and Cryonis to a second page of the ability wheel (hold L, tap R)
+and removes the old right-stick chords and the Map form switch. It keeps the `subsdk7` slot.
 
 Breath of the Wild's Stasis, Remote Bomb and Cryonis in Tears of the Kingdom 1.2.1, in one add-on,
 usable together. Each ability is the one from the standalone Stasis, Remote Bomb and Cryonis mods;
@@ -11,12 +11,12 @@ this add-on builds all three into one module so they can be enabled at the same 
 
 Freeze an object, strike it to build up force, and launch it when the freeze ends.
 
-- Hold L, highlight Camera in the ability wheel and click the right stick to aim. Holding L still
-  opens the normal wheel.
+- Hold L to open the ability wheel and tap R to turn to its second page. Highlight Stasis+ at the
+  bottom and release L to aim. Tap R again to return to the normal page.
 - A freezes the object under the reticle; B leaves aiming.
 - Tap L to reopen Stasis aiming while it is the most recent ability, or to leave aiming.
   The reticle stays dim during cooldown; aiming is available, but freezing waits for recharge.
-- Repeat L, Camera, right-stick click during a freeze to release early.
+- Pick Stasis+ from the second page again during a freeze to release early.
 - While an object is frozen, B and L keep their normal uses, so Link can sprint or pick another
   ability.
 
@@ -40,8 +40,8 @@ and arrow controls and set off remotely with a tap of L.
   Materials or the throw and arrow shortcut lists are sorted.
 - Hold a bomb from Materials, hold R and press Up for an aimed throw, or press Up while aiming a
   bow to fuse a bomb to an arrow.
-- Tap L to set off the selected form's bomb, or the other form's bomb when only that one is out.
-  To switch forms, hold L, hover Map, and click R3 for the sphere or L3 for the cube.
+- Tap L to set off the bomb last taken out of Materials, or the other bomb when only that one is
+  out.
 - L does nothing while Link is lifting or holding a bomb.
 - A used form recharges for 3 seconds, then returns to Materials.
 - Ultrahand can grab both bombs.
@@ -54,7 +54,8 @@ pushed by BotW's blast pressure calculation.
 
 Raise climbable ice pillars from water.
 
-- Hold L, hover Amiibo in the ability wheel and click the right stick to aim.
+- Hold L, tap R to turn the ability wheel to its second page, highlight Cryonis at the bottom
+  left and release L to aim.
 - A builds a pillar on valid water, or shatters the highlighted pillar.
 - Building closes targeting; after the recharge, tap L to reopen it. Tap L or B to exit.
 - Cryonis stays selected for the game session until another ability is chosen from the wheel.
@@ -68,6 +69,7 @@ surface is lifted with the ice.
 ## Using them together
 
 - Choosing an ability from the wheel, built-in or added, puts the other added abilities away.
+- Closing the wheel on its second page keeps the equipped built-in ability.
 - A Remote Bomb left out after choosing another ability still answers L, as in BotW. Once it has
   gone off, L returns to the chosen ability.
 - Stasis's countdown ring sits in the top left beside the ability icon. The bomb icon and its
@@ -78,18 +80,18 @@ surface is lifted with the ice.
 
 Requires Tears of the Kingdom **1.2.1**, build `9B4E43650501A4D4`.
 
-**Emulator:** extract `botw-abilities-v0.1.2-emulator-subsdk7.zip` and copy its `BotW Abilities`
+**Emulator:** extract `botw-abilities-v0.1.3-emulator-subsdk7.zip` and copy its `BotW Abilities`
 folder into the game's mod folder (right-click the game, **Open Mod Data Location**). Enable
 **BotW Abilities** in the game's add-on list.
 
-**Switch (Atmosphere):** extract `botw-abilities-v0.1.2-switch-subsdk7.zip` and copy its
+**Switch (Atmosphere):** extract `botw-abilities-v0.1.3-switch-subsdk7.zip` and copy its
 `0100F2C0115B6000` folder into `atmosphere/contents/` on the SD card.
 
 **Upgrading from v0.1.0:** remove the old BotW Abilities add-on before installing this update.
 On Switch, remove this mod's old `exefs/subsdk5` before copying the new files. Leaving both
 modules installed loads the abilities twice. Preserve files belonging to other mods.
 
-Both archives contain the same files: `exefs/subsdk7`, `exefs/main.npdm`, and 25 files under
+Both archives contain the same files: `exefs/subsdk7`, `exefs/main.npdm`, and 27 files under
 `romfs/`. Keep both `romfs/BotwAbilities/Textures/*.bin` files; they contain the streamed
 texture sources used by the shared emulator/Switch build.
 
@@ -101,7 +103,7 @@ texture sources used by the shared emulator/Switch build.
 - It replaces the interface sound bank (`UI_Static`), five RSDB tables (actor, attachment, game
   actor, pouch and tag), the save-data schema (`GameDataList`), the English text archive, the
   effect and sound link tables, the effect file list and the resource-size table, and adds five
-  actor packs, two models and four inventory icons. Mods that replace any of those files conflict
+  actor packs, two models, four inventory icons and two wheel icons. Mods that replace any of those files conflict
   unless their changes are merged. If you use
   another mod that ships its own resource-size table, merge the tables with a tool such as TKMM.
 - Ice, bombs and interface elements retain their native resolution; glow uses an 800x450 buffer.
@@ -109,8 +111,8 @@ texture sources used by the shared emulator/Switch build.
 
 ## Known issues
 
-- Tested individually on Switch hardware and in Citron and Ryubing. Combinations with other
-  code mods have not yet been tested on Switch.
+- v0.1.3 was tested individually on Switch hardware and in Citron; earlier versions were also
+  tested in Ryubing. Combinations with other code mods have not yet been tested on Switch.
 - At startup each ability checks the game code it uses and stays inactive on any other game
   version.
 - Stasis does not highlight nearby objects while aiming; only the selected target is highlighted.
@@ -120,8 +122,8 @@ texture sources used by the shared emulator/Switch build.
 ## Building from source
 
 The source for the three abilities is in the `stasis`, `remote-bomb`, `cryonis` and
-`runtime-support` folders of this repository; this folder adds the combined module's entry point
-and the tool that merges the abilities' game data. It is **not** a complete project and comes with
+`runtime-support` folders of this repository; this folder adds the combined module's entry point,
+the second wheel page and the tools that build the combined game data. It is **not** a complete project and comes with
 no guarantee that it builds or works as-is; you set up the toolchain and framework yourself.
 
 - Toolchain: devkitPro devkitA64. Native source uses C++26.
@@ -131,17 +133,18 @@ no guarantee that it builds or works as-is; you set up the toolchain and framewo
   The shared font renderer also needs its `native-font/NvnAbi.hpp` declarations and a generated
   `NativeFontShaders.hpp` from `runtime-support/shaders/nativefont.{vert,frag}`. SDK declarations,
   compiled shader arrays and owned-game font artwork are not in the public source.
-- Layout: compile `src/program/main.cpp` from this folder with each ability's `src/engine`,
-  `src/feature`, `src/presentation`, `src/pure` and `src/program` folders (leaving out each
-  ability's own `src/program/main.cpp`), with those folders and `../runtime-support/include` on
-  the include path.
+- Layout: compile `src/program/main.cpp` and `src/wheel/WheelPage.cpp` from this folder with each
+  ability's `src/engine`, `src/feature`, `src/presentation`, `src/pure` and `src/program` folders
+  (leaving out each ability's own `src/program/main.cpp`), with those folders, this folder's `src`
+  and `../runtime-support/include` on the include path.
 - Use exlaunch's own `source/program/{setting,loggers,version,offsets}.hpp`. In `setting.hpp` set
   `EXL_MODULE_NAME "botw-abilities"`, keep `EXL_USE_FAKEHEAP`, remove `EXL_DEBUG`, and use
   `HeapSize 0x40000`, `JitSize 0x8000`, `InlinePoolSize 0x2000`, `LogBufferSize 1024`. Every hook
   is installed at a fixed offset, so the reloc table in `offsets.hpp` can stay empty.
 - Compile definitions: `TOTK_VERSION=121`, `BOTW_ABILITIES_COMPACT_UI=1` and
   `BOTW_ABILITIES_STREAM_TEXTURES=1`; for the Remote Bomb sources also
-  `REMOTE_BOMB_UPGRADED=1` and `REMOTE_BOMB_HUD_BESIDE_STASIS=1`. Compile with
+  `REMOTE_BOMB_UPGRADED=1` and `REMOTE_BOMB_HUD_BESIDE_STASIS=1`; `STASIS_WHEEL_CHORD=0` for the
+  Stasis sources and `CRYONIS_WHEEL_CHORD=0` for the Cryonis sources. Compile with
   `-ffp-contract=off`. Program ID `0100F2C0115B6000`, module `subsdk7`.
 - Build each ability's generated headers and game data as its own README describes. Run
   `tools/stream_textures.py` and `tools/compact_font.py`; put their generated header directory
@@ -149,13 +152,16 @@ no guarantee that it builds or works as-is; you set up the toolchain and framewo
   authored shared native-font sources and generate their shaders and atlas. The test-only SD
   logger and periodic memory sampler are removed from this release.
   `tools/compose_resources.py` merges the three abilities' game data into one RomFS against your
-  own TotK 1.2.1 dump, and `tools/build_release_restbl.py` builds the resource-size table for it.
+  own TotK 1.2.1 dump, `tools/build_wheel_icons.py` makes the two wheel-page icons from your own
+  BotW 1.6.0 dump, and `tools/build_release_restbl.py` builds the resource-size table for it.
   They use helper modules and a resource-table tool from the author's private repository, which
   are not included. The game data is not part of this source; it is only in the release archives.
 
 ## Tests
 
-Each ability folder has its own host tests; see its README.
+Each ability folder has its own host tests; see its README. This folder's `tests` check the
+second wheel page (layout, page turns and picks); run `tests/run_host_tests.ps1` with CMake and a
+C++23 compiler. doctest is fetched when it is not vendored.
 
 ## A note on the code
 

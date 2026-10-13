@@ -458,5 +458,31 @@ int main() {
                                             input::StickR, true, true, false);
     check(refused.event == input::Event::Unavailable && !refused.beginAim && !refused.add,
           "swimming rejects the chord without cancelling the native wheel");
+    const input::Wheel pickedOpen{6, true, false, false, false, false, true},
+        pickedExit{6, false, false, true, true, false, true},
+        pickedClosed{6, false, false, true, true, true, true},
+        pickedAccepted{7, false, false, true, false, true, true};
+    check(input::unpack(input::pack(pickedClosed)).chosen &&
+              !input::unpack(input::pack(idle)).chosen,
+          "the wheel page choice survives the shared wheel word");
+    input::Activation page;
+    check(page.step(pickedOpen, input::L, 0, true, true, true).event == input::Event::None,
+          "a page choice waits for the wheel to close");
+    const auto pageRequest = page.step(pickedExit, 0, 0, true, true, true);
+    check(pageRequest.event == input::Event::Requested && !pageRequest.add,
+          "a page choice needs no extra cancel");
+    const auto pageAim = page.step(pickedClosed, 0, 0, true, true, true);
+    check(pageAim.beginAim && pageAim.event == input::Event::Activated,
+          "a page choice aims Cryonis after the cancelled wheel closes");
+    page.reset();
+    check(page.step(pickedClosed, 0, 0, true, true, true).event == input::Event::None &&
+              !page.pendingEpoch,
+          "a page choice acts once, even across a scene reset");
+    check(page.step(pickedAccepted, 0, 0, true, true, true).event == input::Event::None,
+          "a page choice needs a cancelled exit");
+    input::Activation pageRefused;
+    check(pageRefused.step(pickedClosed, 0, 0, true, true, false).event ==
+              input::Event::Unavailable,
+          "a page choice while swimming is refused");
     std::puts("Cryonis lifecycle, pause, original playback boundaries, and water targeting passed");
 }

@@ -21,13 +21,12 @@ std::uintptr_t nodeActor(std::uintptr_t node) {
     }
     return actor;
 }
-template <class Change> void updateWheel(HookContext hook, std::uintptr_t screen, Change change) {
+template <class Change> bool updateWheel(HookContext hook, std::uintptr_t screen, Change change) {
     if (hook.signals.wheelOwner.load() != screen)
-        return;
+        return false;
     auto prior = hook.signals.wheel.load();
     auto w = input::unpack(prior);
-    if (change(w))
-        hook.signals.wheel.compare_exchange_strong(prior, input::pack(w));
+    return change(w) && hook.signals.wheel.compare_exchange_strong(prior, input::pack(w));
 }
 }
 bool validate(std::uintptr_t base) {
@@ -78,6 +77,18 @@ void wheelUpdated(HookContext hook, std::uintptr_t screen) {
         w.amiibo = amiiboSelected(screen, readGame);
         return true;
     });
+}
+
+bool wheelChosen(HookContext hook, std::uintptr_t screen) {
+    const bool chosen = updateWheel(hook, screen, [](input::Wheel &w) {
+        if (!w.open || w.exited || w.chosen)
+            return false;
+        w.chosen = true;
+        return true;
+    });
+    Logging.Log("[cryonis] WHEEL_PAGE_CHOICE epoch=%u accepted=%u",
+                unsigned(hook.signals.wheel.load() >> 32), unsigned(chosen));
+    return chosen;
 }
 
 bool wheelCancelRequested(HookContext hook, std::uintptr_t screen) {

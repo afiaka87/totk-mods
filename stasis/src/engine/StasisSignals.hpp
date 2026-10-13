@@ -48,6 +48,7 @@ extern Signals signals;
 bool validate(std::uintptr_t base);
 void wheelOpened(std::uintptr_t screen);
 void wheelUpdated(std::uintptr_t screen);
+bool wheelChosen(std::uintptr_t screen);
 bool wheelCancelRequested(std::uintptr_t screen);
 void wheelExited(std::uintptr_t screen, bool cancelled);
 void wheelClosed(std::uintptr_t screen);

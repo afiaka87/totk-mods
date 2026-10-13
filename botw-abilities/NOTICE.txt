@@ -8,5 +8,6 @@ The romfs files in the release archives are edited copies of Tears of the Kingdo
 (interface sound bank, RSDB tables, save-data schema, English text archive, effect and sound link
 tables, effect file list, actor packs, models, inventory icons and the resource-size table). The
 module, texture sidecars and sound bank also carry content converted from Breath of the
-Wild 1.5.0. They only work with a legally owned copy of the game and are not relicensed. Native
+Wild 1.5.0, and the two wheel-page icons are converted from Breath of the Wild 1.6.0 inventory
+icons. They only work with a legally owned copy of the game and are not relicensed. Native
 builds use devkitPro/devkitA64.

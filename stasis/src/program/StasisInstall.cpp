@@ -146,3 +146,4 @@ bool stasis::install(std::uintptr_t base) {
     Logging.Log("[stasis] v0.1.17 installed");
     return true;
 }
+bool stasis::chooseFromWheel(std::uintptr_t screen) { return engine::wheelChosen(screen); }

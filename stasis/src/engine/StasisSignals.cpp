@@ -70,6 +70,17 @@ void wheelUpdated(std::uintptr_t screen) {
         }))
         Logging.Log("[stasis] WHEEL_CAMERA epoch=%u selected=%u", wheel.epoch, unsigned(camera));
 }
+bool wheelChosen(std::uintptr_t screen) {
+    input::Wheel wheel;
+    const bool chosen = updateWheel(screen, wheel, [](input::Wheel &w) {
+        if (!w.open || w.exited || w.chosen)
+            return false;
+        w.chosen = true;
+        return true;
+    });
+    Logging.Log("[stasis] WHEEL_PAGE_CHOICE epoch=%u accepted=%u", wheel.epoch, unsigned(chosen));
+    return chosen;
+}
 bool wheelCancelRequested(std::uintptr_t screen) {
     const auto wheel = input::unpack(signals.wheel.load(std::memory_order_acquire));
     return signals.wheelOwner.load(std::memory_order_acquire) == screen && wheel.open &&

@@ -3,7 +3,13 @@
 #pragma once
 #include <cstdint>
 
+// The amiibo hover + L + R3 chord. A build that offers Cryonis on a wheel page turns it off.
+#ifndef CRYONIS_WHEEL_CHORD
+#define CRYONIS_WHEEL_CHORD 1
+#endif
+
 namespace cryonis::input {
+inline constexpr bool kWheelChord = CRYONIS_WHEEL_CHORD != 0;
 constexpr std::uint64_t A = 1ull, B = 2ull, X = 4ull, StickR = 1ull << 5, L = 1ull << 6;
 // Keep consumed holds out of native actions until a fresh physical release.
 struct AimButtons {
@@ -18,10 +24,12 @@ struct AimButtons {
 struct Wheel {
     std::uint32_t epoch{};
     bool open{}, amiibo{}, exited{}, cancelled{}, closed{};
+    bool chosen{};
 };
 inline std::uint64_t pack(Wheel w) {
     return (std::uint64_t(w.epoch) << 32) | unsigned(w.open) | (unsigned(w.amiibo) << 1) |
-           (unsigned(w.exited) << 2) | (unsigned(w.cancelled) << 3) | (unsigned(w.closed) << 4);
+           (unsigned(w.exited) << 2) | (unsigned(w.cancelled) << 3) | (unsigned(w.closed) << 4) |
+           (unsigned(w.chosen) << 5);
 }
 inline Wheel unpack(std::uint64_t value) {
     return {std::uint32_t(value >> 32),
@@ -29,7 +37,8 @@ inline Wheel unpack(std::uint64_t value) {
             bool(value & 2),
             bool(value & 4),
             bool(value & 8),
-            bool(value & 16)};
+            bool(value & 16),
+            bool(value & 32)};
 }
 // Native UI receives physical L; only the remembered gameplay tap is consumed.
 struct RecentAbility {
@@ -108,10 +117,24 @@ struct Decision {
 };
 struct Activation {
     std::uint32_t pendingEpoch{};
+    // The last wheel whose page choice was taken; kept through reset so each choice acts once.
+    std::uint32_t chosenEpoch{};
     unsigned samples{};
     std::uint64_t lastButtons{};
     bool suppressL{}, suppressClick{};
-    void reset() { *this = {}; }
+    void reset() {
+        const auto seen = chosenEpoch;
+        *this = {};
+        chosenEpoch = seen;
+    }
+    void request(std::uint32_t epoch, Decision &out, bool available) {
+        if (available) {
+            pendingEpoch = epoch;
+            samples = 0;
+            out.event = Event::Requested;
+        } else
+            out.event = Event::Unavailable;
+    }
     Decision step(Wheel wheel, std::uint64_t buttons, std::uint64_t pressed, bool fresh,
                   bool running, bool available) {
         Decision out;
@@ -143,15 +166,16 @@ struct Activation {
             if (out.event != Event::None) {
                 pendingEpoch = 0;
             }
-        } else if (fresh && (pressed & StickR) && (buttons & L) && !(buttons & B) && !suppressL &&
-                   !suppressClick && wheel.epoch && wheel.open && wheel.amiibo && !wheel.exited) {
+        } else if (wheel.chosen && wheel.exited && wheel.cancelled && wheel.epoch &&
+                   wheel.epoch != chosenEpoch) {
+            // Picked from a wheel page: the wheel is already closing, so no B is needed.
+            chosenEpoch = wheel.epoch;
+            request(wheel.epoch, out, available);
+        } else if (kWheelChord && fresh && (pressed & StickR) && (buttons & L) && !(buttons & B) &&
+                   !suppressL && !suppressClick && wheel.epoch && wheel.open && wheel.amiibo &&
+                   !wheel.exited) {
             suppressClick = true;
-            if (available) {
-                pendingEpoch = wheel.epoch;
-                samples = 0;
-                out.event = Event::Requested;
-            } else
-                out.event = Event::Unavailable;
+            request(wheel.epoch, out, available);
         }
         if (pendingEpoch) {
             out.mask |= A | B | StickR;

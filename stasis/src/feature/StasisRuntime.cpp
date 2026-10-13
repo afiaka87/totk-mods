@@ -408,7 +408,7 @@ void tick(void *device) {
     if (clock.running || delta > 0.0f)
         advance(clock.running, delta);
 
-    constexpr auto A = input::A, B = input::B, L = input::L;
+    constexpr auto A = input::A, B = input::B;
     const auto wheel = input::unpack(signals.wheel.load(std::memory_order_acquire));
     const auto decision = g_activation.step(wheel, buttons, fresh, freshSample, clock.running,
                                             !g.aiming && !g.frozen.address && g.cooldown <= 0.0f,

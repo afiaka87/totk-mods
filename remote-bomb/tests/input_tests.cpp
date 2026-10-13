@@ -15,59 +15,36 @@ void require(bool value, const char *message) {
         std::exit(1);
     }
 }
-Sample open(std::uint64_t stick, std::uint32_t epoch = 7) {
-    return {{epoch, true, true}, L | stick, stick, true, false, true};
+void quickTap() {
+    State remembered;
+    remembered.remembered = true;
+    auto press = transition(remembered, {{7}, L, L, true, true, true});
+    require(!press.use && press.next.tap, "quick L waits to distinguish a hold");
+    auto staleSample = transition(press.next, {{7}, 0, 0, false, true, true});
+    require(!staleSample.use && staleSample.next.tap, "reused input cannot complete a tap");
+    auto use = transition(staleSample.next, {{7}, 0, 0, true, true, true});
+    require(use.use && use.event == Event::Use, "fresh quick L release uses the bomb once");
+    require(!transition(use.next, {{7}, 0, 0, true, true, true}).use,
+            "held release cannot repeat native use");
 }
-void activation() {
-    for (auto stick : {StickL, StickR}) {
-        auto request = transition({}, open(stick));
-        require(request.event == Event::RequestWheelCancel, "Map stick requests native cancellation");
-        require(request.add == B && !(request.mask & L), "native wheel keeps L through cancellation");
-        require(!request.use && !request.next.remembered, "opening chord never prematurely creates");
-        auto wait = transition(request.next, {{7, false, false, true, true, true},
-                                L | stick, 0, true, false, true});
-        require(wait.event == Event::None && !wait.next.remembered,
-                "paused wheel closure waits for live gameplay");
-        auto equip = transition(wait.next, {{7, false, false, true, true, true},
-                                 L | stick, 0, true, true, true});
-        require(equip.event == Event::Equipped && equip.next.remembered,
-                "cancelled closure equips in live gameplay");
-        require(equip.next.selected == (stick == StickL ? Shape::Cube : Shape::Sphere),
-                "left and right click select independent forms");
-        require(!equip.use && (equip.mask & L), "chord release cannot create or detonate");
-        auto release = transition(equip.next, {{7}, 0, 0, true, true, true});
-        require(release.mask == 0 && !release.use, "physical chord release restores controls");
-        auto press = transition(release.next, {{7}, L, L, true, true, true});
-        require(!press.use && press.next.tap, "quick L waits to distinguish a hold");
-        auto staleSample = transition(press.next, {{7}, 0, 0, false, true, true});
-        require(!staleSample.use && staleSample.next.tap, "reused input cannot complete a tap");
-        auto use = transition(staleSample.next, {{7}, 0, 0, true, true, true});
-        require(use.use && use.event == Event::Use, "fresh quick L release uses selected form once");
-        require(!transition(use.next, {{7}, 0, 0, true, true, true}).use,
-                "held release cannot repeat native use");
+void wheelSticksIgnored() {
+    // Clicking either stick in the open wheel used to pick a bomb shape; it now does nothing.
+    for (std::uint64_t stick : {1ull << 4, 1ull << 5, 3ull << 4}) {
+        auto result = transition({}, {{7, true}, L | stick, stick, true, false, true});
+        require(result.event == Event::None && !result.use && !result.next.remembered,
+                "stick clicks in the open wheel choose nothing");
     }
 }
 void nativePriority() {
     auto remembered = State{};
     remembered.remembered = true;
     auto press = transition(remembered, {{4}, L, L, true, true, true});
-    auto held = transition(press.next, {{5, true, false}, L, 0, true, false, true});
+    auto held = transition(press.next, {{5, true}, L, 0, true, false, true});
     require(!held.next.tap && held.next.remembered, "holding L opens native wheel without use");
-    auto cancel = transition(held.next, {{5, false, false, true, true, true}, 0, 0, true, true, true});
+    auto cancel = transition(held.next, {{5, false, true, true, true}, 0, 0, true, true, true});
     require(cancel.next.remembered && !cancel.use, "cancelled normal wheel preserves memory");
-    auto accept = transition(cancel.next, {{6, false, false, true, false, true}, 0, 0, true, true, true});
+    auto accept = transition(cancel.next, {{6, false, true, false, true}, 0, 0, true, true, true});
     require(!accept.next.remembered && !accept.use, "any native selection replaces bomb ownership");
-    auto notMap = open(StickR);
-    notMap.wheel.map = false;
-    require(transition({}, notMap).event == Event::None, "Camera and Amiibo chords remain untouched");
-    require(transition({}, open(StickL | StickR)).event == Event::None,
-            "ambiguous dual click cannot choose a form");
-    auto request = transition({}, open(StickR));
-    auto explicitAccept = open(StickR);
-    explicitAccept.nativeAccepted = true;
-    auto takeover = transition(request.next, explicitAccept);
-    require(!takeover.next.pendingEpoch && !takeover.next.remembered,
-            "native accepted selection wins a pending chord race");
     require(gameplayKeys(kMappedAbilityKey | 3, true) == 3,
             "only native ability-use output is consumed while remembered");
     require(gameplayKeys(kMappedAbilityKey | 3, false) == (kMappedAbilityKey | 3),
@@ -82,26 +59,7 @@ void nativePriority() {
                 nativeCancelFlags(0x80000025) == 0x80000025,
             "native cancellation preserves ordinary flags and clears the conflicting success flag");
 }
-void failedHandoffs() {
-    auto request = transition({}, open(StickL));
-    auto stale = transition(request.next, {{8, true, true}, L, 0, true, false, true});
-    require(stale.event == Event::StaleWheel && !stale.next.pendingEpoch,
-            "a new wheel invalidates old cancellation");
-    auto userCancel = transition(request.next, {{7, true, true}, L | B, B, true, false, true});
-    require(userCancel.event == Event::UserCancelled && !userCancel.next.remembered,
-            "physical B takes priority over injected cancel");
-    auto unavailable = open(StickR);
-    unavailable.available = false;
-    require(transition({}, unavailable).event == Event::Unavailable,
-            "missing live player does not request an activation");
-    auto waiting = request.next;
-    Decision result{};
-    for (unsigned i = 0; i < 241; ++i) {
-        result = transition(waiting, {{7, true, true}, L, 0, true, false, true});
-        waiting = result.next;
-    }
-    require(result.event == Event::TimedOut && !waiting.pendingEpoch,
-            "unacknowledged native cancellation cannot hold input forever");
+void pauseCancel() {
     auto sample = Sample{{4}, L, L, true, true, true};
     State state;
     state.remembered = true;
@@ -112,7 +70,7 @@ void failedHandoffs() {
 void bombOutAfterNativeChoice() {
     State state;
     state.remembered = true;
-    Sample accept{{6, false, false, true, false, true}, 0, 0, true, true, true, true};
+    Sample accept{{6, false, true, false, true}, 0, 0, true, true, true, true};
     accept.bombOut = true;
     state = transition(state, accept).next;
     require(!state.remembered, "a native wheel choice takes quick L while a bomb is out");
@@ -171,9 +129,10 @@ void handBackToMod() {
 }
 }
 int main() {
-    activation();
+    quickTap();
+    wheelSticksIgnored();
     nativePriority();
-    failedHandoffs();
+    pauseCancel();
     bombOutAfterNativeChoice();
     handBackToMod();
     std::cout << checks << " bomb input checks passed\n";

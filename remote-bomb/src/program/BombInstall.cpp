@@ -100,13 +100,8 @@ HOOK_DEFINE_TRAMPOLINE(BombWheelOpenHook) {
         return result;
     }
 };
-HOOK_DEFINE_TRAMPOLINE(BombWheelUpdateHook) {
-    static void Callback(std::uintptr_t screen) { Orig(screen); bomb::wheelUpdated(screen); }
-};
 HOOK_DEFINE_TRAMPOLINE(BombWheelExitHook) {
     static std::uintptr_t Callback(std::uintptr_t screen, unsigned char cancel) {
-        if (bomb::wheelCancelRequested(screen))
-            cancel = 1;
         const auto result = Orig(screen, cancel);
         bomb::wheelExited(screen, (cancel & 1) != 0);
         return result;
@@ -157,7 +152,6 @@ bool remote_bomb::install(std::uintptr_t base) {
     BombNpadHook::InstallAtOffset(0x2A267BC);
     BombClockHook::InstallAtOffset(0x7EDC00);
     BombWheelOpenHook::InstallAtOffset(0x1B1DC94);
-    BombWheelUpdateHook::InstallAtOffset(0x1B1E65C);
     BombWheelExitHook::InstallAtOffset(0x19AD3F4);
     BombWheelCloseHook::InstallAtOffset(0x1B1EEB8);
     BombNativeSelectionHook::InstallAtOffset(0x1B1EEF8);

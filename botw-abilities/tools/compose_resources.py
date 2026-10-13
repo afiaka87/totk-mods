@@ -119,6 +119,8 @@ def main() -> int:
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--romfs", type=Path, required=True, help="clean TotK 1.2.1 RomFS")
     parser.add_argument("--output", type=Path, required=True, help="build directory")
+    parser.add_argument("--own", type=Path, action="append", default=[],
+                        help="a romfs tree only the combined mod ships, such as its wheel icons")
     args = parser.parse_args()
     sys.path[:0] = [str(args.repo / "scripts"), str(args.repo / "framework/bridgefs/tools")]
     from bridgefs_tools import audio_bank
@@ -137,6 +139,13 @@ def main() -> int:
                 inputs.update(entry["dest"].encode() + b"\0" + source.read_bytes())
         for resource, size in read_forces(root, manifest.get("deploy", {})).items():
             forces[resource] = max(forces.get(resource, 0), size)
+    for tree in args.own:
+        for source in sorted(p for p in tree.rglob("*") if p.is_file()):
+            path = source.relative_to(tree).as_posix()
+            if path in owners:
+                raise ValueError(f"{path} is shipped by {owners[path][0][0]} and by the combined mod")
+            owners[path] = [("botw-abilities", source)]
+            inputs.update(path.encode() + b"\0" + source.read_bytes())
 
     romfs_out = args.output / "romfs"
     receipt_path = args.output / "compose-receipt.json"

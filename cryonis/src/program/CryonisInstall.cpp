@@ -130,3 +130,6 @@ bool cryonis::install(std::uintptr_t base) {
     Logging.Log("[cryonis] water targeting and original-reference mesh renderer installed");
     return true;
 }
+bool cryonis::chooseFromWheel(std::uintptr_t screen) {
+    return engine::wheelChosen(cn::hooks(), screen);
+}

@@ -337,3 +337,54 @@ TEST_CASE("A pending release never becomes aiming or releases a different freeze
         CHECK_FALSE(out.beginAim);
     }
 }
+TEST_CASE("A Stasis choice from a wheel page acts once after the cancelled wheel closes") {
+    Wheel picked = exiting;
+    picked.chosen = true;
+    CHECK(unpack(pack(picked)).chosen);
+    CHECK_FALSE(unpack(pack(exiting)).chosen);
+    Wheel pickedOpen = camera;
+    pickedOpen.chosen = true;
+    Activation a;
+    // Picked but still open: nothing yet.
+    auto out = a.step(pickedOpen, L, 0, true, false, true);
+    CHECK(out.event == Event::None);
+    out = a.step(picked, 0, 0, true, false, true);
+    CHECK(out.event == Event::Requested);
+    CHECK(a.pendingEpoch == 41);
+    CHECK(out.add == 0); // The wheel already closed itself; no B.
+    Wheel pickedClosed = closed;
+    pickedClosed.chosen = true;
+    out = a.step(pickedClosed, 0, 0, true, true, true);
+    CHECK(out.event == Event::Activated);
+    CHECK(out.beginAim);
+    // The same wheel never answers again, even across a scene reset.
+    out = a.step(pickedClosed, 0, 0, true, true, true);
+    CHECK(out.event == Event::None);
+    a.reset();
+    out = a.step(pickedClosed, 0, 0, true, true, true);
+    CHECK(out.event == Event::None);
+    CHECK(a.pendingEpoch == 0);
+}
+TEST_CASE("A Stasis page choice releases a held freeze and is refused while unavailable") {
+    Wheel picked{41, false, false, true, true, true, true};
+    Activation release;
+    auto out = release.step(picked, 0, 0, true, true, false, true, 9);
+    CHECK(out.event == Event::Requested);
+    CHECK(release.pendingRelease);
+    out = release.step(picked, 0, 0, true, true, false, true, 9);
+    CHECK(out.event == Event::Released);
+    CHECK(out.releaseFreeze);
+    Activation refused;
+    out = refused.step(picked, 0, 0, true, true, false);
+    CHECK(out.event == Event::Unavailable);
+    CHECK(refused.pendingEpoch == 0);
+    CHECK(refused.step(picked, 0, 0, true, true, true).event == Event::None);
+}
+TEST_CASE("A page choice needs a cancelled exit") {
+    Activation a;
+    const Wheel accepted{41, false, false, true, false, true, true};
+    CHECK(a.step(accepted, 0, 0, true, true, true).event == Event::None);
+    CHECK(a.pendingEpoch == 0);
+    const Wheel stale{0, false, false, true, true, true, true};
+    CHECK(a.step(stale, 0, 0, true, true, true).event == Event::None);
+}

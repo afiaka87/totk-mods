@@ -14,7 +14,7 @@ namespace eng = totk::engine;
 namespace {
 constexpr totk::engine::CodeSite guards[]{
     {0x7EDC00, 0xF9400828, 0xB40002A8}, {0x2A267BC, 0xD102C3FF, 0xA9057BFD},
-    {0x1B1DC94, 0xD10283FF, 0xFD001BE8}, {0x1B1E65C, 0xD10203FF, 0x6D032BEB},
+    {0x1B1DC94, 0xD10283FF, 0xFD001BE8},
     {0x19AD3F4, 0xA9BE7BFD, 0xA9014FF4}, {0x1B1EEF8, 0xD10103FF, 0xA9017BFD},
     {0x1B1EEB8, 0xA9BE7BFD, 0xA9014FF4}, {0x1D30CBC, 0xD10143FF, 0xA9027BFD},
     {0x1D29AAC, 0xA9BE7BFD, 0xF9000BF3},
@@ -28,14 +28,6 @@ constexpr totk::engine::CodeSite guards[]{
     {0xBC7610, 0xF9400408, 0xF9400508},
     {0x2B17270, 0xD000D7F0, 0xF9435A11}, {0x2B17280, 0xD000D7F0, 0xF9435E11},
 };
-bool mapSelected(std::uintptr_t screen) {
-    const auto count = eng::readMemory<int>(screen + 0x1A8);
-    const auto cursor = eng::readMemory<int>(screen + 0x23C);
-    return count >= 1 && count <= 8 && cursor >= 0 && cursor < count &&
-           !eng::readMemory<unsigned char>(screen + 0x244) &&
-           eng::readMemory<unsigned char>(screen + 0x245) &&
-           eng::readMemory<unsigned>(screen + 0x270 + 4 * cursor) == 1;
-}
 template <class Change>
 void changeWheel(Signals &signals, std::uintptr_t screen, Change change) {
     if (signals.wheelOwner.load() != screen)
@@ -69,29 +61,18 @@ void wheelOpened(Signals &signals, std::uintptr_t screen) {
     if (!epoch)
         epoch = signals.epoch.fetch_add(1) + 1;
     signals.wheelOwner.store(screen);
-    signals.wheel.store(input::pack({epoch, true, mapSelected(screen)}));
-}
-void wheelUpdated(Signals &signals, std::uintptr_t screen) {
-    changeWheel(signals, screen, [&](input::Wheel &wheel) {
-        if (wheel.open && !wheel.exited)
-            wheel.map = mapSelected(screen);
-    });
-}
-bool wheelCancelRequested(const Signals &signals, std::uintptr_t screen) {
-    const auto wheel = input::unpack(signals.wheel.load());
-    return signals.wheelOwner.load() == screen && wheel.open && wheel.epoch &&
-           signals.request.load() == wheel.epoch;
+    signals.wheel.store(input::pack({epoch, true}));
 }
 void wheelExited(Signals &signals, std::uintptr_t screen, bool cancelled) {
     changeWheel(signals, screen, [&](input::Wheel &wheel) {
-        wheel.open = wheel.map = false;
+        wheel.open = false;
         wheel.exited = true;
         wheel.cancelled = cancelled;
     });
 }
 void wheelClosed(Signals &signals, std::uintptr_t screen) {
     changeWheel(signals, screen, [](input::Wheel &wheel) {
-        wheel.open = wheel.map = false;
+        wheel.open = false;
         wheel.closed = true;
     });
 }

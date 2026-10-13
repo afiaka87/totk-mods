@@ -114,9 +114,7 @@ void invalidateScene(const char *reason) {
     state.stockFrames = 0.f;
     state.retired = {};
     state.spent = {};
-    state.controls.pendingEpoch = 0;
     state.controls.tap = false;
-    state.signals.request.store(0);
     state.signals.player.store(0);
 }
 bool refreshScene() {
@@ -187,7 +185,6 @@ void adoptInventoryActor(unsigned form) {
         beginEffect(shape, entry.actor, ticket);
         state.controls.remembered = true;
         state.controls.reclaimed = false;
-        state.controls.selected = shape;
         apply({shape == Shape::Sphere ? Event::SelectSphere : Event::SelectCube});
         Logging.Log("[remote-bomb] INVENTORY_ACTOR_ADOPTED form=%u serial=%u actor=%p", form,
                     ticket.serial, reinterpret_cast<void *>(entry.actor.address));
@@ -515,15 +512,10 @@ void tick(void *device) {
     if (state.controls.reclaimed && !controls.next.reclaimed)
         Logging.Log("[remote-bomb] L_RETURNED to_mod=%u", unsigned(controls.next.handing));
     state.controls = controls.next;
-    state.signals.request.store(controls.next.pendingEpoch, std::memory_order_release);
     state.signals.remembered.store(input::blocksNative(controls.next), std::memory_order_release);
-    if (controls.event == input::Event::Equipped) {
-        totk::engine::chooseAbility(totk::engine::Ability::RemoteBomb);
-        apply({controls.next.selected == Shape::Sphere ? Event::SelectSphere : Event::SelectCube});
-    }
     if (controls.event != input::Event::None)
-        Logging.Log("[remote-bomb] INPUT event=%u form=%u remembered=%u", unsigned(controls.event),
-                    unsigned(controls.next.selected), unsigned(controls.next.remembered));
+        Logging.Log("[remote-bomb] INPUT event=%u remembered=%u", unsigned(controls.event),
+                    unsigned(controls.next.remembered));
     if (available) {
         const auto target = detonationTarget(state.gameplay);
         // The game holds a blast request while Link has the bomb in his hands and plays it once he sets the bomb down, so quick L does nothing while he is lifting or holding it.
@@ -566,8 +558,6 @@ void tick(void *device) {
         }
         apply({selected == Shape::Sphere ? Event::SelectSphere : Event::SelectCube});
     }
-    frame.maskOwnedButtons(controls.mask);
-    frame.addOwnedButtons(controls.add);
     publish(running);
 }
 bool presentation(Presentation &out) {
@@ -583,10 +573,8 @@ void publishPhysicsTime(float frames) {
                                    state.signals.running.load(std::memory_order_acquire));
 }
 void wheelOpened(std::uintptr_t screen) { engine::wheelOpened(state.signals, screen); }
-void wheelUpdated(std::uintptr_t screen) { engine::wheelUpdated(state.signals, screen); }
 void wheelExited(std::uintptr_t screen, bool cancelled) { engine::wheelExited(state.signals, screen, cancelled); }
 void wheelClosed(std::uintptr_t screen) { engine::wheelClosed(state.signals, screen); }
-bool wheelCancelRequested(std::uintptr_t screen) { return engine::wheelCancelRequested(state.signals, screen); }
 void nativeSelectionAccepted(std::uintptr_t screen) { engine::nativeSelectionAccepted(state.signals, screen); }
 void maskRecentAbilityKey(std::uintptr_t node) { engine::maskRecentAbilityKey(state.base, state.signals, node); }
 std::uint64_t nativeAbilityAdmission(std::uint64_t (*original)(std::uintptr_t), std::uintptr_t actor,

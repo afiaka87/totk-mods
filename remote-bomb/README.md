@@ -10,8 +10,8 @@ remotely with a tap of L.
   Materials or the throw and arrow shortcut lists are sorted.
 - Hold a bomb from Materials, hold R and press Up for an aimed throw, or press Up while aiming a
   bow to fuse a bomb to an arrow. B and Link's other controls stay as they are.
-- Tap L to set off the selected form's bomb, or the other form's bomb when only that one is out.
-  To switch forms, hold L, hover Map, and click R3 for the sphere or L3 for the cube.
+- Tap L to set off the bomb last taken out of Materials, or the other bomb when only that one is
+  out.
 - L does nothing while Link is lifting or holding a bomb.
 - A used form recharges (3 seconds, or 6 with the base profile), then returns to Materials.
 - After choosing an ability from the wheel, L keeps setting off a bomb that is out; the next press

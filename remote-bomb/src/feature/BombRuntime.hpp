@@ -25,10 +25,8 @@ bool initialize(std::uintptr_t base);
 void tick(void *device);
 void publishPhysicsTime(float frames);
 void wheelOpened(std::uintptr_t screen);
-void wheelUpdated(std::uintptr_t screen);
 void wheelExited(std::uintptr_t screen, bool cancelled);
 void wheelClosed(std::uintptr_t screen);
-bool wheelCancelRequested(std::uintptr_t screen);
 void nativeSelectionAccepted(std::uintptr_t screen);
 std::uint64_t nativeAbilityAdmission(std::uint64_t (*original)(std::uintptr_t), std::uintptr_t actor,
                                     std::uintptr_t caller);
