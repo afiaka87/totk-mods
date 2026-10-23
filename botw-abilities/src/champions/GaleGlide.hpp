@@ -14,8 +14,7 @@ struct GlideSample {
     bool press{};
     GlidePulse started{};
 };
-// An X edge on later fresh samples makes the native jump enter Fall, which asks the forced glide predicate.
-// Presses span several samples (30 Hz world, 60 Hz pad); once airborne a second X edge opens the glider.
+// Jump edges span fresh samples (30 Hz world, 60 Hz pad); the airborne edge opens the glider.
 struct GaleGlide {
     static constexpr int kReleaseSamples = 4, kPressSamples = 4, kJumpRetrySamples = 12;
     static constexpr int kJumpPresses = 2, kGlideGapSamples = 8, kGlidePresses = 3;

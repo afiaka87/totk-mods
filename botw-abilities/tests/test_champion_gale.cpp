@@ -9,6 +9,37 @@
 
 using namespace botw_abilities::champions;
 
+TEST_CASE("Gale charges and launches with the selected jump button in either control layout") {
+    const auto charges = initial(Blessing::Revali);
+    for (const bool swapped : {false, true}) {
+        CAPTURE(swapped);
+        const GaleControls controls{swapped};
+        const std::uint64_t jump = swapped ? 2 : 4;
+        const std::uint64_t sprint = swapped ? 4 : 2;
+        const auto step = [&](Gale state, std::uint64_t buttons, bool started, bool grounded, float seconds) {
+            return stepGale(state, charges, {true},
+                {started, controls.jumpHeld(buttons), grounded, true,
+                 channeling(state.phase) && controls.interrupted(buttons), seconds}, 1.7f);
+        };
+        CHECK(step({}, sprint, true, false, 0).state.phase == GalePhase::Idle);
+        auto state = step({}, jump, true, false, 0).state;
+        state = step(state, jump, false, false, 0).state;
+        const auto landing = step(state, jump, false, true, 0);
+        REQUIRE(landing.beginChannel);
+        const auto ready = step(landing.state, jump, false, true, 1.7f);
+        REQUIRE(ready.becameReady);
+        CHECK(step(ready.state, 0, false, true, 0).launch);
+        for (const auto interrupt : {sprint, std::uint64_t{1}, std::uint64_t{8}, std::uint64_t{64},
+                                     std::uint64_t{128}, std::uint64_t{256}, std::uint64_t{512}}) {
+            const auto cancelled = step(ready.state, jump | interrupt, false, true, 0);
+            CHECK(cancelled.endChannel);
+            CHECK_FALSE(cancelled.launch);
+            CHECK(cancelled.state.phase == GalePhase::Idle);
+        }
+        CHECK_FALSE(step(landing.state, 0, false, true, 0).launch);
+    }
+}
+
 TEST_CASE("Gale requires an observed airborne phase before accepting landing") {
     const auto charges = initial(Blessing::Revali);
     auto state = stepGale({}, charges, {true}, {true, true, true, true}, 1.7f).state;

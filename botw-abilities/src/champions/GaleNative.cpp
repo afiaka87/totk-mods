@@ -22,6 +22,7 @@ constexpr CodeSite kSites[]{
     {0xB7D960, 0xA9BE7BFD, 0xA9014FF4}, {0xA04560, 0xA9BF7BFD, 0x910003FD},
     {0x1722210, 0xD10203FF, 0}, {0x1D6E54C, 0xFC1B0FE8, 0},
     {0xB60C00, 0xD100C3FF, 0xA9027BFD},
+    {0x1A8A478, 0xD100C3FF, 0xA9017BFD},
 };
 std::uintptr_t g_base{};
 std::atomic<std::uint64_t> g_jumpEpoch{};
@@ -30,6 +31,7 @@ std::atomic<std::uint32_t> g_channelEpoch{1};
 std::uint64_t g_seenJump{}, g_buttons{};
 Gale g_state;
 GaleGlide g_glide;
+GaleControls g_controls;
 bool g_glideForced{}, g_grounded = true;
 std::atomic_flag g_glideLock{};
 struct GlideGuard {
@@ -66,8 +68,6 @@ bool launch(const SceneContext& scene, ActorHandle player, std::uintptr_t compon
     Logging.Log("[champions] GALE_LAUNCH charges=%u jump=queued", unsigned(claim.use.state.charges));
     return true;
 }
-constexpr std::uint64_t kJumpButton = 1u << 2;
-
 HOOK_DEFINE_TRAMPOLINE(Jump) {
     static std::uintptr_t Callback(std::uintptr_t action) {
         const auto actor = call<std::uintptr_t(*)(std::uintptr_t)>(0xBC7610)(action);
@@ -163,6 +163,15 @@ void publish(const Gale& state) {
     g_presentation.store(std::uint64_t(std::bit_cast<std::uint32_t>(state.elapsedSeconds)) |
         (std::uint64_t(state.phase) << 32) | (std::uint64_t(state.airborneSeen) << 40), std::memory_order_release);
 }
+
+void refreshControls() {
+    // Runtime validates GameData before the native IsChangeJumpButton reader runs.
+    const bool swapped = call<bool(*)()>(0x1A8A478)();
+    if (swapped == g_controls.swapped) return;
+    reset();
+    g_controls.swapped = swapped;
+    Logging.Log("[champions] GALE_CONTROLS jump=%s", swapped ? "B" : "X");
+}
 } // namespace
 
 void service(const SceneContext& scene, const ActorHandle& player, Context context,
@@ -175,7 +184,6 @@ void service(const SceneContext& scene, const ActorHandle& player, Context conte
         return;
     }
     g_grounded = motion.grounded;
-    constexpr std::uint64_t kInterruptButtons = (1u << 0) | (1u << 1) | (1u << 3) | (1u << 6) | (1u << 7) | (1u << 8) | (1u << 9);
     const bool jump = playerJumped();
     const auto snapshot = data::state().snapshot();
     if (!snapshot.ready) return;
@@ -183,8 +191,8 @@ void service(const SceneContext& scene, const ActorHandle& player, Context conte
     { GlideGuard guard; glideExpired = g_glide.advance({player.address,scene.token.value,snapshot.generation},seconds); }
     if (glideExpired) Logging.Log("[champions] GALE_GLIDE_REFUSED reason=timeout");
     const auto step = stepGale(g_state, snapshot.states[1], context,
-        {jump, (g_buttons & kJumpButton) != 0, motion.grounded, motion.stopped,
-         motion.disrupted || (active() && (g_buttons & kInterruptButtons)), seconds}, kGaleChannelSeconds);
+        {jump, g_controls.jumpHeld(g_buttons), motion.grounded, motion.stopped,
+         motion.disrupted || (active() && g_controls.interrupted(g_buttons)), seconds}, kGaleChannelSeconds);
     if (step.beginChannel && !pose::load()) {
         reset();
         Logging.Log("[champions] GALE_CHANNEL_REFUSED reason=pose-asset");
@@ -213,16 +221,17 @@ void service(const SceneContext& scene, const ActorHandle& player, Context conte
 
 // Runs before service so the release reaches the game before the injected press; grounding is last tick's.
 void injectLaunchJump(const NpadFrame& input) {
+    refreshControls();
     const auto& sample = input.snapshot();
     GlideSample inject;
     int attempt;
     {
         GlideGuard guard;
-        inject = g_glide.injectJump(sample.freshSampleCount != 0, (sample.buttons & kJumpButton) != 0, g_grounded);
+        inject = g_glide.injectJump(sample.freshSampleCount != 0, g_controls.jumpHeld(sample.buttons), g_grounded);
         attempt = inject.started == GlidePulse::Glide ? g_glide.glidePresses : g_glide.jumpPresses;
     }
     if (!inject.press) return;
-    input.addOwnedButtons(kJumpButton);
+    input.addOwnedButtons(g_controls.jumpButton());
     if (inject.started == GlidePulse::Jump) Logging.Log("[champions] GALE_JUMP_PULSE attempt=%d", attempt);
     if (inject.started == GlidePulse::Glide) Logging.Log("[champions] GALE_GLIDE_PULSE attempt=%d", attempt);
 }

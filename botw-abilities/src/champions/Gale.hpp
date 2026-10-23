@@ -23,6 +23,22 @@ struct GaleInput {
     float seconds = 0.0f;
 };
 
+struct GaleControls {
+    bool swapped = false;
+
+    constexpr std::uint64_t jumpButton() const { return swapped ? kButtonB : kButtonX; }
+    constexpr bool jumpHeld(std::uint64_t buttons) const { return (buttons & jumpButton()) != 0; }
+    constexpr bool interrupted(std::uint64_t buttons) const {
+        constexpr std::uint64_t actions = (1u << 0) | (1u << 3) | (1u << 6) |
+                                          (1u << 7) | (1u << 8) | (1u << 9);
+        const auto sprint = swapped ? kButtonX : kButtonB;
+        return (buttons & (actions | sprint)) != 0;
+    }
+
+private:
+    static constexpr std::uint64_t kButtonB = 1u << 1, kButtonX = 1u << 2;
+};
+
 struct GaleStep {
     Gale state;
     bool beginChannel = false;

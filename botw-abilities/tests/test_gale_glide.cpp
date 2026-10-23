@@ -2,7 +2,34 @@
 // Copyright (c) Clay Mullis
 #include <doctest.h>
 #include "GaleGlide.hpp"
+#include "Gale.hpp"
 using namespace botw_abilities::champions;
+
+TEST_CASE("Gale launch and glider pulses use the selected jump button without pressing sprint") {
+    for (const bool swapped : {false, true}) {
+        CAPTURE(swapped);
+        const GaleControls controls{swapped};
+        const std::uint64_t jump = swapped ? 2 : 4;
+        const std::uint64_t sprint = swapped ? 4 : 2;
+        GaleGlide gate;
+        gate.arm({1,2,3});
+        for (int sample = 0; sample < 12; ++sample)
+            CHECK_FALSE(gate.injectJump(true, controls.jumpHeld(jump), true).press);
+        bool launched = false, glided = false;
+        for (int sample = 0; sample < 60 && !glided; ++sample) {
+            const auto pulse = gate.injectJump(true, controls.jumpHeld(0), !launched);
+            const auto output = pulse.press ? controls.jumpButton() : 0;
+            if (pulse.press) {
+                CHECK((output & jump) != 0);
+                CHECK((output & sprint) == 0);
+            }
+            launched |= pulse.started == GlidePulse::Jump;
+            glided |= pulse.started == GlidePulse::Glide;
+        }
+        CHECK(launched);
+        CHECK(glided);
+    }
+}
 
 TEST_CASE("Gale opens only its launched player's glider and hands control back on entry") {
     GaleGlide gate;
@@ -51,7 +78,7 @@ Pulses run(GaleGlide& gate, int samples, bool grounded) {
 }
 } // namespace
 
-TEST_CASE("Gale launch waits for X to be released, holds its press, and never presses over a held X") {
+TEST_CASE("Gale launch waits for jump to be released, holds its press, and never presses over a held jump") {
     GaleGlide gate;
     const GlideOwner owner{1,2,3};
     CHECK_FALSE(gate.injectJump(true,false,true).press);

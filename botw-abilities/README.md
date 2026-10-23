@@ -1,6 +1,9 @@
-# BotW Abilities v0.2.1
+# BotW Abilities v0.2.2
 
-This update adds the four Champions' activation and recharge voices, keeps their charge icons
+This update: Revali's Gale follows Options > Swap Jump Controls (X normally, B when enabled).
+Changing that setting cancels any in-progress Gale sequence safely. The control fix has been tested in Citron.
+
+v0.2.1 added the four Champions' activation and recharge voices, keeps their charge icons
 visible during gameplay, and expands Urbosa's Fury to a 50 m radius with a growing yellow field.
 Daruk's shield drops after blocking a hit; lower and raise the shield to use it again.
 The Champions themselves do not appear. Link keeps Gale's crouch and launch animation.
@@ -79,8 +82,8 @@ uses the ability wheel or a new button. All four are available from the start.
 
 - **Mipha's Grace:** when Link's hearts run out, every heart container refills and 5 temporary
   yellow hearts are added. 1 charge, 24-minute recharge.
-- **Revali's Gale:** jump with X and keep holding it after Link lands. He stops, crouches and
-  gathers the updraft; a chime marks it ready. Release X to rise, and the paraglider opens by
+- **Revali's Gale:** hold the jump button (X normally, B with Swap Jump Controls) through landing.
+  Link stops, crouches and gathers the updraft; a chime marks it ready. Release to rise; the paraglider opens by
   itself. Releasing before the chime cancels without using a charge. Gale does not start from a
   run: land and come to a stop first. 3 charges, 6-minute recharge.
 - **Daruk's Protection:** raise the shield (ZL) and an orange shell surrounds Link. Each hit it
@@ -116,11 +119,11 @@ cues, and Gale uses BotW's crouch pose.
 
 Requires Tears of the Kingdom **1.2.1**, build `9B4E43650501A4D4`.
 
-**Emulator:** extract `botw-abilities-v0.2.1-emulator-subsdk7.zip` and copy its `BotW Abilities`
+**Emulator:** extract `botw-abilities-v0.2.2-emulator-subsdk7.zip` and copy its `BotW Abilities`
 folder into the game's mod folder (right-click the game, **Open Mod Data Location**). Enable
 **BotW Abilities** in the game's add-on list.
 
-**Switch (Atmosphere):** extract `botw-abilities-v0.2.1-switch-subsdk7.zip` and copy its
+**Switch (Atmosphere):** extract `botw-abilities-v0.2.2-switch-subsdk7.zip` and copy its
 `0100F2C0115B6000` folder into `atmosphere/contents/` on the SD card.
 
 **Upgrading from v0.1.0:** remove the old BotW Abilities add-on before installing this update.
@@ -158,10 +161,9 @@ Both archives contain the same game payload: `exefs/subsdk7`, `exefs/main.npdm`,
 
 ## Known issues
 
-- The v0.2.1 gameplay, voices and icons were tested in Citron before final source cleanup.
-  The cleanup removes the invisible actors and starts their voices directly from ability use;
-  it has offline checks but no separate boot. The Champions' Blessings have not yet been tested on Switch
-  hardware; v0.1.4's three abilities were. Combinations with other code mods have not yet been
+- The v0.2.2 Swap Jump Controls fix passed the requested Citron smoke test. Earlier Citron
+  observations cover the voices, icons and Fury field. The Champions' Blessings have not yet
+  been tested on Switch hardware; v0.1.4's three abilities were. Combinations with other code mods have not yet been
   tested on Switch.
 - Daruk's Protection blocks attacks but deflects nothing. Its shell is Vow of Sidon's shell
   tinted orange, and the Champions' spirits from BotW are replaced by effects.
