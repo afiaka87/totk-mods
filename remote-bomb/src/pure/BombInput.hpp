@@ -60,7 +60,8 @@ inline Decision transition(State previous, Sample sample) {
         next.remembered = next.tap = next.reclaimed = next.handing = false;
         result.event = Event::NativeTakeover;
     }
-    // A bomb left out after a native wheel choice still answers quick L. L stays with the bomb through its blast; the next press with no bomb out hands L back and starts the chosen ability.
+    // A bomb left out after a native wheel choice still answers quick L. L stays with the bomb through
+    // its blast; the next press with no bomb out hands L back and starts the chosen ability.
     const bool pressedL = sample.fresh && sample.running && sample.available &&
         !wheel.open && (sample.pressed & L) && !(sample.buttons & B);
     if (pressedL && sample.bombOut && !next.remembered)

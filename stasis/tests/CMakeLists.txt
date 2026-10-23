@@ -28,6 +28,7 @@ add_executable(stasis_host_tests
     test_hit_adapter.cpp
     test_trail.cpp
     test_input.cpp
+    test_render_route.cpp
     ../src/engine/StasisTarget.cpp
 )
 target_include_directories(stasis_host_tests PRIVATE

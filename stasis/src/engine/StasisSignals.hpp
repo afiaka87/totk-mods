@@ -26,7 +26,8 @@ struct CameraRequest {
     unsigned session{};
     bool aiming{};
 };
-// Everything the game's threads exchange. The input hook owns the hold and session fields; the other hooks publish the physics clock, wheel state, accepted hits and the camera ray.
+// Everything the game's threads exchange. The input hook owns the hold and session fields; the
+// other hooks publish the physics clock, wheel state, accepted hits and the camera ray.
 struct Signals {
     std::atomic<std::uint64_t> wheel{}, clockTicks{};
     std::atomic<std::uintptr_t> wheelOwner{}, frozenActor{}, pausedActor{}, pausedAnimation{};

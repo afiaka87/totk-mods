@@ -163,7 +163,8 @@ struct Activation {
         }
         if (pendingEpoch) {
             out.mask |= A | B | StickR;
-            // B takes the game's normal cancel route. L is held through the cancel and then suppressed until released, so the Camera cannot be selected or reopened.
+            // B takes the game's normal cancel route. L is held through the cancel and then
+            // suppressed until released, so the Camera cannot be selected or reopened.
             if (wheel.open && !wheel.exited)
                 out.add |= B;
         }

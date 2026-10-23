@@ -21,7 +21,8 @@ struct Hit {
     bool hit{}, filterValid{};
 };
 using Resolve = void (*)(std::uintptr_t, Hit &);
-// Runs a copied game raycast on the physics worker; the input hook checks the hit actor against a fresh roster before using it.
+// Runs a copied game raycast on the physics worker; the input hook checks the hit actor
+// against a fresh roster before using it.
 class Mailbox {
   public:
     bool begin(Ray ray, Vec3 nearPlayer, std::uint32_t generation, Group exclude);

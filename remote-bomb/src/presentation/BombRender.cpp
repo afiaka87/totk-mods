@@ -5,16 +5,22 @@
 #include "BombRuntime.hpp"
 #include "BombRenderPolicy.hpp"
 #include "BombHighlight.hpp"
+#include "BombVisualBackend.hpp"
 #include "BombTargets.hpp"
 #include "RemoteBombShaders.hpp"
 #include "RemoteBombAssets.hpp"
 #include "RemoteBombHudAssets.hpp"
 #include "RemoteBombEffectAssets.hpp"
 #include "totk/render/PfxHook.hpp"
+#include "totk/render/AbilityHudLayout.hpp"
+#ifdef BOTW_ABILITIES_CHAMPIONS
+#include "totk/render/HudExtension.hpp"
+#endif
 #include "totk/engine/Pointer.hpp"
 #include <nvn/nvn.h>
 #include <lib.hpp>
 #include <cstring>
+#include <type_traits>
 
 namespace remote_bomb::render {
 namespace {
@@ -27,11 +33,35 @@ NVNmemoryPool codePool{}, meshPool{}, texturePool{};
 NVNprogram program{}, hudProgram{}, effectsProgram{}, blurProgram{}, downsampleProgram{}, compositeProgram{};
 struct Shader { const unsigned char *code; unsigned size; const unsigned char *control; };
 #define BOMB_SHADER(name) {shaders::name##Code, sizeof(shaders::name##Code), shaders::name##Control}
+#if defined(BOTW_ABILITIES_NATIVE_SPHERE) && defined(BOTW_ABILITIES_NATIVE_CUBE)
+constexpr bool kHudOnly = true;
+constexpr Shader shaderStages[]{BOMB_SHADER(hudvert), BOMB_SHADER(hudfrag)};
+#else
+constexpr bool kHudOnly = false;
 constexpr Shader shaderStages[]{BOMB_SHADER(bombvert), BOMB_SHADER(bombfrag),
     BOMB_SHADER(hudvert), BOMB_SHADER(hudfrag), BOMB_SHADER(effectsvert), BOMB_SHADER(effectsfrag),
     BOMB_SHADER(postvert), BOMB_SHADER(blur), BOMB_SHADER(downsample), BOMB_SHADER(composite)};
+#endif
 #undef BOMB_SHADER
-constexpr unsigned kTextureCount = 36;
+constexpr unsigned kBaseTextureCount = kHudOnly ? 7 : 36;
+#ifdef BOTW_ABILITIES_CHAMPIONS
+constexpr unsigned kTextureCount = kBaseTextureCount + totk::render::kExtraHudIcons;
+bool extraHudVisible() {
+    const auto* extension = totk::render::hudExtension();
+    totk::render::HudFrame frame;
+    return extension && extension->read(frame) && frame.count;
+}
+#else
+constexpr unsigned kTextureCount = kBaseTextureCount;
+bool extraHudVisible() { return false; }
+#endif
+constexpr unsigned kHudTextureStart = kHudOnly ? 0 : 8;
+constexpr unsigned codePoolBytes() {
+    if constexpr (!kHudOnly) return 65536;
+    unsigned end = 0;
+    for (const auto &shader : shaderStages) end = ((end + 255) & ~255u) + shader.size;
+    return (end + 16384 + 4095) & ~4095u;
+}
 // Bomb glow strength relative to the original material emission (surface glow and bloom both scale).
 constexpr float kGlowScale = .15f;
 // Glow colour: a lighter, less saturated blue than the material's deep (0.025, 0.25, 1.0) at the same luminance, so kGlowScale alone sets the brightness.
@@ -41,10 +71,10 @@ constexpr float kOutlineHeight = .004f;
 float centres[2][3]{};
 NVNtexture textures[kTextureCount]{};
 int textureIds[kTextureCount]{}, samplerId = -1;
-alignas(4096) unsigned char codeMemory[65536]{};
+alignas(4096) unsigned char codeMemory[codePoolBytes()]{};
 alignas(4096) unsigned char meshMemory[131072]{};
-// The bomb textures are the original compressed blocks and need 1,380,352 bytes.
-alignas(65536) unsigned char textureMemory[22 * 65536]{};
+// HUD-only storage retains alignment headroom; every native allocation is bounds-checked.
+alignas(65536) unsigned char textureMemory[(kHudOnly ? 12 : 22) * 65536]{};
 NVNbufferAddress meshAddress{}, indexAddress[2]{};
 bool initialized{}, attempted{};
 unsigned refusals{};
@@ -133,14 +163,14 @@ bool initializePools() {
     for (unsigned i = 0; i < std::size(shaderStages); ++i)
         std::memcpy(codeMemory + offsets[i], shaderStages[i].code, shaderStages[i].size);
     if (!pool(codePool, codeMemory, sizeof(codeMemory), NVN_MEMORY_POOL_FLAGS_SHADER_CODE) ||
-        !pool(meshPool, meshMemory, sizeof(meshMemory), 0) ||
+        (!kHudOnly && !pool(meshPool, meshMemory, sizeof(meshMemory), 0)) ||
         !pool(texturePool, textureMemory, sizeof(textureMemory), 0))
         return refuse(5);
     const auto codeAddress = address(&codePool);
-    meshAddress = address(&meshPool);
-    if (!codeAddress || !meshAddress)
+    if constexpr (!kHudOnly) meshAddress = address(&meshPool);
+    if (!codeAddress || (!kHudOnly && !meshAddress))
         return refuse(6);
-    for (unsigned form = 0; form < 2; ++form) {
+    if constexpr (!kHudOnly) for (unsigned form = 0; form < 2; ++form) {
         constexpr unsigned rowBytes = 3420 * 16, indexOffset = (rowBytes + 255) & ~255u;
         const auto &mesh = assets::meshes[form];
         if (indexOffset + mesh.indexCount * sizeof(std::uint16_t) > 65536)
@@ -152,9 +182,14 @@ bool initializePools() {
         std::memcpy(centres[form], centre.data(), sizeof(centres[form]));
     }
     flush(&codePool, 0, sizeof(codeMemory));
-    flush(&meshPool, 0, sizeof(meshMemory));
+    if constexpr (!kHudOnly) flush(&meshPool, 0, sizeof(meshMemory));
+#if defined(BOTW_ABILITIES_NATIVE_SPHERE) && defined(BOTW_ABILITIES_NATIVE_CUBE)
+    NVNprogram *programs[]{&hudProgram};
+    constexpr unsigned indices[][2]{{0,1}};
+#else
     NVNprogram *programs[]{&program, &hudProgram, &effectsProgram, &blurProgram, &downsampleProgram, &compositeProgram};
     constexpr unsigned indices[][2]{{0,1}, {2,3}, {4,5}, {6,7}, {6,8}, {6,9}};
+#endif
     for (unsigned i = 0; i < std::size(programs); ++i) {
         if (!programInit(programs[i], device)) return refuse(8);
         const auto v = indices[i][0], f = indices[i][1];
@@ -189,9 +224,7 @@ bool initializeTextures() {
     if (!manager)
         return refuse(10);
     std::size_t used = 0;
-    for (unsigned i = 0; i < kTextureCount; ++i) {
-        const auto &source = i < 8 ? assets::textures[i] :
-                             i < 15 ? hud_assets::textures[i - 8] : effect_assets::textures[i - 15];
+    const auto upload = [&](unsigned i, const auto& source) {
         NVNtextureBuilder builder{};
         defaults(&builder); setDevice(&builder, device); target(&builder, NVN_TEXTURE_TARGET_2D);
         size(&builder, source.width, source.height); format(&builder, NVNformat(source.format));
@@ -212,11 +245,16 @@ bool initializeTextures() {
             return refuse(13);
         NVNcopyRegion region{0, 0, 0, int(source.width), int(source.height), 1};
 #if defined(BOTW_ABILITIES_STREAM_TEXTURES)
+        if constexpr (std::is_pointer_v<decltype(source.data)>) {
+            writePixels(&textures[i], nullptr, &region, source.data);
+            flush(&textures[i], nullptr, &region);
+        } else {
         if (!totk::assets::withTexture(totk::assets::kBombTexturePath, source.data,
                 [&](const unsigned char *pixels) {
                     writePixels(&textures[i], nullptr, &region, pixels);
                     flush(&textures[i], nullptr, &region);
                 })) return refuse(15);
+        }
 #else
         writePixels(&textures[i], nullptr, &region, source.data);
         flush(&textures[i], nullptr, &region);
@@ -224,10 +262,22 @@ bool initializeTextures() {
         textureIds[i] = native<int (*)(void *, NVNtexture *, NVNtextureView *)>(0xA5B0B4)(manager, &textures[i], nullptr);
         if (textureIds[i] < 0)
             return refuse(14);
+        return true;
+    };
+    for (unsigned i = 0; i < kBaseTextureCount; ++i) {
+        const auto& source = kHudOnly ? hud_assets::textures[i] : i < 8 ? assets::textures[i] :
+                             i < 15 ? hud_assets::textures[i - 8] : effect_assets::textures[i - 15];
+        if (!upload(i,source)) return false;
     }
+#ifdef BOTW_ABILITIES_CHAMPIONS
+    const auto* extension = totk::render::hudExtension();
+    if (!extension) return refuse(30);
+    for (unsigned i = 0; i < totk::render::kExtraHudIcons; ++i)
+        if (!upload(kBaseTextureCount+i,extension->textures[i])) return false;
+#endif
     write<unsigned>(samplerBindings, 0x68, 1);
     write<const void *>(samplerBindings, 0x70, samplerLocations);
-    Logging.Log("[remote-bomb] GPU_READY meshes=2 maps=8 hud=7 effects=21 texture_bytes=%u pool=%u", unsigned(used),
+    Logging.Log("[remote-bomb] GPU_READY hud_only=%u textures=%u texture_bytes=%u pool=%u", unsigned(kHudOnly), kTextureCount, unsigned(used),
                 unsigned(sizeof(textureMemory)));
     return true;
 }
@@ -236,7 +286,7 @@ bool initialize() {
         return true;
     if (attempted)
         return false;
-    initialized = initializePools() && initializeTextures() && targets::initialize(device, getProc, base);
+    initialized = initializePools() && initializeTextures() && (kHudOnly || targets::initialize(device, getProc, base));
     return initialized;
 }
 struct Resources { NVNcommandBuffer *command{}; void *sampler{}; unsigned width{}, height{}; float depth[2]{}, sampleScale[2]{1,1}; };
@@ -440,14 +490,21 @@ void postprocess(const Resources &r, void *context, void *drawContext, const Fil
     drawArrays(r.command, NVN_DRAW_PRIMITIVE_TRIANGLES, 0, 3);
 }
 void draw(void *drawContext, void *scene, void *context, const Camera &camera) {
-    runtime::Presentation frame;
-    if (!runtime::presentation(frame) ||
-        (!frame.bombs[0].live && !frame.bombs[1].live && !frame.remembered && !effects::visible(frame.effects)))
+    runtime::Presentation frame{};
+    if (!runtime::presentation(frame) && !extraHudVisible())
+        return;
+    for (unsigned form = 0; form < 2; ++form) {
+        if (nativeBomb(form ? Shape::Cube : Shape::Sphere)) {
+            frame.bombs[form] = {};
+            frame.effects.bursts[form] = {};
+        }
+    }
+    if (!frame.bombs[0].live && !frame.bombs[1].live && !frame.remembered && !effects::visible(frame.effects) && !extraHudVisible())
         return;
     Resources r;
     if (!resources(drawContext, scene, context, r) || !initialize())
         return;
-    if (!frame.bombs[0].live && !frame.bombs[1].live && !effects::visible(frame.effects)) {
+    if (kHudOnly || (!frame.bombs[0].live && !frame.bombs[1].live && !effects::visible(frame.effects))) {
         ensureSampler(r);
         return;
     }
@@ -600,13 +657,16 @@ bool install(std::uintptr_t mainBase) {
 }
 // The HUD icon's centre and half size in the game's 1280x720 layout.
 #ifdef REMOTE_BOMB_HUD_BESIDE_STASIS
-// BotW Abilities: one place right of Stasis's countdown ring (stasis.frag: centred at 10.5% and 14% of the screen, outer edge 27 of 900 lines), at its size: the recharge ring's edge is 97% of the half size.
-constexpr float kHudRect[4]{0.105f * 1280.f + 50.f, 0.14f * 720.f, 22.f, 22.f};
+constexpr auto kHudRect = totk::render::ability_hud::rect(1);
 #else
 constexpr float kHudRect[4]{515.f, 510.f, 40.f, 40.f};
 #endif
-void drawHud(std::uintptr_t module, std::uintptr_t args, hud_policy::View view, float alpha) {
-    if (!view.visible || !module || !args)
+namespace {
+struct alignas(16) HudUniforms {
+    float rect[4]{}, gauge[4]{}, tint[4]{1,1,1,1};
+};
+void drawGauge(std::uintptr_t module, std::uintptr_t args, const HudUniforms& uniform, unsigned image) {
+    if (!module || !args)
         return;
     if (!initialized || samplerId < 0) {
         if (!(refusals & (1u << 28)))
@@ -629,15 +689,6 @@ void drawHud(std::uintptr_t module, std::uintptr_t args, hud_policy::View view, 
         refuse(25);
         return;
     }
-    struct alignas(16) HudUniforms {
-        float rect[4]{kHudRect[0], kHudRect[1], kHudRect[2], kHudRect[3]};
-        float gauge[4]{};
-        float tint[4]{1.f, 1.f, 1.f, 1.f};
-    } uniform;
-    uniform.gauge[0] = view.progress;
-    uniform.gauge[1] = view.action == hud_policy::Action::Recharge ? 1.f : 0.f;
-    uniform.gauge[2] = 1.7f;
-    uniform.tint[3] = std::clamp(alpha, 0.f, 1.f);
     if (!allocatorReady()) {
         refuse(26);
         return;
@@ -658,8 +709,7 @@ void drawHud(std::uintptr_t module, std::uintptr_t args, hud_policy::View view, 
     native<void (*)(void *, void *, void *, unsigned)>(0x7B9274)(buffer, drawContext, bindScratch, 0);
     bindProgram(command, &hudProgram, 63);
     bindUniforms(command, block, sizeof(uniform));
-    const unsigned icon = index(view.shape) + (view.upgrade == Upgrade::Plus ? 2 : 0);
-    const unsigned images[]{8 + icon, 12, 13};
+    const unsigned images[]{image, kHudTextureStart + 4, kHudTextureStart + 5};
     barrier(command, NVN_BARRIER_INVALIDATE_TEXTURE_DESCRIPTOR_BIT);
     for (unsigned i = 0; i < 3; ++i)
         bindTexture(command, NVN_SHADER_STAGE_FRAGMENT, i,
@@ -669,4 +719,35 @@ void drawHud(std::uintptr_t module, std::uintptr_t args, hud_policy::View view, 
     native<void (*)(void *, void *)>(0xC4B7AC)(buffer, drawContext);
     applyState(reinterpret_cast<void *>(module + 0x110), drawContext);
 }
+} // namespace
+void drawHud(std::uintptr_t module, std::uintptr_t args, hud_policy::View view, float alpha) {
+    if (!view.visible) return;
+    HudUniforms uniform;
+    std::copy(std::begin(kHudRect),std::end(kHudRect),uniform.rect);
+    uniform.gauge[0] = view.progress;
+    uniform.gauge[1] = view.action == hud_policy::Action::Recharge ? 1.f : 0.f;
+    uniform.gauge[2] = 1.7f;
+    uniform.tint[3] = std::clamp(alpha,0.f,1.f);
+    const unsigned icon = index(view.shape) + (view.upgrade == Upgrade::Plus ? 2 : 0);
+    drawGauge(module,args,uniform,kHudTextureStart+icon);
+}
+#ifdef BOTW_ABILITIES_CHAMPIONS
+void drawExtraHud(std::uintptr_t module, std::uintptr_t args) {
+    const auto* extension = totk::render::hudExtension();
+    totk::render::HudFrame frame;
+    if (!extension || !extension->read(frame)) return;
+    for (unsigned i = 0; i < std::min(frame.count,totk::render::kExtraHudIcons); ++i) {
+        const auto& item = frame.items[i];
+        if (item.icon >= totk::render::kExtraHudIcons || item.capacity > 6 || item.charges > item.capacity) continue;
+        HudUniforms uniform;
+        std::copy(item.rect.begin(),item.rect.end(),uniform.rect);
+        std::copy(item.tint.begin(),item.tint.end(),uniform.tint);
+        uniform.gauge[0] = item.progress;
+        uniform.gauge[1] = item.recharging ? 1.f : 0.f;
+        uniform.gauge[2] = 1.4f;
+        uniform.gauge[3] = -float(1+item.charges+8*item.capacity);
+        drawGauge(module,args,uniform,kBaseTextureCount+item.icon);
+    }
+}
+#endif
 }

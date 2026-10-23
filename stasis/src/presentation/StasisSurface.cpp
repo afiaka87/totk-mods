@@ -2,6 +2,7 @@
 // Copyright (c) Clay Mullis
 #include "StasisSurface.hpp"
 #include "StasisRender.hpp"
+#include "StasisRenderRoute.hpp"
 #include "StasisSignals.hpp"
 #include <lib.hpp>
 #include <atomic>
@@ -123,7 +124,8 @@ HOOK_DEFINE_TRAMPOLINE(CompositeHook) {
         const auto state = g_state.read();
         if (state.active && view == 0 &&
             reinterpret_cast<std::uintptr_t>(renderer) == state.owner) {
-            render::drawSurface(drawContext, context, buffers);
+            if constexpr (!render::kNativeBloom)
+                render::drawSurface(drawContext, context, buffers);
             markMask(state.epoch, false);
             return 0; // The caller releases the mask textures straight afterwards.
         }

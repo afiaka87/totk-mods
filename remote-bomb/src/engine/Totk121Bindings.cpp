@@ -19,6 +19,7 @@ constexpr Guard guards[] = {
     {0x6DBC20, {0xA9BE7BFD, 0xA9014FF4}},
     {0xF85448, {0x39402008, 0x35000088}},
     {0x83AA68, {0xD10143FF, 0xA9017BFD}},
+    {0x9F9B28, {0xF9411408, 0xB40000E8}},
 };
 template <typename Fn>
 Fn at(std::uintptr_t base, std::uintptr_t offset) { return reinterpret_cast<Fn>(base + offset); }
@@ -49,6 +50,7 @@ bool bindTotk121(std::uintptr_t mainBase, Bindings &out, BindingFailure *failure
     out.heldReference = at<decltype(out.heldReference)>(mainBase, 0x6DBC20);
     out.releaseReference = at<decltype(out.releaseReference)>(mainBase, 0xF85448);
     out.deleteActor = at<decltype(out.deleteActor)>(mainBase, 0x83AA68);
+    out.requestDeath = at<decltype(out.requestDeath)>(mainBase, 0x9F9B28);
     return true;
 }
 }

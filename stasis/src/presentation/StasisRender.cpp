@@ -5,6 +5,7 @@
 #include "StasisProjection.hpp"
 #include "StasisSignals.hpp"
 #include "StasisSurface.hpp"
+#include "StasisRenderRoute.hpp"
 #include "StasisShaders.hpp"
 #include "totk/render/GlowTargets.hpp"
 #include "totk/render/PfxHook.hpp"
@@ -45,8 +46,11 @@ struct ShaderBlob {
 #define BLOB(name) {shaders::name##Code, sizeof(shaders::name##Code), shaders::name##Control}
 constexpr ShaderBlob kShaders[]{BLOB(vert),          BLOB(frag),          BLOB(chainvert),
                                 BLOB(chainfrag),     BLOB(arrowvert),     BLOB(arrowfrag),
-                                BLOB(particlesvert), BLOB(particlesfrag), BLOB(burst),
-                                BLOB(blur),          BLOB(composite),     BLOB(downsample)};
+                                BLOB(particlesvert), BLOB(particlesfrag), BLOB(burst)
+#if !defined(STASIS_NATIVE_BLOOM) || !STASIS_NATIVE_BLOOM
+                                , BLOB(blur), BLOB(composite), BLOB(downsample)
+#endif
+};
 #undef BLOB
 constexpr std::size_t codeEnd() {
     std::size_t end = 0;
@@ -216,18 +220,18 @@ bool initializeGpuStorage() {
         refuse(3);
         return false;
     }
-    // This slot holds a pointer to the manager pointer.
-    auto *manager = read<void *>(variable(offsets::kNvnManagerSlot), 0);
-    if (!manager) {
-        refuse(22);
-        return false;
+    if constexpr (!kNativeBloom) {
+        auto *manager = read<void *>(variable(offsets::kNvnManagerSlot), 0);
+        if (!manager) {
+            refuse(22);
+            return false;
+        }
+        g_targets = totk::render::glowTargets(
+            g_device, g_getProc, manager,
+            call<totk::render::RegisterTexture>(offsets::kNVNMgrRegisterTexture), "stasis");
+        if (!g_targets)
+            refuse(21);
     }
-    // Without the glow images Stasis still draws onto the game's frame, only without bloom.
-    g_targets = totk::render::glowTargets(
-        g_device, g_getProc, manager,
-        call<totk::render::RegisterTexture>(offsets::kNVNMgrRegisterTexture), "stasis");
-    if (!g_targets)
-        refuse(21);
     g_ready = true;
     return true;
 }
@@ -247,7 +251,8 @@ bool initializeProgram() {
     }
     constexpr unsigned indices[PassCount][2]{{0, 1}, {2, 3}, {4, 5},  {6, 7},
                                              {0, 8}, {0, 9}, {0, 10}, {0, 11}};
-    for (unsigned i = 0; i < PassCount; ++i) {
+    constexpr unsigned programCount = kNativeBloom ? unsigned(Blur) : unsigned(PassCount);
+    for (unsigned i = 0; i < programCount; ++i) {
         if (!programInitialize(&g_programs[i], g_device)) {
             refuse(7, i);
             return false;
@@ -284,7 +289,7 @@ bool readCamera(const void *context, Camera &camera) {
 }
 
 void draw(void *drawContext, void *scene, void *context, bool useSurface = false,
-          const void *maskBuffers = nullptr) {
+          const void *maskBuffers = nullptr, DrawPart part = DrawPart::Complete) {
     Camera camera{};
     if (context && readCamera(context, camera))
         engine::publishCameraRay(cameraRay(camera));
@@ -332,7 +337,7 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
         return;
     }
     // A frame larger than the glow images is drawn without bloom.
-    bool bloom = width <= kMaxWidth && height <= kMaxHeight;
+    bool bloom = !kNativeBloom && width <= kMaxWidth && height <= kMaxHeight;
     if (!readCamera(context, camera)) {
         refuse(15);
         return;
@@ -342,6 +347,7 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
 
     Uniforms uniforms{};
     buildUniforms(camera, snapshot, uniforms);
+    uniforms.resources[3] = static_cast<float>(part);
     void *modelDepth = nullptr;
     void *modelIdentity = nullptr;
     bool masked = useSurface && surface::masks(modelDepth, modelIdentity);
@@ -357,6 +363,8 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
             uniforms.maskDimensions[1] = float(maskHeight);
         }
     }
+    if (useSurface && !masked)
+        refuse(28, static_cast<unsigned>(part));
     uniforms.selectedMax[3] = masked ? 1.0f : 0.0f;
     if (!initializeProgram())
         return;
@@ -368,8 +376,9 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
         return;
     }
     // Allocate all variants before binding a private framebuffer. An allocation failure leaves the game's target and render state untouched.
-    void *blocks[10]{};
-    Uniforms variants[10];
+    constexpr unsigned blockCount = kNativeBloom ? 2 : 10;
+    void *blocks[blockCount]{};
+    Uniforms variants[blockCount];
     for (auto &variant : variants)
         variant = uniforms;
     variants[1].effects[3] = 1;
@@ -381,9 +390,10 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
         {float(halfW), float(halfH), 0, kernelY},  {float(halfW), float(halfH), 2, 0},
         {float(wideW), float(wideH), kernelX, 0},  {float(wideW), float(wideH), 0, kernelY},
         {float(wideW), float(wideH), kernelX, 0},  {float(wideW), float(wideH), 0, kernelY}};
-    for (unsigned i = 0; i < 8; ++i)
-        std::memcpy(variants[i + 2].pipeline, blurParameters[i], sizeof(blurParameters[i]));
-    for (unsigned i = 0; i < 10; ++i) {
+    if constexpr (!kNativeBloom)
+        for (unsigned i = 0; i < 8; ++i)
+            std::memcpy(variants[i + 2].pipeline, blurParameters[i], sizeof(blurParameters[i]));
+    for (unsigned i = 0; i < blockCount; ++i) {
         call<void (*)(void **, const void *, std::size_t)>(offsets::kUtlCreateDynamicUniformBlock)(
             &blocks[i], &variants[i], sizeof(Uniforms));
         if (!blocks[i] || !read<std::uint64_t>(blocks[i], 0x78)) {
@@ -457,7 +467,7 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
         const bool framed = totk::render::gameFrame(engine::moduleBase, context, frame);
         if (!framed)
             refuse(27);
-        else if (!bloom)
+        else if (!kNativeBloom && !bloom)
             refuse(26, (width << 16) | height);
         bloom = bloom && framed && g_targets;
         if (framed) {
@@ -467,6 +477,8 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
             stateFor(1, true);
             const auto drawObjects = [&]() {
                 fullscreen(Surface, 0);
+                if (part == DrawPart::Hud)
+                    return;
                 if (snapshot.frozen || snapshot.releaseFlash > .24f)
                     geometry(Chain, 48 * 10 * 6, 6 * 46, 0);
                 if (snapshot.frozen) {
@@ -523,6 +535,15 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
                 fullscreen(Composite, 2);
             }
             g_lastRefusal = 0;
+            if constexpr (kNativeBloom) {
+                static unsigned reported{};
+                const unsigned bit = part == DrawPart::Hud ? 1 : masked ? 2 : 4;
+                if (!(reported & bit)) {
+                    reported |= bit;
+                    Logging.Log("[stasis] NATIVE_BLOOM_DRAW part=%u masked=%u width=%u height=%u",
+                                unsigned(part), unsigned(masked), width, height);
+                }
+            }
         }
     } else
         refuse(19);
@@ -543,11 +564,21 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
 struct DrawPfxHook {
     inline static totk::render::PfxCallback previous{};
     static std::uint64_t Callback(void *extension, void *args) {
+        auto *context = args ? read<void *>(args, 0x10) : nullptr;
+        const auto schedule = args && context ? nativeSchedule(read<unsigned>(args, 0x18),
+            read<unsigned>(args, 0x1c), read<std::uint8_t>(context, 8)) : DrawSchedule{};
+        if (kNativeBloom && schedule.beforeHud)
+            draw(read<void *>(args, 0), read<void *>(args, 8), context, false, nullptr, DrawPart::Hud);
         const auto result = previous(extension, args);
+        if constexpr (kNativeBloom) {
+            if (schedule.afterWorld)
+                draw(read<void *>(args, 0), read<void *>(args, 8), context,
+                     surface::scheduled(), nullptr, DrawPart::World);
+            return result;
+        }
         // Phase 1, pass 0, view 0: one draw per frame after the opaque scene.
         if (!args || read<unsigned>(args, 0x1c) != 0 || read<unsigned>(args, 0x18) != 1)
             return result;
-        auto *context = read<void *>(args, 0x10);
         if (!context || read<std::uint8_t>(context, 8) != 0)
             return result;
         Camera camera{};
@@ -568,7 +599,7 @@ void install() {
     if (!totk::render::installPfxHook(engine::moduleBase, DrawPfxHook::Callback,
                                       DrawPfxHook::previous, "stasis"))
         return;
-    Logging.Log("[stasis] shader installed pool=%u fragment=%u", unsigned(sizeof(g_codeMemory)),
-                unsigned(sizeof(shaders::fragCode)));
+    Logging.Log("[stasis] shader installed pool=%u fragment=%u nativeBloom=%u", unsigned(sizeof(g_codeMemory)),
+                unsigned(sizeof(shaders::fragCode)), unsigned(kNativeBloom));
 }
 } // namespace stasis::render

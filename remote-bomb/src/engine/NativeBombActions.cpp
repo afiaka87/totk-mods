@@ -18,9 +18,15 @@ void *memoryLink(void *lifter) {
 }
 }
 
-Status requestDetonation(const Bindings &native, std::uint32_t scene, Actor bomb) {
+Status requestDetonation(const Bindings &native, std::uint32_t scene, Actor bomb, DetonationRoute route) {
     if (!current(scene, bomb))
         return Status::StaleActor;
+    if (route == DetonationRoute::DeathDrop) {
+        if (!native.requestDeath)
+            return Status::MissingBindings;
+        // Chemical::update requests explosion death with reason 8 and subreason 0 in TotK 1.2.1.
+        return native.requestDeath(bomb.value, 8, 0) ? Status::Accepted : Status::DeathRefused;
+    }
     if (!native.getChemical || !native.detonate)
         return Status::MissingBindings;
     auto *chemical = native.getChemical(bomb.value);

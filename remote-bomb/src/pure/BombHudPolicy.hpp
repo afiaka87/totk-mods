@@ -37,7 +37,8 @@ inline View describe(const State &state, bool available, bool remembered, bool r
     }
     return out;
 }
-// The rune shows only while a bomb is out, naming the bomb quick L sets off. After the blast it fades out with that bomb's icon rather than switching to the recharge gauge.
+// The rune shows only while a bomb is out, naming the bomb quick L sets off. After the blast it
+// fades out with that bomb's icon rather than switching to the recharge gauge.
 constexpr float kFadeInSeconds = .15f, kFadeOutSeconds = .5f;
 struct Fade {
     View view{};

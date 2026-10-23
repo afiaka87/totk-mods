@@ -3,6 +3,7 @@
 #include "BombBlast.hpp"
 #include "totk/engine/CodeCheck.hpp"
 #include "BombIdentity.hpp"
+#include "BombVisualBackend.hpp"
 #include "BombPressure.hpp"
 #include "BlastWindow.hpp"
 #include "BlastDamage.hpp"
@@ -57,7 +58,8 @@ const char *actorName(std::uintptr_t actor) {
 }
 bool privateActor(std::uintptr_t actor) {
     const auto name = actorName(actor);
-    return name && identifyBomb(name).has_value();
+    const auto identity = name ? identifyBomb(name) : std::nullopt;
+    return identity && !nativeBomb(identity->shape);
 }
 bool privateBlast(std::uintptr_t element) {
     if (!valid(element) || read<std::uintptr_t>(element) != mainBase + 0x42DDFD0 ||

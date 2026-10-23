@@ -1,5 +1,6 @@
 #pragma once
-// Charge results recorded by running the original BotW 1.5.0 routine with stubbed engine calls. They cover the charge arithmetic only; no game code is included.
+// Charge results recorded by running the original BotW 1.5.0 routine with stubbed engine calls.
+// They cover the charge arithmetic only; no game code is included.
 #include "StasisCore.hpp"
 struct OriginalChargeStep {
     const char *name;

@@ -2,8 +2,16 @@
 // Copyright (c) Clay Mullis
 #pragma once
 #include "StasisPresentation.hpp"
+#ifdef BOTW_ABILITIES_COMPACT_UI
+#include "totk/render/AbilityHudLayout.hpp"
+#endif
 #include <cmath>
 namespace stasis::render {
+#ifdef BOTW_ABILITIES_COMPACT_UI
+inline constexpr float kHudRowY = totk::render::ability_hud::centerY/720.0f;
+#else
+inline constexpr float kHudRowY = 0.14f;
+#endif
 struct Camera {
     float view[12]{}, proj[16]{};
     float nearMetres{}, farMetres{}, width{}, height{};
@@ -12,7 +20,8 @@ struct Point {
     float x{}, y{}, z{};
     bool valid{};
 };
-// The shader block keeps its availableMin/Max names: slots 0..3 carry the arrow basis and availableMax[0].w the target's near depth.
+// The shader block keeps its availableMin/Max names: slots 0..3 carry the arrow basis and
+// availableMax[0].w the target's near depth.
 inline constexpr unsigned kUniformSlots = 16;
 struct Uniforms {
     float dimensions[4]{}, target[4]{}, tail[4]{}, tip[4]{}, flags[4]{}, timing[4]{}, tint[4]{},
@@ -21,7 +30,7 @@ struct Uniforms {
     float availableMin[kUniformSlots][4]{}, availableMax[kUniformSlots][4]{};
     float chains[6][4]{};
     float maskDimensions[4]{1, 1, 0, 0};
-    float effects[4]{-1, -1, 0, 0}, pipeline[4]{}, resources[4]{}, trailParams[4]{};
+    float effects[4]{-1, -1, 0, kHudRowY}, pipeline[4]{}, resources[4]{}, trailParams[4]{};
     float trail[kTrailSamples][4]{};
 };
 static_assert(sizeof(Uniforms) == 153 * 16);

@@ -12,6 +12,14 @@ inline constexpr const char *kActorNames[2][2] = {
     {"Obj_RemoteBombCube", "Obj_RemoteBombCubePlus"},
 };
 inline constexpr std::optional<BombIdentity> identifyBomb(std::string_view name) {
+#ifdef BOTW_ABILITIES_NATIVE_SPHERE
+    if (name == "Obj_RemoteBombSphere_Attachment") return BombIdentity{Shape::Sphere, Upgrade::Base};
+    if (name == "Obj_RemoteBombSpherePlus_Attachment") return BombIdentity{Shape::Sphere, Upgrade::Plus};
+#endif
+#ifdef BOTW_ABILITIES_NATIVE_CUBE
+    if (name == "Obj_RemoteBombCube_Attachment") return BombIdentity{Shape::Cube, Upgrade::Base};
+    if (name == "Obj_RemoteBombCubePlus_Attachment") return BombIdentity{Shape::Cube, Upgrade::Plus};
+#endif
     for (unsigned form = 0; form < 2; ++form)
         for (unsigned upgrade = 0; upgrade < 2; ++upgrade)
             if (name == kActorNames[form][upgrade])

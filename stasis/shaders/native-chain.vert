@@ -10,7 +10,8 @@ vec3 direction(float i) {
     if(i==0)return normalize(vec3(1,.05,.38));
     if(i==1)return normalize(vec3(-1,-.08,-.35));
     if(i==2)return normalize(vec3(.34,1,.42));
-    // The lower-left strand travels toward the viewer above the ground. Its old downward axis entered the floor before clearing the object.
+    // The lower-left strand travels toward the viewer above the ground.
+    // Its old downward axis entered the floor before clearing the object.
     if(i==3)return normalize(vec3(-.70,-.08,1.0));
     if(i==4)return normalize(vec3(-.9,.66,.12));
     return normalize(vec3(.9,-.66,-.12));
@@ -20,7 +21,8 @@ vec2 curve(float t) {
     return sign(p)*pow(abs(p),vec2(.62))*vec2(.118,.073);
 }
 void main() {
-    // Integer division compiles to IMAD.HI, which Citron rejects. Every index is an exact float; the .25 keeps reciprocal rounding away from quotient boundaries.
+    // Integer division compiles to IMAD.HI, which Citron rejects. Every index is an exact float;
+    // the .25 keeps reciprocal rounding away from quotient boundaries.
     float id=float(gl_VertexID),link=floor((id+.25)/2880.0),vertex=id-link*2880.0;
     float face=floor((vertex+.25)/6.0),corner=vertex-face*6.0;
     float a=floor((face+.25)/10.0),b=face-a*10.0;

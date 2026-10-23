@@ -20,7 +20,8 @@ struct NativeReference {
     ~NativeReference() {} // Nontrivial native return uses X8; releaseReference owns cleanup.
 };
 static_assert(sizeof(NativeReference) == 16 && offsetof(NativeReference, counted) == 8);
-enum class Status { Accepted, StaleActor, MissingBindings, MissingChemical };
+enum class Status { Accepted, StaleActor, MissingBindings, MissingChemical, DeathRefused };
+enum class DetonationRoute { Chemical, DeathDrop };
 
 struct Bindings {
     void *(*getLifter)(void *){};
@@ -30,6 +31,7 @@ struct Bindings {
     NativeReference (*heldReference)(void *){};
     void (*releaseReference)(NativeReference *){};
     bool (*deleteActor)(void *, unsigned){};
+    bool (*requestDeath)(void *, unsigned, unsigned){};
 };
 
 enum class BindingError { None, NullImage, SignatureMismatch };
@@ -39,7 +41,8 @@ struct BindingFailure {
     std::uint64_t expected{}, actual{};
 };
 
-Status requestDetonation(const Bindings &native, std::uint32_t scene, Actor bomb);
+Status requestDetonation(const Bindings &native, std::uint32_t scene, Actor bomb,
+                         DetonationRoute route = DetonationRoute::Chemical);
 bool explosionReported(const Bindings &native, std::uint32_t scene, Actor bomb);
 Actor carriedActor(const Bindings &native, std::uint32_t scene, Actor player);
 bool discard(const Bindings &native, std::uint32_t scene, Actor actor);

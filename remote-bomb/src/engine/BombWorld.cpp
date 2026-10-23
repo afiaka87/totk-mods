@@ -30,7 +30,16 @@ Roster scan(std::uintptr_t base, eng::SceneContext scene) {
     const auto walk = eng::visitActiveProcesses(access.value, [&](const eng::ActiveProcessView &view) {
         for (unsigned form = 0; form < 2; ++form)
             for (unsigned upgrade = 0; upgrade < 2; ++upgrade)
-                if (view.processName.equals(kActorNames[form][upgrade])) {
+                if (view.processName.equals(kActorNames[form][upgrade])
+#ifdef BOTW_ABILITIES_NATIVE_SPHERE
+                    || (!form && view.processName.equals(upgrade ? "Obj_RemoteBombSpherePlus_Attachment"
+                                                                 : "Obj_RemoteBombSphere_Attachment"))
+#endif
+#ifdef BOTW_ABILITIES_NATIVE_CUBE
+                    || (form && view.processName.equals(upgrade ? "Obj_RemoteBombCubePlus_Attachment"
+                                                                : "Obj_RemoteBombCube_Attachment"))
+#endif
+                ) {
                     if (result.count == result.entries.size()) {
                         overflow = true;
                         return eng::VisitControl::Continue;

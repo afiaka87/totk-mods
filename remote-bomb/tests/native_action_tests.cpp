@@ -12,7 +12,8 @@
 
 namespace {
 using namespace remote_bomb::engine;
-unsigned checks{}, detonations{}, getters{}, releases{}, deletions{};
+unsigned checks{}, detonations{}, getters{}, releases{}, deletions{}, deaths{};
+bool deathAccepted = true;
 bool chemicalPresent = true, lifterPresent = true;
 int playerObject{}, bombObject{}, chemicalObject{};
 std::array<unsigned char, 512> lifterObject{};
@@ -137,11 +138,17 @@ bool deleteActor(void *actor, unsigned reason) {
     require(actor == &bombObject && reason == 0, "discard deletes only its own bomb");
     return true;
 }
+bool requestDeath(void *actor, unsigned reason, unsigned subreason) {
+    ++deaths;
+    require(actor == &bombObject && reason == 8 && subreason == 0,
+            "death-drop route matches native chemical explosion death");
+    return deathAccepted;
+}
 }
 int main() {
     abilityKeys();
     abilityAdmission();
-    Bindings native{getLifter, chemical, detonate, exploded, heldReference, releaseReference, deleteActor};
+    Bindings native{getLifter, chemical, detonate, exploded, heldReference, releaseReference, deleteActor, requestDeath};
     const Actor player{&playerObject, 7}, bomb{&bombObject, 7};
     const auto before = getters;
     require(requestDetonation(native, 8, bomb) == Status::StaleActor && !carriedActor(native, 8, player).value &&
@@ -161,6 +168,18 @@ int main() {
     require(requestDetonation(native, 7, bomb) == Status::MissingChemical,
             "missing chemical returns actionable status");
     require(detonations == 1, "missing component cannot trigger another request");
+    require(requestDetonation(native, 8, bomb, DetonationRoute::DeathDrop) == Status::StaleActor && deaths == 0,
+            "death-drop route never touches stale actors");
+    const auto chemicalReads = getters;
+    require(requestDetonation(native, 7, bomb, DetonationRoute::DeathDrop) == Status::Accepted && deaths == 1 &&
+                detonations == 1 && getters == chemicalReads,
+            "native sphere death-drop route works with chemical explosion disabled");
+    deathAccepted = false;
+    require(requestDetonation(native, 7, bomb, DetonationRoute::DeathDrop) == Status::DeathRefused && deaths == 2,
+            "rejected death stays retryable without claiming an explosion");
+    native.requestDeath = nullptr;
+    require(requestDetonation(native, 7, bomb, DetonationRoute::DeathDrop) == Status::MissingBindings && deaths == 2,
+            "missing death binding never falls back to chemical detonation");
     native.releaseReference = nullptr;
     require(!carriedActor(native, 7, player).value, "a missing reference destructor prevents borrowing");
     Bindings empty;
@@ -181,6 +200,7 @@ int main() {
         {0x158B304, 0xA9017BFDD100C3FF}, {0x1593CA8, 0xA9BE7BFD37F803A1},
         {0x6DBC20, 0xA9014FF4A9BE7BFD}, {0xF85448, 0x3500008839402008},
         {0x83AA68, 0xA9017BFDD10143FF},
+        {0x9F9B28, 0xB40000E8F9411408},
     };
     for (const auto fixture : fixtures)
         std::memcpy(image.data() + fixture.offset, &fixture.bytes, sizeof(fixture.bytes));

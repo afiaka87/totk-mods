@@ -35,7 +35,7 @@ void main() {
     vec4 color=vec4(0);vec3 e=vec3(0),gold=vec3(1,.77,.08);
     float blink=1;
     if(extra.x<90&&flags.y>.5) blink=.60+.40*step(0.0,sin(timing.y*18));
-    if(selectedMax.w>.5&&flags.w>.5) {
+    if(resources.w<1.5&&selectedMax.w>.5&&flags.w>.5) {
         float model=maskAt(screenUv);vec2 px=1.0/maskDimensions.xy;
         float l=maskAt(screenUv+vec2(px.x,0)),r=maskAt(screenUv-vec2(px.x,0));
         float u=maskAt(screenUv+vec2(0,px.y)),d=maskAt(screenUv-vec2(0,px.y));
@@ -66,8 +66,10 @@ void main() {
         e+=border;color.rgb+=border;color.a=max(color.a,(inner+outer*nearTarget)*.45);
     }
     emission=vec4(e,0);
+    if(resources.w!=1) {
     // In 900-line units, so the ring keeps its screen size at any render height.
-    vec2 hud=(p-vec2(dimensions.x*0.105,dimensions.y*0.14))*(900.0/dimensions.y);
+    float rowY=effects.w>0?effects.w:.14;
+    vec2 hud=(p-vec2(dimensions.x*0.105,dimensions.y*rowY))*(900.0/dimensions.y);
     float hudAngle=atan(hud.x,-hud.y);if(hudAngle<0.0) hudAngle+=tau;
     color=over(color,vec3(0.08,0.06,0.015),band(length(hud)-23.0,4.0)*0.8);
     float progress=flags.y>0.5?timing.x:1.0-extra.y;
@@ -83,6 +85,7 @@ void main() {
         color=over(color,vec3(0.03),max(square*corners,ticks)*0.95);
         vec3 reticleColor=(flags.w>0.5?vec3(0.72,1.0,0.18):gold)*(extra.y>0.0?0.35:1.0);
         color=over(color,reticleColor,max(square*corners,max(ticks,dotMarker))*0.94);
+    }
     }
     outColor=color;
 }

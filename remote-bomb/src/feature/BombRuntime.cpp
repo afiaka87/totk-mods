@@ -7,6 +7,7 @@
 #include "BombInventory.hpp"
 #include "BombWorld.hpp"
 #include "BombSignals.hpp"
+#include "BombVisualBackend.hpp"
 #include "BombRenderPolicy.hpp"
 #include "totk/engine/AbilityChoice.hpp"
 #include "totk/engine/Npad.hpp"
@@ -179,7 +180,8 @@ void adoptInventoryActor(unsigned form) {
             entry.processState != 4 || claimed(entry.actor) || !current(entry.actor))
             continue;
         state.actors[form] = entry.actor;
-        physics::queueRefresh(entry.actor);
+        if (!nativeBomb(shape))
+            physics::queueRefresh(entry.actor);
         apply({Event::InventoryActorCreated, shape});
         const auto ticket = state.gameplay.slots[form].ticket;
         beginEffect(shape, entry.actor, ticket);
@@ -223,12 +225,34 @@ void observeActors(float frames) {
         auto &actor = state.actors[form];
         const auto shape = form ? Shape::Cube : Shape::Sphere;
         const auto slot = state.gameplay.slots[form];
+        if (nativeBomb(shape) && actor.address) {
+            bool active = false;
+            for (unsigned i = 0; i < state.roster.count; ++i)
+                active |= state.roster.entries[i].actor.address == actor.address &&
+                          state.roster.entries[i].processState == 4;
+            if (!active)
+                for (unsigned i = 0; i < state.roster.count; ++i) {
+                    const auto &next = state.roster.entries[i];
+                    if (next.shape == shape && next.upgrade == state.gameplay.upgrade &&
+                        next.processState == 4 && current(next.actor) && !isRetired(next.actor)) {
+                        Logging.Log("[remote-bomb] NATIVE_BOMB_HANDOFF old=%p actor=%p",
+                                    reinterpret_cast<void *>(actor.address), reinterpret_cast<void *>(next.actor.address));
+                        actor = next.actor;
+                        break;
+                    }
+                }
+        }
         if (actor.address && !current(actor)) {
-            apply({Event::ActorLost, shape, slot.ticket});
+            const bool detonated = nativeBomb(shape) && slot.phase == Phase::DetonationRequested;
+            apply({detonated ? Event::Exploded : Event::ActorLost, shape, slot.ticket});
+            if (detonated)
+                Logging.Log("[remote-bomb] NATIVE_BOMB_DEATH_COMPLETE serial=%u recharge=%f", slot.ticket.serial,
+                            double(state.gameplay.slots[form].rechargeSeconds));
             Logging.Log("[remote-bomb] ACTOR_LOST form=%u phase=%u actor=%p", form,
                         unsigned(slot.phase), reinterpret_cast<void *>(actor.address));
             actor = {};
         } else if (actor.address && (slot.phase == Phase::Live || slot.phase == Phase::DetonationRequested) &&
+                   !nativeBomb(shape) &&
                    engine::explosionReported(state.native, state.generation, borrow(actor))) {
             state.spent[form] = {actor, slot.ticket.serial, 0.f};
             apply({Event::Exploded, shape, slot.ticket});
@@ -314,7 +338,8 @@ unsigned detonateCopies(Shape shape) {
         if (entry.shape != shape || entry.upgrade != state.gameplay.upgrade || entry.processState != 4 ||
             claimed(entry.actor) || !current(entry.actor) || !retire(entry.actor))
             continue;
-        if (engine::requestDetonation(state.native, state.generation, borrow(entry.actor)) == engine::Status::Accepted)
+        const auto route = nativeBomb(shape) ? engine::DetonationRoute::DeathDrop : engine::DetonationRoute::Chemical;
+        if (engine::requestDetonation(state.native, state.generation, borrow(entry.actor), route) == engine::Status::Accepted)
             ++count;
     }
     return count;
@@ -341,12 +366,13 @@ void execute(Command command, bool workerAdvanced) {
                         unsigned(state.roster.complete), reinterpret_cast<void *>(actor.address));
             return;
         }
-        const auto status = engine::requestDetonation(state.native, state.generation, borrow(actor));
+        const auto route = nativeBomb(command.shape) ? engine::DetonationRoute::DeathDrop : engine::DetonationRoute::Chemical;
+        const auto status = engine::requestDetonation(state.native, state.generation, borrow(actor), route);
         if (status != engine::Status::Accepted)
             apply({Event::DetonationFailed, command.shape, command.ticket});
         const auto copies = detonateCopies(command.shape);
-        Logging.Log("[remote-bomb] DETONATE form=%u serial=%u status=%u copies=%u", form, command.ticket.serial,
-                    unsigned(status), copies);
+        Logging.Log("[remote-bomb] DETONATE form=%u serial=%u status=%u copies=%u route=%u", form, command.ticket.serial,
+                    unsigned(status), copies, unsigned(route));
     }
 }
 // The bomb's Ultrahand receiver (actor component table -> receiver), or 0.

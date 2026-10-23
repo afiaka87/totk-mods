@@ -5,6 +5,7 @@
 #include "BombMotion.hpp"
 #include "BombMotionRequest.hpp"
 #include "BombIdentity.hpp"
+#include "BombVisualBackend.hpp"
 #include "totk/engine/Transform.hpp"
 #include <lib.hpp>
 #include <cstring>
@@ -45,7 +46,7 @@ void refused(std::uintptr_t body, const char *reason, std::uintptr_t value) {
 }
 void apply(std::uintptr_t body, unsigned requested) {
     const auto identity = owner(body);
-    if (!identity)
+    if (!identity || nativeBomb(identity->shape))
         return;
     const auto flags = eng::readMemory<std::uint64_t>(body + 104);
     if ((flags & 0x400000) || (flags & 0x1C) == 4)

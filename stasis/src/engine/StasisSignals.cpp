@@ -186,7 +186,8 @@ void holdEnemyPhysics(void *component) {
     stasis::holdEnemyPhysics(
         held, address, [](std::uintptr_t field) { return read<std::uintptr_t>(field); },
         [](std::uintptr_t actor) {
-            // Runs after the game's movement and impulse requests, even when the character update skips applying velocity.
+            // Runs after the game's movement and impulse requests, even when the character
+            // update skips applying velocity.
             const auto collection = bodies(controllerSet(actor));
             if (collection.overflow || !collection.count) {
                 if (firstRefusal(2))
@@ -242,7 +243,8 @@ void frameAimCamera(std::uintptr_t state, float *output, float frameScale) {
     }
     if (!request.aiming && g_cameraBlend.amount == 0)
         return;
-    // The player camera's resolve state sits 1096 bytes into its component, whose target record at +3144 holds the followed actor at +24.
+    // The player camera's resolve state sits 1096 bytes into its component, whose target
+    // record at +3144 holds the followed actor at +24.
     const auto component = state - 1096;
     const auto target = valid(component) ? read<std::uintptr_t>(component + 3144) : 0;
     const auto actor = valid(target) ? read<std::uintptr_t>(target + 24) : 0;

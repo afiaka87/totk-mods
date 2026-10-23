@@ -26,6 +26,9 @@ HOOK_DEFINE_TRAMPOLINE(UiHook) {
         // No text labels: the controls are learned in play.
         render::drawHud(reinterpret_cast<std::uintptr_t>(module),
                         reinterpret_cast<std::uintptr_t>(args), shown.view, shown.alpha);
+#ifdef BOTW_ABILITIES_CHAMPIONS
+        render::drawExtraHud(reinterpret_cast<std::uintptr_t>(module),reinterpret_cast<std::uintptr_t>(args));
+#endif
         return result;
     }
 };
