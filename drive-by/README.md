@@ -1,107 +1,89 @@
-# Drive-by v0.9.0
+# Drive-by v0.10.0
 
-Use your bow, sword and shield while holding a Zonai Steering Stick, and keep driving.
+Use your bow, melee weapons and shield while holding a Zonai Steering Stick, and keep driving.
+Formerly Free Rein. Requires Tears of the Kingdom **1.2.1**.
 
-- **Bow:** draw it and Link takes his hands off the stick, holds the bow normally and turns his body
-  and legs to aim where the camera points. Lower it and his hands go back to the stick.
-- **Melee:** press Y to swing your weapon toward the camera, or toward the enemy you are locked on to.
-  Hits land and Link stays on the stick.
-- **Shield:** hold ZL to raise it and block. A blocked hit does not knock Link off the stick, and when
-  locked on he keeps facing the enemy with the shield level.
+## Controls
 
-Drive-by is the new name of Free Rein (bow only, v0.4.0). v0.9.0 adds melee and the shield, and ships
-as patch files only, with no cheat file.
+- **Bow:** aim and shoot normally. Link turns toward your aim. Press B to put the bow away with its animation.
+- **Melee:** press Y to swing toward the camera or the enemy you are locked on to.
+- **Charged attacks:** keep Y held through the first swing to charge, then release. Charging uses stamina.
+  Charged attacks use a sideways, mounted-style motion while Link stays on the stick.
+- **Shield:** hold ZL to raise it directly, without drawing a weapon first. Block while remaining on the stick.
+- **Parry:** hold ZL and tap A with the usual timing against an incoming attack.
+- **Rocket shield:** raise a rocket shield to release the stick and lift off. This lifts Link, not the vehicle.
 
-## Requirements
+## Changes in v0.10.0
 
-Tears of the Kingdom **1.2.1** only. Both files are keyed to 1.2.1's program, so other versions
-ignore them and play normally.
+- Fixed the bow snapping onto Link's back without a stow animation.
+- Fixed shield draw requiring a melee attack first.
+- Added charged attacks and shield parrying on the stick.
+- Fixed rocket shields leaving Link stuck on the stick with the shield sideways.
 
 ## Installation
 
-Close the game first. Choose the archive for where you play.
+Close the game before replacing files. Choose the archive for your platform.
 
-**Upgrading from Free Rein:** remove Free Rein first. Its files change the same places in the game,
-and the two must not run together. On an emulator, delete or disable the `Free Rein` folder. On a
-Switch, delete `atmosphere/contents/0100F2C0115B6000/cheats/9B4E43650501A4D4.txt`, or, if you added
-Free Rein's lines to another mod's cheat file, remove the lines from `[Free Rein v0.4.0]` to the end
-of that block.
+**Updating Drive-by:** replace the existing Drive-by files with this version. Keep only one copy enabled.
+**Upgrading from Free Rein:** remove or disable Free Rein first; its code patches overlap Drive-by.
+On Switch, remove Free Rein's cheat file at
+`atmosphere/contents/0100F2C0115B6000/cheats/9B4E43650501A4D4.txt`, or remove only the Free Rein block
+if you combined it with other cheats.
 
-### Emulators: `drive-by-v0.9.0-emulator.zip`
+### Emulator: drive-by-v0.10.0-emulator.zip
 
-1. Open the game's mod folder. In most emulators, right-click the game and choose
-   *Open Mod Data Location*; it is `load/0100F2C0115B6000/`.
-2. Copy the `drive-by` folder from the archive into it, so you have:
-   ```
-   load/0100F2C0115B6000/drive-by/exefs/drive-by.pchtxt
-   ```
-3. Enable **drive-by** in the game's Add-Ons list.
+1. Open the game's mod folder (`load/0100F2C0115B6000/`).
+2. Copy the archive's `drive-by` folder there. The active patch should be at
+   `load/0100F2C0115B6000/drive-by/exefs/drive-by.pchtxt`.
+3. Enable **drive-by** in the game's Add-Ons list and start the game.
 
-The emulator applies `drive-by.pchtxt` when the game starts. The `exefs_patches` folder holds the
-Switch copy of the same patch; emulators do not read it.
+The `exefs_patches` folder contains the Switch copy; the emulator does not use it.
 
-### Switch (Atmosphere): `drive-by-v0.9.0-switch.zip`
+### Switch (Atmosphere): drive-by-v0.10.0-switch.zip
 
-1. Copy the archive's `atmosphere` folder to the root of the SD card, so you have:
-   ```
-   atmosphere/exefs_patches/drive-by/9B4E43650501A4D4489B4BBFDB740F26AF3CF850.ips
-   ```
-2. Start the game. Atmosphere applies the patch at launch; there is nothing to switch on.
+1. Copy the archive's `atmosphere` folder to the root of your SD card.
+2. Check that the patch is at
+   `atmosphere/exefs_patches/drive-by/9B4E43650501A4D4489B4BBFDB740F26AF3CF850.ips`.
+3. Start the game. No cheat needs enabling.
 
-The archive also creates `atmosphere/exefs/drive-by.pchtxt`, the emulator copy of the patch.
-Atmosphere does not read it; you can delete it.
+The archive also includes `atmosphere/exefs/drive-by.pchtxt`, the emulator copy. Atmosphere ignores it.
 
 ## Compatibility
 
-Drive-by uses no executable module slot, so it loads beside exlaunch mods. It conflicts with any
-patch or cheat that changes the same places in the game's program. Offsets are from the start of the
-main program; in the `.pchtxt` and `.ips` they are `0x100` higher.
+- **TotK 1.2.1 only.** The files are keyed to its executable build ID.
+- **ExeFS code patches only:** no RomFS replacements, executable module or subsdk slot.
+- Free Rein and older Drive-by copies must not run alongside this version.
+- Other mods can conflict if they patch the same executable addresses. No overlapping writes were found
+  among the 35 surveyed third-party patch sources; that does not cover every possible mod combination.
+- Added instructions occupy unused gaps inside the game's code (`0x5DE064` through `0x5F04EF`),
+  leaving executable tail padding used by other patches alone. Every patched address is listed in the pchtxt.
 
-- the list of actions the bow may run beside (`0xB7DC20` and `0xB7DCD0`-`0xB7DCEF`);
-- the check that lets a melee weapon be drawn (`0x933174`);
-- seven jumps from the game's code into Drive-by's code (`0x6877D8`, `0x82D540`, `0xE481B8`,
-  `0x1D60274`, `0x1D6A6C4`, `0x1D6A728`, `0x219AD90`);
-- the new code itself, in unused gaps between the game's functions (`0x5DE064`-`0x5E116F`).
+## Known issues and limits
 
-Free Rein put its code in the empty space after the end of the game's code. Popular patches and
-cheat sets (FPSLocker, the TotK Optimizer cheats) also write there. Drive-by leaves that space alone.
-Before release its writes were checked against the 1.2.1 patches of 35 other sources (mods, cheat
-collections and plugins, including the most-downloaded TotK mods that ship patch files); none of them
-touch these places.
-
-## Known issues
-
-- Some strong attacks (seen with a large Black Moblin) still damage Link while the shield is up.
-  Whether the same attack does this on foot without the mod has not been checked.
-- Repeated swings repeat the same first swing instead of the left-right combo.
-- No shield parry on the stick.
+- Repeated normal swings repeat the first swing instead of alternating through the normal combo.
+- Some strong attacks, observed with a large Black Moblin, still damage Link while the shield is up.
+  The same attack has not been compared with unmodded on-foot blocking.
+- Ground-slam shockwaves, charging effects and unusual weapon/fuse interactions are not fully verified.
 
 ## Testing
 
-v0.9.0 was played on 1.2.1 in Eden with the `.pchtxt` file: the bow, swings and shield all worked
-from the stick. It was also played on a Switch with the `.ips` file, beside another mod's patch, and
-worked there too.
+This update was tested on Citron with TotK 1.2.1: bow stow, direct shield draw, charged attacks,
+parrying and rocket-shield lift worked. The sideways charged-attack animation is retained.
+The pchtxt and IPS32 files apply identical code changes, and 101 offline ARM checks pass.
+
+The previous v0.9.0 release was tested on Eden and a physical Switch. **v0.10.0 has not had a separate
+physical Switch or Android play-test.** The Switch archive is provided with that limitation.
 
 ## Uninstall
 
-Disable or delete the `drive-by` folder on an emulator. On a Switch, delete
-`atmosphere/exefs_patches/drive-by/`. The mod writes no save data.
+Disable or remove the `drive-by` folder on your emulator. On Switch, remove
+`atmosphere/exefs_patches/drive-by/`. The mod does not change save data.
 
-## How it works
+## Patch source
 
-`drive-by.pchtxt` (an IPSwitch text patch, for emulators) and
-`9B4E43650501A4D4489B4BBFDB740F26AF3CF850.ips` (IPS32, for Atmosphere) contain the same 371
-instruction words.
+The public `patches/drive-by.pchtxt` is the version-locked patch source. Both formats contain the same
+1,104 instruction words, with added code placed in 363 unused alignment gaps. The mod changes how the
+game selects and runs its existing actions and animations; it distributes no game assets.
 
-1. **Allow the equipment on the stick.** The game checks which actions the bow and melee weapons may
-   run beside, and refuses them while the Steering Stick is held. Ten words add the stick to those
-   lists.
-2. **Bow.** While the bow is drawn on the stick, the stick's animation update plays the lower-body
-   animation the sand seal sled uses for bow aiming, so the legs turn toward the aim, and the hand
-   placement on the handles is switched off the way the game does when you let go.
-3. **Melee.** Pressing Y on the stick plays the weapon's own standing first swing on Link's upper
-   body, turned toward the camera or the locked-on enemy, with its hits switched on for the swing.
-4. **Shield.** ZL raises the shield from the stick routine. A blocked hit skips the reaction that
-   would throw Link off, and while locked on his legs turn toward the enemy so the shield stays level.
-
-The new code sits in 119 small unused gaps between the game's own functions, joined by short jumps.
+Source: https://github.com/afiaka87/totk-mods/tree/main/drive-by
+License: MIT.
