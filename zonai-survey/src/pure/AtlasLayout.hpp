@@ -6,13 +6,21 @@
 
 namespace zonai_survey::atlas {
 inline constexpr unsigned kAsciiCount = 96, kIconCount = 29;
-inline constexpr unsigned kBatchQuads = 128, kSlotBytes = 65536, kSlotCount = 3;
+inline constexpr unsigned kBatchQuads = 128, kSlotBytes = 32768, kSlotCount = 3;
+inline constexpr unsigned kIconTile = 1u << 18;
 struct alignas(16) Quad {
-    float rect[4];
-    std::uint32_t tile[4]; // Byte offset, width, height, RGBA8.
+    float x, y;
+    std::uint32_t tile, color;
 };
-static_assert(sizeof(Quad) == 32);
+static_assert(sizeof(Quad) == 16);
 inline constexpr unsigned kMaxQuads = kSlotBytes / sizeof(Quad);
+static_assert(kMaxQuads == 2048);
+inline bool admitName(unsigned needed,unsigned& remaining) {
+    if(needed>remaining) return false;
+    remaining-=needed; return true;
+}
+inline constexpr unsigned tileSize(unsigned tile) { return tile & kIconTile ? 32 : 16; }
+inline constexpr float quadSize(unsigned tile) { return tile & kIconTile ? 16.f : 22.f; }
 // Baseline row of a baked letter cell (baker cell_baseline); quads reach past the cell for the shadow.
 inline constexpr float kCellBaseline = 12, kLetterMargin = 3;
 // Target pixels per 1280x720 layout unit; zero leaves positions where they are.
@@ -28,8 +36,7 @@ inline PixelGrid pixelGrid(float width, float height) {
 // Letters keep exact pen offsets from a snapped origin, so the word moves as one piece.
 inline Quad letterQuad(const PixelGrid& grid, float pen, float top, unsigned offset, unsigned color) {
     const float y=grid.snapY(top+kCellBaseline)-kCellBaseline;
-    constexpr float size=16+2*kLetterMargin;
-    return {{pen-kLetterMargin,y-kLetterMargin,size,size},{offset,16,16,color}};
+    return {pen-kLetterMargin,y-kLetterMargin,offset,color};
 }
 inline constexpr unsigned asciiOffset(unsigned c) { return c==0x2019 ? 95*256 : ((c >= 32 && c <= 126 ? c : '?') - 32)*256; }
 inline unsigned nextCharacter(const char*& p) {

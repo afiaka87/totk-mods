@@ -28,7 +28,11 @@ add_executable(zonai_survey_pure_tests
     test_survey_cue.cpp
     test_atlas_layout.cpp
     test_label_placement.cpp
+    test_locale_pack.cpp
 )
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../build/localization/locale-receipt.json")
+    target_compile_definitions(zonai_survey_pure_tests PRIVATE SURVEY_LOCALE_TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../build/localization/Locale")
+endif()
 if(SURVEY_TEST_GAME_DATA)
     target_sources(zonai_survey_pure_tests PRIVATE test_glyph_tables.cpp test_packed_glyphs.cpp
         ../src/generated/GlyphTables.cpp)

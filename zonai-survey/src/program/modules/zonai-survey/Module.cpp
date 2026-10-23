@@ -9,6 +9,7 @@
 
 #include "GlyphController.hpp"
 #include "AtlasRenderer.hpp"
+#include "Locale.hpp"
 #include "ScanController.hpp"
 #include "ScanPresentation.hpp"
 #include "SurveyOptions.hpp"
@@ -49,6 +50,8 @@ void serviceSurveyInput(const totk::engine::NpadFrame& frame, std::uint64_t butt
     frame.maskOwnedButtons(g_ownedSurveyButton);
 
     if ((buttons & BTN_ZL) == 0 || (pressed & BTN_UP) == 0) return;
+    // First user scan occurs after the game's content mount/application services exist.
+    zonai_survey::locale::loadOnce();
     const auto verdict = zonai_survey::integration::triggerSurvey();
     if (verdict == zonai_survey::pure::ScanVerdict::CoolingDown) return;
     if (verdict != zonai_survey::pure::ScanVerdict::Accepted)

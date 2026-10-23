@@ -18,7 +18,9 @@ https://github.com/vbe0201/switch-cmake
 https://github.com/doctest/doctest
 
 The public source does not contain game-derived fonts, atlas pixels or collectible
-tables. The executable embeds locally generated data, including Rodin regular
-letter artwork and the collectible icons. Those assets are not MIT licensed;
-all rights remain with their respective rights holders. No separate runtime font
-or primitive-renderer files are needed.
+tables. The executable embeds compact collectible positions. The accompanying
+locale packs contain native item names, collectible icons and subset font artwork
+derived from the owned game (Rodin bold and the native Chinese/Korean faces).
+Those assets are not MIT licensed; all rights remain with their respective rights
+holders. These compact packs are required at runtime; whole font and Mals archives
+are not included. The source license does not grant rights to the game assets.

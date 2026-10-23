@@ -23,8 +23,8 @@ def validate_bindings(name: str, ir: str) -> None:
         resources = re.findall(r"^\s*(DCL\s+(?:CONST|SAMP|SVIEW|IMAGE|BUFFER)\[[^\r\n]*)", ir, re.MULTILINE)
         expected = {
             "frag": {"DCL CONST[2][0..13]", "DCL SAMP[0]", "DCL SVIEW[0], 2D, FLOAT"},
-            "labelVert": {"DCL CONST[2][0..255]"},
-            "labelFrag": {"DCL CONST[2][0..3391]"},
+            "labelVert": {"DCL CONST[2][0..127]"},
+            "labelFrag": {"DCL CONST[2][0..3391]", "DCL CONST[3][0..4095]", "DCL CONST[4][0..4095]"},
         }[name]
         if set(resources) != expected or len(resources) != len(expected):
             raise ValueError("Unexpected fragment bindings: review the NVN UBO/texture adapter")
@@ -46,15 +46,16 @@ def validate_gpu_assembly(name: str, assembly: str) -> None:
     if name == "labelFrag":
         if re.search(r"\b(?:FADD|IADD)(?:\.[A-Z0-9]+)*\.SAT\b", assembly):
             raise ValueError("labelFrag: integer bounds became saturation; use explicit comparisons")
-        loads = re.findall(r"\bLDC R\d+, c\[0x3\]\[R\d+(?:\+0x([48c]))?\]", assembly)
-        if sorted(loads) != sorted(["", "4", "8", "c"] * LABEL_TAPS):
-            raise ValueError("labelFrag: every bilinear tap must load all four atlas words")
+        for bank in (3,4,5):
+            loads = re.findall(r"\bLDC R\d+, c\[0x"+str(bank)+r"\]\[R\d+(?:\+0x([48c]))?\]", assembly)
+            if sorted(loads) != sorted(["", "4", "8", "c"] * LABEL_TAPS):
+                raise ValueError(f"labelFrag: every bilinear tap must load all four atlas words in bank {bank}")
 
 def validate_label_ir(ir: str) -> None:
     if len(re.findall(r"\b[A-Z]+_SAT\b", ir)) != LABEL_SATURATIONS:
         raise ValueError("labelFrag: expected one saturation per distance-field edge")
-    loads = re.findall(r"MOV (TEMP\[\d+\]), CONST\[2\]\[ADDR\[0\]\.x\](?=\s*$)", ir, re.MULTILINE)
-    if len(loads) != LABEL_TAPS:
+    loads = re.findall(r"MOV (TEMP\[\d+\]), CONST\[[234]\]\[ADDR\[0\]\.x\](?=\s*$)", ir, re.MULTILINE)
+    if len(loads) != 3*LABEL_TAPS:
         raise ValueError("labelFrag: expected one complete atlas-vector load per tap")
     for register in loads:
         for lane in "xyzw":

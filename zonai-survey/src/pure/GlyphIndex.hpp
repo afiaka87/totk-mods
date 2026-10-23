@@ -8,11 +8,19 @@
 
 #include "GlyphTables.hpp"
 #include "PackedGlyphs.hpp"
+#if SURVEY_LOCALIZED
+#include "ActorCatalog.hpp"
+#endif
 #ifndef SURVEY_COMPACT_MAP
 #define SURVEY_COMPACT_MAP 0
 #endif
 
 namespace zonai_survey::pure {
+#if SURVEY_LOCALIZED
+inline const auto& actorEntries=locale::kActors;
+#else
+inline const auto& actorEntries=glyphs::kNames;
+#endif
 
 inline std::uint32_t actorHash(const char* name) {
     std::uint32_t h = 0x811C9DC5u;
@@ -33,7 +41,7 @@ inline std::uint32_t findGlyphName(const char* actorName) {
     std::uint32_t hi = glyphs::kNameCount;
     while (lo < hi) {
         const std::uint32_t mid = lo + (hi - lo) / 2;
-        const std::uint32_t got = glyphs::kNames[mid].hash;
+        const std::uint32_t got = actorEntries[mid].hash;
         if (got == want) return mid;
         if (got < want) {
             lo = mid + 1;
@@ -44,21 +52,23 @@ inline std::uint32_t findGlyphName(const char* actorName) {
     return kNoGlyphName;
 }
 
+#if !SURVEY_LOCALIZED
 inline const char* glyphDisplayName(std::uint32_t nameIndex) {
     if (nameIndex >= glyphs::kNameCount) return nullptr;
     const std::uint16_t offset = glyphs::kNames[nameIndex].textOffset;
     if (offset == glyphs::kNoName) return nullptr;
     return glyphs::kNameBlob + offset;
 }
+#endif
 
 inline glyphs::GlyphClass glyphClassOf(std::uint32_t nameIndex) {
     if (nameIndex >= glyphs::kNameCount) return glyphs::GlyphClass::Material;
-    return static_cast<glyphs::GlyphClass>(glyphs::kNames[nameIndex].cls);
+    return static_cast<glyphs::GlyphClass>(actorEntries[nameIndex].cls);
 }
 
 inline std::uint8_t glyphIconOf(std::uint32_t nameIndex) {
     if (nameIndex >= glyphs::kNameCount) return 0;
-    return glyphs::kNames[nameIndex].icon;
+    return actorEntries[nameIndex].icon;
 }
 
 inline int floorDiv(float coord) {

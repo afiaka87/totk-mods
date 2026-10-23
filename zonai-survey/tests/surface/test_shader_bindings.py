@@ -21,6 +21,12 @@ class MemoryProfileTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             budget.validate({"mapped_bytes": 600000}, "0000 r zonai_survey::glyphs::kPlacements")
         budget.validate({"mapped_bytes": 600000}, "0000 r zonai_survey::glyphs::kPlacements", compact=False)
+        budget.validate({"mapped_bytes": 946176}, "", localized=True)
+        with self.assertRaises(ValueError):
+            budget.validate({"mapped_bytes": 946177}, "", localized=True)
+        for symbol in ('glyphs::kNames','glyphs::kNameBlob','atlas::kPixels'):
+            with self.assertRaises(ValueError):
+                budget.validate({"mapped_bytes": 900000},symbol,localized=True)
 
     def test_mapped_extent_includes_zero_fill_bss_and_alignment(self):
         header = bytearray(256)
@@ -49,8 +55,8 @@ class ShaderBindingsTests(unittest.TestCase):
         self.assertIn('state[0]=state[1]=0', gpu)
 
     def test_atlas_shaders_use_only_their_own_uniforms(self):
-        for shader, block in (("labelVert", "DCL CONST[2][0..255]"),
-                              ("labelFrag", "DCL CONST[2][0..3391]")):
+        for shader, block in (("labelVert", "DCL CONST[2][0..127]"),
+                              ("labelFrag", "DCL CONST[2][0..3391]\nDCL CONST[3][0..4095]\nDCL CONST[4][0..4095]")):
             compiler.validate_bindings(shader, block)
             for extra in ("DCL SAMP[0]", "DCL IMAGE[0]", "DCL CONST[3][0]", "DCL BUFFER[0]"):
                 with self.assertRaises(ValueError):
@@ -168,12 +174,12 @@ class GpuAssemblyTests(unittest.TestCase):
         vertex = (root/'shaders/labels.vert').read_text(encoding='utf-8')
         self.assertIn('cell_baseline=[1,12]', baker)
         self.assertIn('kCellBaseline=12', layout)
-        self.assertIn('vec2 margin=(q.rect.zw-vec2(16.0))*0.5;', vertex)
-        self.assertIn('pixel=(uv*q.rect.zw-margin)*vec2(q.tile.yz)*0.0625-0.5;', vertex)
+        self.assertIn('vec2 margin=(extent-vec2(16.0))*0.5;', vertex)
+        self.assertIn('pixel=(uv*extent-margin)*dimensions*0.0625-0.5;', vertex)
 
     def test_label_gpu_loads_keep_all_four_words_per_tap(self):
-        loads = ''.join(f'/*0088*/ LDC R2, c[0x3][R1{offset}];\n'
-                        for _ in range(compiler.LABEL_TAPS) for offset in ('', '+0x4', '+0x8', '+0xc'))
+        loads = ''.join(f'/*0088*/ LDC R2, c[0x{bank}][R1{offset}];\n'
+                        for bank in (3,4,5) for _ in range(compiler.LABEL_TAPS) for offset in ('', '+0x4', '+0x8', '+0xc'))
         good = loads + '/*0090*/ EXIT;'
         compiler.validate_gpu_assembly('labelFrag', good)
         with self.assertRaisesRegex(ValueError, 'all four'):
@@ -182,9 +188,9 @@ class GpuAssemblyTests(unittest.TestCase):
             compiler.validate_gpu_assembly('labelFrag', good+'\n/*0098*/ FADD.FTZ.SAT R0, RZ, R4;')
 
     def test_label_ir_rejects_integer_saturation_and_lost_components(self):
-        good = '\n'.join(f'MOV TEMP[{i}], CONST[2][ADDR[0].x]\n' +
+        good = '\n'.join(f'MOV TEMP[{i}], CONST[{bank}][ADDR[0].x]\n' +
                          '\n'.join(f'MOV TEMP[20].x, TEMP[{i}].{lane*4}' for lane in 'xyzw')
-                         for i in range(compiler.LABEL_TAPS)) + '\n' + ('ISLT\nISGE\n' * 2*compiler.LABEL_TAPS)
+                         for bank in (2,3,4) for i in range(compiler.LABEL_TAPS)) + '\n' + ('ISLT\nISGE\n' * 2*compiler.LABEL_TAPS)
         good += 'MOV_SAT TEMP[40].x, TEMP[41].xxxx\n' * compiler.LABEL_SATURATIONS
         compiler.validate_label_ir(good)
         for bad, error in ((good+'MOV_SAT TEMP[0].xy, TEMP[1].xyyy', 'saturation'),

@@ -4,21 +4,31 @@ layout(location=0) in vec2 pixel;
 layout(location=1) flat in uvec4 tile;
 layout(location=0) out vec4 outColor;
 layout(std140,binding=0) uniform Atlas { uvec4 pixels[3392]; };
+layout(std140,binding=1) uniform ExtraA { uvec4 extraA[4096]; };
+layout(std140,binding=2) uniform ExtraB { uvec4 extraB[4096]; };
 float coverage(ivec2 p) {
     // The pinned compiler mislowers integer clamp to float MOV_SAT.
     if(p.x<0) p.x=0;
     if(p.y<0) p.y=0;
     if(p.x>=int(tile.y)) p.x=int(tile.y)-1;
     if(p.y>=int(tile.z)) p.y=int(tile.z)-1;
-    uint address=tile.x+uint(p.y)*tile.y+uint(p.x);
+    bool fourBit=(tile.x&524288u)!=0u;
+    uint sampleIndex=uint(p.y)*tile.y+uint(p.x);
+    uint address=(tile.x&65535u)+(fourBit ? sampleIndex/2u : sampleIndex);
     // Dynamic vector indexing loses the component offset in the pinned compiler.
-    uvec4 words=pixels[address/16u];
+    uvec4 words=uvec4(0u);
+    uint bank=(tile.x>>16u)&3u;
+    if(bank==0u) words=pixels[address/16u];
+    if(bank==1u) words=extraA[address/16u];
+    if(bank==2u) words=extraB[address/16u];
     uint lane=(address/4u)%4u;
     uint word=words.x;
     if(lane==1u) word=words.y;
     if(lane==2u) word=words.z;
     if(lane==3u) word=words.w;
-    return float((word>>((address%4u)*8u))&255u)/255.0;
+    uint value=(word>>((address%4u)*8u))&255u;
+    if(fourBit) value=72u+8u*((value>>((sampleIndex%2u)*4u))&15u);
+    return float(value)/255.0;
 }
 float bilinear(vec2 at) {
     ivec2 p=ivec2(floor(at));

@@ -3,7 +3,11 @@
 #include "AtlasGpu.hpp"
 #include "AtlasRenderer.hpp"
 #include "SurveyShaders.hpp"
+#if SURVEY_LOCALIZED
+#include "Locale.hpp"
+#else
 #include "LabelAtlas.hpp"
+#endif
 #include "SurveyGameProfiles.hpp"
 #include <cstring>
 
@@ -47,6 +51,9 @@ template<class F> bool resolve(F& target,NVNdevice* d,PFNNVNDEVICEGETPROCADDRESS
 }
 bool initialize(NVNdevice* device,PFNNVNDEVICEGETPROCADDRESSPROC get) {
     if(g_ready) return true;
+#if SURVEY_LOCALIZED
+    if(!locale::ready()) return false;
+#endif
     if(g_attempted) return false;
     g_attempted=true;
     PFNNVNMEMORYPOOLBUILDERSETDEFAULTSPROC defaults{};
@@ -81,7 +88,7 @@ bool initialize(NVNdevice* device,PFNNVNDEVICEGETPROCADDRESSPROC get) {
     int padding=-1,limit=0;
     integer(device,NVN_DEVICE_INFO_SHADER_CODE_MEMORY_POOL_PADDING_SIZE,&padding);
     integer(device,NVN_DEVICE_INFO_MAX_UNIFORM_BUFFER_SIZE,&limit);
-    if(padding<0 || kCodeEnd+padding>kSlots || limit<int(atlas::kPixelBytes)) { refuse(2,limit); return false; }
+    if(padding<0 || kCodeEnd+padding>kSlots || limit<65536) { refuse(2,limit); return false; }
     std::memcpy(g_storage,shader::labelVertCode,sizeof(shader::labelVertCode));
     std::memcpy(g_storage+kFragment,shader::labelFragCode,sizeof(shader::labelFragCode));
     NVNmemoryPoolBuilder builder{};
@@ -91,12 +98,20 @@ bool initialize(NVNdevice* device,PFNNVNDEVICEGETPROCADDRESSPROC get) {
     g_address=address(&g_pool);
     if(!g_address) { refuse(4); return false; }
     g_flush(&g_pool,0,kSlots);
+#if SURVEY_LOCALIZED
+    storage(&builder,locale::storage(),locale::active().gpuBytes());
+#else
     storage(&builder,atlas::kPixels,atlas::kPixelPoolBytes);
+#endif
     flags(&builder,NVN_MEMORY_POOL_FLAGS_CPU_CACHED|NVN_MEMORY_POOL_FLAGS_GPU_CACHED);
     if(!initPool(&g_atlasPool,&builder)) { refuse(10); return false; }
     g_atlasAddress=address(&g_atlasPool);
     if(!g_atlasAddress) { refuse(11); return false; }
+#if SURVEY_LOCALIZED
+    g_flush(&g_atlasPool,0,locale::active().gpuBytes());
+#else
     g_flush(&g_atlasPool,0,atlas::kPixelPoolBytes);
+#endif
     if(!initProgram(&g_program,device)) { refuse(5); return false; }
     const NVNshaderData stages[]{{g_address,shader::labelVertControl},{g_address+kFragment,shader::labelFragControl}};
     if(!shaders(&g_program,2,stages)) { refuse(6); return false; }
@@ -151,7 +166,15 @@ void applyState(std::uintptr_t base,unsigned char* state,void* drawContext,bool 
 void submit(const Batch& batch) {
     g_barrier(batch.command,NVN_BARRIER_INVALIDATE_SHADER_BIT);
     g_bind(batch.command,&g_program,63);
-    g_uniform(batch.command,NVN_SHADER_STAGE_FRAGMENT,0,g_atlasAddress,atlas::kPixelBytes);
+    for(unsigned bank=0;bank<3;++bank) {
+#if SURVEY_LOCALIZED
+        const auto& pack=locale::active();
+        const unsigned bytes=pack.bankBytes(bank),offset=bytes ? pack.bankOffset(bank) : pack.bankOffset(0);
+        g_uniform(batch.command,NVN_SHADER_STAGE_FRAGMENT,bank,g_atlasAddress+offset,bytes ? bytes : 16);
+#else
+        g_uniform(batch.command,NVN_SHADER_STAGE_FRAGMENT,bank,g_atlasAddress,atlas::kPixelBytes);
+#endif
+    }
     for(unsigned first=0;first<batch.count;first+=atlas::kBatchQuads) {
         const unsigned count=std::min(atlas::kBatchQuads,batch.count-first);
         g_uniform(batch.command,NVN_SHADER_STAGE_VERTEX,0,g_address+batch.offset+first*sizeof(atlas::Quad),

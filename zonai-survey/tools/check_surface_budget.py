@@ -23,9 +23,12 @@ def nso_profile(data):
     return {"sha256": hashlib.sha256(data).hexdigest(), "file_bytes": len(data),
             "segments": segments, "bss_bytes": bss, "mapped_bytes": (end + 4095) & ~4095}
 
-def validate(profile, symbols, compact=True):
-    if profile["mapped_bytes"] > 1024*1024:
-        raise ValueError("Depth Survey exceeded its 1 MiB mapped-module budget")
+def validate(profile, symbols, compact=True, localized=False):
+    ceiling=946176 if localized else 1024*1024
+    if profile["mapped_bytes"] > ceiling:
+        raise ValueError(f"Survey exceeded its {ceiling}-byte mapped-module budget")
+    if localized and any(name in symbols for name in ('glyphs::kNames','glyphs::kNameBlob','atlas::kPixels')):
+        raise ValueError('Legacy names/atlas linked into localized Survey')
     if compact and any(line.endswith(" zonai_survey::glyphs::kPlacements") for line in symbols.splitlines()):
         raise ValueError("Unused data linked into compact Survey: zonai_survey::glyphs::kPlacements")
     for name in NATIVE_FONT_SYMBOLS:
@@ -38,9 +41,10 @@ if __name__ == "__main__":
     parser.add_argument("--elf", type=Path, required=True)
     parser.add_argument("--nm", type=Path, required=True)
     parser.add_argument("--compact", action="store_true")
+    parser.add_argument("--localized", action="store_true")
     args = parser.parse_args()
     result = subprocess.run([str(args.nm), "--defined-only", "--demangle", str(args.elf)],
                             capture_output=True, text=True, check=True, timeout=30)
     profile = nso_profile(args.nso.read_bytes())
-    validate(profile, result.stdout, args.compact)
-    print(f"Survey budget OK: mapped={profile['mapped_bytes']} ceiling=1048576; not total runtime RAM")
+    validate(profile, result.stdout, args.compact, args.localized)
+    print(f"Survey budget OK: mapped={profile['mapped_bytes']} ceiling={946176 if args.localized else 1048576}; not total runtime RAM")

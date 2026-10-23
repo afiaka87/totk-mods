@@ -5,7 +5,11 @@
 #include "AtlasRenderer.hpp"
 #include "GlyphIndex.hpp"
 #include "IconGlyphs.hpp"
+#if SURVEY_LOCALIZED
+#include "Locale.hpp"
+#else
 #include "LabelAtlas.hpp"
+#endif
 #include "LabelPlacement.hpp"
 #include "SurveyOptions.hpp"
 #include <cstring>
@@ -17,21 +21,42 @@ struct Banner { char lines[2][96]{}; std::uint64_t until{}; };
 atlas::Mailbox<Banner> g_banners;
 const GlyphFrame* g_frame{};
 const Banner* g_banner{};
-static_assert(pure::kMaxGlyphs*(atlas::kLongestName+1)+190 <= atlas::kMaxQuads);
 static_assert(pure::kMaxGlyphs<=atlas::kMaxLabels);
 atlas::NamePlacement g_names;
 std::uint64_t g_lastBuild{};
-float advance(unsigned c) { return atlas::kAdvances[atlas::asciiOffset(c)/256]/64.f; }
-float textWidth(const char* p) {
-    float width=0; while(p && *p) width+=advance(atlas::nextCharacter(p)); return width+2;
+unsigned next(const char*& p,bool encoded) {
+#if SURVEY_LOCALIZED
+    if(encoded) return locale::Pack::next(p);
+    return atlas::asciiOffset(atlas::nextCharacter(p))/256+1;
+#else
+    (void)encoded;
+    return atlas::asciiOffset(atlas::nextCharacter(p))/256+1;
+#endif
 }
-void quad(atlas::Quad* out,unsigned& n,float x,float y,unsigned offset,unsigned size,unsigned color) {
-    if (n<atlas::kMaxQuads) out[n++]={{x,y,16,16},{offset,size,size,color}};
+float advance(unsigned id) {
+#if SURVEY_LOCALIZED
+    return locale::active().advance(id);
+#else
+    return atlas::kAdvances[id-1]/64.f;
+#endif
 }
-void text(atlas::Quad* out,unsigned& n,const atlas::PixelGrid& grid,float x,float y,const char* p,unsigned color) {
+unsigned tile(unsigned id) {
+#if SURVEY_LOCALIZED
+    return locale::active().tile(id);
+#else
+    return (id-1)*256;
+#endif
+}
+float textWidth(const char* p,bool encoded=false) {
+    float width=0; while(p && *p) width+=advance(next(p,encoded)); return width+2;
+}
+void iconQuad(atlas::Quad* out,unsigned& n,float x,float y,unsigned offset,unsigned color) {
+    if (n<atlas::kMaxQuads) out[n++]={x,y,offset|atlas::kIconTile,color};
+}
+void text(atlas::Quad* out,unsigned& n,const atlas::PixelGrid& grid,float x,float y,const char* p,unsigned color,bool encoded=false) {
     while(p && *p) {
-        const unsigned c=atlas::nextCharacter(p);
-        if(c!=' ' && n<atlas::kMaxQuads) out[n++]=atlas::letterQuad(grid,x,y,atlas::asciiOffset(c),color);
+        const unsigned c=next(p,encoded);
+        if(c!=1 && n<atlas::kMaxQuads) out[n++]=atlas::letterQuad(grid,x,y,tile(c),color);
         x+=advance(c);
     }
 }
@@ -53,8 +78,12 @@ unsigned collectLabels(const GlyphFrame& frame,const float* view,const float* pr
         float x{},y{};
         if(!atlas::project(view,proj,g.x,g.y+0.9f,g.z,x,y) || x<24 || x>1256 || y<16 || y>704) continue;
         x=grid.snapX(x); y=grid.snapY(y);
+#if SURVEY_LOCALIZED
+        names[shown]=locale::active().name(g.name);
+#else
         names[shown]=pure::glyphDisplayName(g.name);
-        labels[shown]={g.name,g.x,g.z,g.distanceSq,{x,y,x+16,y+20},names[shown] ? x+19+textWidth(names[shown]) : 0};
+#endif
+        labels[shown]={g.name,g.x,g.z,g.distanceSq,{x,y,x+16,y+20},names[shown] ? x+19+textWidth(names[shown],true) : 0};
         glyphOf[shown++]=order[i];
     }
     return shown;
@@ -76,6 +105,9 @@ void atlasBanner(const char* first,const char* second,unsigned ticks) {
     g_banners.publish(b);
 }
 bool atlasHasContent() {
+#if SURVEY_LOCALIZED
+    if(!locale::ready()) return false;
+#endif
     g_frame=&g_frames.consume(); g_banner=&g_banners.consume();
     return g_frame->count || g_banner->until>svcGetSystemTick();
 }
@@ -88,6 +120,7 @@ unsigned buildAtlasQuads(const float* view,const float* proj,const atlas::PixelG
     const unsigned shown=collectLabels(frame,view,proj,grid,labels,glyphOf,names);
     float nameAlpha[pure::kMaxGlyphs];
     g_names.place(labels,shown,secondsSinceLastBuild(),nameAlpha);
+    unsigned nameBudget=atlas::kMaxQuads-shown-190; // Reserve every icon and both complete banners.
     for(unsigned k=0;k<shown;++k) {
         const auto& g=frame.glyphs[glyphOf[k]];
         const float x=labels[k].icon.x0, y=labels[k].icon.y0;
@@ -95,8 +128,14 @@ unsigned buildAtlasQuads(const float* view,const float* proj,const atlas::PixelG
         const float dim=distance<=40 ? 1 : distance>=300 ? 0.35f : 1-(distance-40)/260*0.65f;
         const unsigned icon=(g.flags&glyphs::kFlagInChest) ? unsigned(icons::Icon::Chest) : g.icon;
         const auto tint=pure::glyphTint(icon);
-        quad(out,n,x,y,atlas::iconOffset(icon),32,atlas::rgba(tint.r,tint.g,tint.b,g.alpha*dim));
-        if(nameAlpha[k]>0) text(out,n,grid,x+grid.snapX(19),y,names[k],atlas::rgba(1,1,1,g.alpha*nameAlpha[k]));
+        iconQuad(out,n,x,y,atlas::iconOffset(icon),atlas::rgba(tint.r,tint.g,tint.b,g.alpha*dim));
+        if(nameAlpha[k]>0 && names[k]) {
+            unsigned needed=0; const char* p=names[k];
+            while(*p) needed+=next(p,true)!=1;
+            if(atlas::admitName(needed,nameBudget)) {
+                text(out,n,grid,x+grid.snapX(19),y,names[k],atlas::rgba(1,1,1,g.alpha*nameAlpha[k]),true);
+            }
+        }
     }
     if(g_banner->until>svcGetSystemTick()) {
         const auto width=std::max(textWidth(g_banner->lines[0]),textWidth(g_banner->lines[1]));
