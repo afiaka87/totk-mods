@@ -9,5 +9,11 @@ The romfs files in the release archives are edited copies of Tears of the Kingdo
 tables, effect file list, actor packs, models, inventory icons and the resource-size table). The
 module, texture sidecars and sound bank also carry content converted from Breath of the
 Wild 1.5.0, and the two wheel-page icons are converted from Breath of the Wild 1.6.0 inventory
-icons. They only work with a legally owned copy of the game and are not relicensed. Native
-builds use devkitPro/devkitA64.
+icons. The Champions' Blessings carry content converted from Breath of the Wild 1.6.0: their
+sounds and voice cues, the Champion item names, descriptions and icons, and Gale's crouch pose.
+Their effects are recolored copies of Tears of the Kingdom effects. They only work with a
+legally owned copy of the game and are not relicensed. Native builds use devkitPro/devkitA64.
+
+The supplied native sphere data is the donor for the bomb models/materials, effect bank and
+explosion routing; the cube adapts that route using its own geometry and texture maps.
+Third-party and game-derived assets retain their original rights and are not MIT licensed.

@@ -15,11 +15,17 @@ import zlib
 from pathlib import Path
 
 import byml
+from resource_merge import merge_byml, merge_elink, merge_gamedata, merge_mals
+from champion_audio import Sound, append_records
 
 ABILITIES = ("totk-stasis", "totk-remote-bomb", "totk-cryonis")
 BANK = "Sound/Resource/UI_Static.bars.zs"
-TABLES = ("RSDB/ActorInfo.Product.121.rstbl.byml.zs", "RSDB/GameActorInfo.Product.121.rstbl.byml.zs")
-SOUND_DONOR = "Sys_HeartRecovery_00"
+TABLES = tuple(f"RSDB/{name}.Product.121.rstbl.byml.zs"
+               for name in ("ActorInfo", "GameActorInfo", "PouchActorInfo"))
+ELINK = "ELink2/elink2.Product.110.belnk.zs"
+SLINK = "SLink2/slink2.Product.110.bslnk.zs"
+SHARED_BYML = ("GameData/GameDataList.Product.110.byml.zs",
+               "Effect/EffectFileInfo.Product.110.Nin_NX_NVN.byml.zs")
 RESOURCE_TABLE = "System/Resource/ResourceSizeTable.Product.121.rsizetable.zs"
 
 
@@ -64,8 +70,7 @@ def added_sounds(audio_bank, clean, bank):
         if entry.audio_offset < stock_end or not flags & 2 or flags & ~7:
             raise ValueError(f"unsupported added sound {entry.name}")
         wave = bank.data[entry.audio_offset : end]
-        peak = struct.unpack_from("<f", entry.metadata, 0x38)[0]
-        sounds.append((entry, audio_bank.Addition(entry.name, wave, peak, bool(flags & 1), bool(flags & 4))))
+        sounds.append((entry, Sound(entry.name, entry.metadata, wave)))
     return sounds
 
 
@@ -75,10 +80,7 @@ def merge_bank(audio_bank, clean_raw: bytes, banks: dict[str, bytes]):
     merged = clean
     for sounds in per_ability.values():
         additions = [addition for _, addition in sounds]
-        for start in range(0, len(additions), 8):
-            merged = audio_bank.read_bank(
-                audio_bank.append_assets(merged, tuple(additions[start : start + 8]), SOUND_DONOR)
-            )
+        merged = audio_bank.read_bank(append_records(merged, additions))
     audio_bank.verify_preserved(clean, merged)
     by_name = {entry.name: entry for entry in merged.entries}
     for name, sounds in per_ability.items():
@@ -121,6 +123,9 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True, help="build directory")
     parser.add_argument("--own", type=Path, action="append", default=[],
                         help="a romfs tree only the combined mod ships, such as its wheel icons")
+    parser.add_argument("--own-forces", type=Path, action="append", default=[])
+    parser.add_argument("--xlink", type=Path, help="reviewed XLink converter for shared ELink")
+    parser.add_argument("--xlink-names", type=Path, help="private effect user names")
     args = parser.parse_args()
     sys.path[:0] = [str(args.repo / "scripts"), str(args.repo / "framework/bridgefs/tools")]
     from bridgefs_tools import audio_bank
@@ -129,6 +134,9 @@ def main() -> int:
     owners: dict[str, list[tuple[str, Path]]] = {}
     forces: dict[str, int] = {}
     inputs = hashlib.sha256(Path(__file__).read_bytes())
+    inputs.update(Path(__file__).with_name('resource_merge.py').read_bytes())
+    inputs.update(Path(__file__).with_name('champion_audio.py').read_bytes())
+    inputs.update((args.romfs / RESOURCE_TABLE).read_bytes())
     for name in ABILITIES:
         root = args.repo / "mods/code" / name
         manifest = tomllib.loads((root / "mod.toml").read_text(encoding="utf-8"))
@@ -139,13 +147,31 @@ def main() -> int:
                 inputs.update(entry["dest"].encode() + b"\0" + source.read_bytes())
         for resource, size in read_forces(root, manifest.get("deploy", {})).items():
             forces[resource] = max(forces.get(resource, 0), size)
-    for tree in args.own:
+    for index, tree in enumerate(args.own):
+        if not tree.is_dir():
+            raise ValueError(f'suite resource tree is missing: {tree}')
         for source in sorted(p for p in tree.rglob("*") if p.is_file()):
             path = source.relative_to(tree).as_posix()
-            if path in owners:
-                raise ValueError(f"{path} is shipped by {owners[path][0][0]} and by the combined mod")
-            owners[path] = [("botw-abilities", source)]
+            owners.setdefault(path, []).append((f"botw-abilities-{index}", source))
             inputs.update(path.encode() + b"\0" + source.read_bytes())
+    for path in args.own_forces:
+        raw = path.read_bytes()
+        inputs.update(raw)
+        for line in raw.decode('utf-8').splitlines():
+            if line.strip() and not line.lstrip().startswith('#'):
+                resource, size = line.split('\t')
+                forces[resource] = max(forces.get(resource, 0), int(size))
+    xlink = None
+    if any(len(owners.get(path, [])) > 1 for path in (ELINK,SLINK)):
+        sys.path.insert(0, str(args.repo / 'mods/code/totk-remote-bomb/tools'))
+        import import_audio as xlink
+        if not args.xlink or sha256(args.xlink.read_bytes()) != xlink.XLINK_SHA256 or not args.xlink_names:
+            raise ValueError('shared ELink requires the reviewed converter and private user names')
+        inputs.update(args.xlink.read_bytes() + args.xlink_names.read_bytes())
+    for path, sources in sorted(owners.items()):
+        if len(sources) > 1:
+            inputs.update((args.romfs / path).read_bytes())
+    inputs.update(json.dumps(forces, sort_keys=True).encode())
 
     romfs_out = args.output / "romfs"
     receipt_path = args.output / "compose-receipt.json"
@@ -179,6 +205,20 @@ def main() -> int:
             raw, added = merge_table(clean, members)
             resource = path.removesuffix(".zs")
             floor = max(budget(resource), len(raw)) + max(4096, (len(raw) - len(clean)) * 10)
+        elif path in SHARED_BYML:
+            merger = merge_gamedata if path.startswith('GameData/') else merge_byml
+            raw = merger(clean, members)
+            added = {name: sha256(value) for name, value in members.items()}
+            floor = max(budget(path[:-3]), len(raw)) + max(65536, (len(raw) - len(clean)) * 10)
+        elif path.startswith('Mals/') and path.endswith('.sarc.zs'):
+            raw = merge_mals(clean, members)
+            added = {name: sha256(value) for name, value in members.items()}
+            floor = max(budget(path[:-3]), len(raw)) + max(65536, (len(raw) - len(clean)) * 4)
+        elif path in (ELINK,SLINK):
+            raw = merge_elink(clean, members, args.output / ('slink-merge' if path == SLINK else 'elink-merge'),
+                              args.xlink, args.xlink_names, xlink, sound=path == SLINK)
+            added = {name: sha256(value) for name, value in members.items()}
+            floor = max(budget(path[:-3]), len(raw)) + max(65536, (len(raw) - len(clean)) * 10)
         else:
             raise ValueError(f"{path} is shipped by {[name for name, _ in sources]} and has no merge")
         target.write_bytes(z.compress(raw, target.name))

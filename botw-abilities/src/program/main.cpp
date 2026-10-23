@@ -5,6 +5,8 @@
 #include "CryonisInstall.hpp"
 #include "StasisInstall.hpp"
 #include "wheel/WheelPage.hpp"
+#include "champions/Audio.hpp"
+#include "champions/Runtime.hpp"
 
 // Shared hooks stack in installation order, so Stasis sees controller input first.
 extern "C" void exl_main(void *, void *) {
@@ -15,7 +17,16 @@ extern "C" void exl_main(void *, void *) {
     const bool cryonis = cryonis::install(base);
     const bool page = botw_abilities::wheel::install(base, stasis ? stasis::chooseFromWheel : nullptr,
                                                      cryonis ? cryonis::chooseFromWheel : nullptr);
-    Logging.Log("[botw-abilities] v0.1.3 stasis=%u remote-bomb=%u cryonis=%u wheel-page=%u",
+    const bool championAudio = botw_abilities::champions::audio::install(base);
+    const bool champions = championAudio && botw_abilities::champions::install(base);
+    Logging.Log("[botw-abilities] suite stasis=%u remote-bomb=%u cryonis=%u wheel-page=%u",
                 unsigned(stasis), unsigned(remoteBomb), unsigned(cryonis), unsigned(page));
+    Logging.Log("[botw-abilities] champion-audio=%u champion-runtime=%u", unsigned(championAudio), unsigned(champions));
+#ifdef BOTW_ABILITIES_NATIVE_SPHERE
+    Logging.Log("[botw-abilities] NATIVE_SPHERE native_model_physics_blast=1");
+#endif
+#ifdef BOTW_ABILITIES_NATIVE_CUBE
+    Logging.Log("[botw-abilities] NATIVE_CUBE native_model_physics_blast=1");
+#endif
 }
 extern "C" NORETURN void exl_exception_entry() { EXL_ABORT("unreachable"); }

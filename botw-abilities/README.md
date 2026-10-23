@@ -1,11 +1,16 @@
-# BotW Abilities v0.1.3
+# BotW Abilities v0.2.1
 
-This update moves Stasis+ and Cryonis to a second page of the ability wheel (hold L, tap R)
-and removes the old right-stick chords and the Map form switch. It keeps the `subsdk7` slot.
+This update adds the four Champions' activation and recharge voices, keeps their charge icons
+visible during gameplay, and expands Urbosa's Fury to a 50 m radius with a growing yellow field.
+Daruk's shield drops after blocking a hit; lower and raise the shield to use it again.
+The Champions themselves do not appear. Link keeps Gale's crouch and launch animation.
+Stasis, Remote Bomb and Cryonis are unchanged. The mod keeps `subsdk7` and the second wheel page.
+The module maps 4,026,368 bytes (3.84 MiB); this excludes game-managed resources and GPU memory.
 
-Breath of the Wild's Stasis, Remote Bomb and Cryonis in Tears of the Kingdom 1.2.1, in one add-on,
-usable together. Each ability is the one from the standalone Stasis, Remote Bomb and Cryonis mods;
-this add-on builds all three into one module so they can be enabled at the same time.
+Breath of the Wild's Stasis, Remote Bomb, Cryonis and Champions' Blessings in Tears of the Kingdom
+1.2.1, in one add-on, usable together. Stasis, Remote Bomb and Cryonis are the abilities from the
+standalone mods, built into one module so they can be enabled at the same time; the Champions'
+Blessings exist only in this add-on.
 
 ## Stasis
 
@@ -46,9 +51,10 @@ and arrow controls and set off remotely with a tap of L.
 - A used form recharges for 3 seconds, then returns to Materials.
 - Ultrahand can grab both bombs.
 
-This is the Remote Bomb+ profile: blast damage 24 and a 3-second recharge. The blast is the Time
-Bomb's explosion; Link takes the game's normal blast reaction and damage, and loose objects are
-pushed by BotW's blast pressure calculation.
+This is the Remote Bomb+ profile with a 3-second recharge. Both shapes use native actors for
+materials, glow, trails, physics and explosions. The sphere is resized to the previous bomb's
+size; the cube keeps its original shape and box collider. Native explosion behavior replaces
+the previous shader-rendered bomb and custom blast-pressure route.
 
 ## Cryonis
 
@@ -66,34 +72,67 @@ Up to three pillars stay in the world; a fourth replaces the oldest. Pillars are
 original size (2.7 x 3.6 x 2.7 m), placement reach is 60 m, and anything up to two feet below the
 surface is lifted with the ice.
 
+## Champions' Blessings
+
+BotW's four Champion abilities. Each is triggered by something Link already does, so none of them
+uses the ability wheel or a new button. All four are available from the start.
+
+- **Mipha's Grace:** when Link's hearts run out, every heart container refills and 5 temporary
+  yellow hearts are added. 1 charge, 24-minute recharge.
+- **Revali's Gale:** jump with X and keep holding it after Link lands. He stops, crouches and
+  gathers the updraft; a chime marks it ready. Release X to rise, and the paraglider opens by
+  itself. Releasing before the chime cancels without using a charge. Gale does not start from a
+  run: land and come to a stop first. 3 charges, 6-minute recharge.
+- **Daruk's Protection:** raise the shield (ZL) and an orange shell surrounds Link. Each hit it
+  blocks uses one charge, without damage, knockback or shield wear. Lower and raise the shield
+  after a block to bring the shell back. 6 charges, 18-minute recharge.
+- **Urbosa's Fury:** release a charged spin attack (hold and release Y) and lightning strikes every
+  eligible enemy within a 50 m sphere. 3 charges, 12-minute recharge.
+
+Recharge starts after the last charge is used and restores every charge at once, with a chime
+and the Champion's spoken ready announcement.
+Holding the matching Sage's vow (Tulin for Revali, Sidon for Mipha, Yunobo for Daruk, Riju for
+Urbosa) makes that blessing recharge three times faster, and inside Hyrule Castle each recharge is
+three times faster again, as in BotW. Recharge pauses in menus. The blessings are off inside
+shrines, where a fatal hit uses a fairy as usual.
+
+Each blessing has its own Key Item, added when a save loads. Use it from the Key Items pouch to
+switch that blessing off or back on. Charges, recharge and these switches are saved with each
+save file. Enabled blessings keep their icon and charge pips in the top-left row beside Stasis
+and the bombs; a ring shows recharge progress. The blessings play BotW's own sounds and voice
+cues, and Gale uses BotW's crouch pose.
+
 ## Using them together
 
 - Choosing an ability from the wheel, built-in or added, puts the other added abilities away.
 - Closing the wheel on its second page keeps the equipped built-in ability.
 - A Remote Bomb left out after choosing another ability still answers L, as in BotW. Once it has
   gone off, L returns to the chosen ability.
-- Stasis's countdown ring sits in the top left beside the ability icon. The bomb icon and its
-  recharge ring sit to its right, at the same size.
+- Stasis's countdown ring sits in the top left beside the ability icon. The bomb icon, its
+  recharge ring and Champion icons follow to its right, at the same size.
 - Stasis and Cryonis play the original BotW sounds.
 
 ## Requirements and installation
 
 Requires Tears of the Kingdom **1.2.1**, build `9B4E43650501A4D4`.
 
-**Emulator:** extract `botw-abilities-v0.1.3-emulator-subsdk7.zip` and copy its `BotW Abilities`
+**Emulator:** extract `botw-abilities-v0.2.1-emulator-subsdk7.zip` and copy its `BotW Abilities`
 folder into the game's mod folder (right-click the game, **Open Mod Data Location**). Enable
 **BotW Abilities** in the game's add-on list.
 
-**Switch (Atmosphere):** extract `botw-abilities-v0.1.3-switch-subsdk7.zip` and copy its
+**Switch (Atmosphere):** extract `botw-abilities-v0.2.1-switch-subsdk7.zip` and copy its
 `0100F2C0115B6000` folder into `atmosphere/contents/` on the SD card.
 
 **Upgrading from v0.1.0:** remove the old BotW Abilities add-on before installing this update.
 On Switch, remove this mod's old `exefs/subsdk5` before copying the new files. Leaving both
 modules installed loads the abilities twice. Preserve files belonging to other mods.
 
-Both archives contain the same files: `exefs/subsdk7`, `exefs/main.npdm`, and 27 files under
-`romfs/`. Keep both `romfs/BotwAbilities/Textures/*.bin` files; they contain the streamed
-texture sources used by the shared emulator/Switch build.
+**Upgrading from v0.1.4:** replace the whole add-on folder so no file from the earlier version
+remains. Existing saves load, and the Champion Key Items are added on the first load.
+
+Both archives contain the same game payload: `exefs/subsdk7`, `exefs/main.npdm`, and resources under
+`romfs/`. Keep both `romfs/BotwAbilities/Textures/*.bin` files and
+`romfs/BotwAbilities/Champions/GalePose.bin`; they hold streamed textures and Gale's pose.
 
 ## Compatibility
 
@@ -102,17 +141,33 @@ texture sources used by the shared emulator/Switch build.
 - Do not enable it together with the standalone Stasis, Remote Bomb or Cryonis mods.
 - It replaces the interface sound bank (`UI_Static`), five RSDB tables (actor, attachment, game
   actor, pouch and tag), the save-data schema (`GameDataList`), the English text archive, the
-  effect and sound link tables, the effect file list and the resource-size table, and adds five
-  actor packs, two models, four inventory icons and two wheel icons. Mods that replace any of those files conflict
-  unless their changes are merged. If you use
-  another mod that ships its own resource-size table, merge the tables with a tool such as TKMM.
-- Ice, bombs and interface elements retain their native resolution; glow uses an 800x450 buffer.
-  Game render resolutions above 1600x900 are outside the supported glow/depth capacity.
+  effect and sound link tables, the effect file list and the resource-size table, and adds
+  the pillar and bomb actor packs, the Champion effect, updraft and lightning actor packs,
+  native models, textures, an effect bank, Gale's pose file and inventory, Key Item and wheel
+  icons. Mods that replace any of those files conflict
+  unless their changes are merged. Installing this add-on separately beside TKMM's output does
+  not merge those shared files; changing load order cannot retain both mods' additions.
+- TKMM compatibility is not yet verified. TKMM merges several of these formats, but its current
+  merger uses priority for the effect/sound link tables and interface sound bank, and recalculates
+  resource budgets instead of preserving the supplied resource-size table. A combined setup needs
+  those files and budgets checked after merging. Simply importing the mod is not a confirmed fix.
+  The TKMM **Use romfslite** option selects the Optimizer's alternate file loader; it does not
+  resolve shared-file conflicts.
+- Bombs and Stasis use native rendering/bloom; the former shared 800x450 private glow/depth
+  targets are removed. Ice and interface elements retain their existing resolution.
 
 ## Known issues
 
-- v0.1.3 was tested individually on Switch hardware and in Citron; earlier versions were also
-  tested in Ryubing. Combinations with other code mods have not yet been tested on Switch.
+- The v0.2.1 gameplay, voices and icons were tested in Citron before final source cleanup.
+  The cleanup removes the invisible actors and starts their voices directly from ability use;
+  it has offline checks but no separate boot. The Champions' Blessings have not yet been tested on Switch
+  hardware; v0.1.4's three abilities were. Combinations with other code mods have not yet been
+  tested on Switch.
+- Daruk's Protection blocks attacks but deflects nothing. Its shell is Vow of Sidon's shell
+  tinted orange, and the Champions' spirits from BotW are replaced by effects.
+- Urbosa's Fury has once missed an enemy close by and above Link.
+- Mipha's Grace is meant to act before a fairy is used; that order, the shrine rule and the
+  Hyrule Castle and Sage's-vow recharge speeds have not yet been checked in game.
 - At startup each ability checks the game code it uses and stays inactive on any other game
   version.
 - Stasis does not highlight nearby objects while aiming; only the selected target is highlighted.
@@ -123,7 +178,7 @@ texture sources used by the shared emulator/Switch build.
 
 The source for the three abilities is in the `stasis`, `remote-bomb`, `cryonis` and
 `runtime-support` folders of this repository; this folder adds the combined module's entry point,
-the second wheel page and the tools that build the combined game data. It is **not** a complete project and comes with
+the second wheel page, the Champions' Blessings and the tools that build the combined game data. It is **not** a complete project and comes with
 no guarantee that it builds or works as-is; you set up the toolchain and framework yourself.
 
 - Toolchain: devkitPro devkitA64. Native source uses C++26.
@@ -133,7 +188,8 @@ no guarantee that it builds or works as-is; you set up the toolchain and framewo
   The shared font renderer also needs its `native-font/NvnAbi.hpp` declarations and a generated
   `NativeFontShaders.hpp` from `runtime-support/shaders/nativefont.{vert,frag}`. SDK declarations,
   compiled shader arrays and owned-game font artwork are not in the public source.
-- Layout: compile `src/program/main.cpp` and `src/wheel/WheelPage.cpp` from this folder with each
+- Layout: compile `src/program/main.cpp`, `src/wheel/WheelPage.cpp` and `src/champions/*.cpp`
+  from this folder with each
   ability's `src/engine`, `src/feature`, `src/presentation`, `src/pure` and `src/program` folders
   (leaving out each ability's own `src/program/main.cpp`), with those folders, this folder's `src`
   and `../runtime-support/include` on the include path.
@@ -142,26 +198,36 @@ no guarantee that it builds or works as-is; you set up the toolchain and framewo
   `HeapSize 0x40000`, `JitSize 0x8000`, `InlinePoolSize 0x2000`, `LogBufferSize 1024`. Every hook
   is installed at a fixed offset, so the reloc table in `offsets.hpp` can stay empty.
 - Compile definitions: `TOTK_VERSION=121`, `BOTW_ABILITIES_COMPACT_UI=1` and
-  `BOTW_ABILITIES_STREAM_TEXTURES=1`; for the Remote Bomb sources also
-  `REMOTE_BOMB_UPGRADED=1` and `REMOTE_BOMB_HUD_BESIDE_STASIS=1`; `STASIS_WHEEL_CHORD=0` for the
+  `BOTW_ABILITIES_STREAM_TEXTURES=1`; enable `BOTW_ABILITIES_NATIVE_SPHERE=1` and
+  `BOTW_ABILITIES_NATIVE_CUBE=1` on the suite and Remote Bomb sources, plus
+  `STASIS_NATIVE_BLOOM=1` on Stasis; for the Remote Bomb sources also
+  `REMOTE_BOMB_UPGRADED=1`, `REMOTE_BOMB_HUD_BESIDE_STASIS=1` and `BOTW_ABILITIES_CHAMPIONS=1`; `STASIS_WHEEL_CHORD=0` for the
   Stasis sources and `CRYONIS_WHEEL_CHORD=0` for the Cryonis sources. Compile with
   `-ffp-contract=off`. Program ID `0100F2C0115B6000`, module `subsdk7`.
 - Build each ability's generated headers and game data as its own README describes. Run
   `tools/stream_textures.py` and `tools/compact_font.py`; put their generated header directory
   before member include directories and include both texture sidecars in RomFS. Link the
-  authored shared native-font sources and generate their shaders and atlas. The test-only SD
-  logger and periodic memory sampler are removed from this release.
+  authored shared native-font sources and generate their shaders and atlas. Native actor/model preparation also uses the supplied native sphere data, Switch Toolbox,
+  an ASTC encoder and external model compression helpers (`-ToolingHelpers`). These inputs
+  and helper dependencies are not included in the source repository. Test-only SD logging
+  and periodic memory sampling are absent.
   `tools/compose_resources.py` merges the three abilities' game data into one RomFS against your
   own TotK 1.2.1 dump, `tools/build_wheel_icons.py` makes the two wheel-page icons from your own
-  BotW 1.6.0 dump, and `tools/build_release_restbl.py` builds the resource-size table for it.
+  BotW 1.6.0 dump, and `tools/build_release_restbl.py` builds the resource-size table for it. The
+  `tools/build_champion_*.py` scripts generate the Champion headers and game data from your own
+  TotK 1.2.1 and BotW 1.6.0 dumps: effects, save data, the updraft and lightning actors, Key Items
+  and HUD icons, sounds, and Gale's pose (`tools/export_champion_pose.ps1` uses Switch Toolbox).
+  The effect step also needs an XLink converter, which is not included.
   They use helper modules and a resource-table tool from the author's private repository, which
   are not included. The game data is not part of this source; it is only in the release archives.
 
 ## Tests
 
 Each ability folder has its own host tests; see its README. This folder's `tests` check the
-second wheel page (layout, page turns and picks); run `tests/run_host_tests.ps1` with CMake and a
-C++23 compiler. doctest is fetched when it is not vendored.
+second wheel page (layout, page turns and picks), the native bomb policies and the Champions'
+charges, triggers, blocking, healing, targets, pose, sound, save data and HUD; run
+`tests/run_host_tests.ps1` with CMake and a C++23 compiler. doctest is fetched when it is not
+vendored.
 
 ## A note on the code
 
@@ -171,6 +237,7 @@ highly permissive (MIT) and I hope this adds to the community.
 
 ## Credits
 
+- The supplied native sphere data is the donor for bomb materials, trails and explosion routing.
 - exlaunch by shadowninja108 and contributors.
 - devkitPro.
 

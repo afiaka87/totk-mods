@@ -1,0 +1,11 @@
+{
+  "gale": {
+    "actor": "AscendingCurrent_BotwGale",
+    "donor": "AscendingCurrent",
+    "wind_speed": 45.0,
+    "scale": [3.0, 10.0, 3.0],
+    "launch_speed": 18.0,
+    "channel_seconds": 1.0,
+    "duration_seconds": 20.0
+  }
+}
