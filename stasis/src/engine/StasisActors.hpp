@@ -2,6 +2,7 @@
 // Copyright (c) Clay Mullis
 #pragma once
 #include "StasisEngine.hpp"
+#include "StasisActorPolicy.hpp"
 #include "StasisPresentation.hpp"
 #include "StasisTarget.hpp"
 #include "totk/engine/ActorHandle.hpp"
@@ -44,6 +45,10 @@ struct Weapon {
 bool startsWith(const char *value, const char *prefix);
 const char *actorName(std::uintptr_t actor);
 inline bool isEnemy(std::uintptr_t actor) { return startsWith(actorName(actor), "Enemy_"); }
+inline bool isLivingTarget(std::uintptr_t actor) {
+    const auto* name = actorName(actor);
+    return name && livingTarget(name);
+}
 Vec3 position(std::uintptr_t actor);
 std::uintptr_t controllerSet(std::uintptr_t actor);
 std::uintptr_t physicsStructure(std::uintptr_t set);

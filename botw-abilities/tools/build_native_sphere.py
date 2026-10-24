@@ -171,6 +171,13 @@ def build(args):
             root['Components'].pop('EventMemberRef', None)
             root['Components'].pop('NavMeshObjectRef', None)
         records[root_name] = encode(root)
+        if actor != BLAST:
+            ai_path = resource_path(root['Components']['AIInfoRef'])
+            ai = byml.Byml(records[ai_path]).parse()
+            if ai['PostCalcAIRef'] != 'Work/AI/Root/SpObj_TimerBomb.root.ain':
+                raise ValueError('Unexpected native bomb timer graph: ' + actor)
+            # Keep native control/contact behavior. The scoped ExecuteSpObjTimerBomb
+            # hook bypasses only the timer update for our eight remote-bomb actors.
         names = {}
         for name in records:
             if name.endswith('.bgyml'):

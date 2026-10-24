@@ -78,6 +78,16 @@ TEST_CASE("An ability whose mod did not install leaves its wedge empty") {
     CHECK(plan(1, kBottomLeft, {}, offer(Choice::Cryonis)).valid);
     CHECK(exitPage(1, kBottom, false, offer(Choice::Cryonis)).choice == Choice::None);
 }
+TEST_CASE("Both remote bomb wedges choose their own shape and respect cancellation") {
+    const auto offers = kBoth | offer(Choice::Sphere) | offer(Choice::Cube);
+    CHECK(exitPage(1,0,false,offers).choice == Choice::Sphere);
+    CHECK(exitPage(1,1,false,offers).choice == Choice::Cube);
+    CHECK(exitPage(1,0,false,offers).cancel);
+    CHECK(exitPage(1,1,true,offers).choice == Choice::None);
+    CHECK(exitPage(1,1,false,offer(Choice::Sphere)).choice == Choice::None);
+    CHECK(std::string_view(plan(1,0,{},offers).path)=="UI/Tex/Icon/BotwBomb.bntx");
+    CHECK(std::string_view(plan(1,1,{},offers).path)=="UI/Tex/Icon/BotwBombCube.bntx");
+}
 
 TEST_CASE("Releasing L on the abilities page picks the wedge and always closes as cancelled") {
     const auto stasis = exitPage(1, kBottom, false, kBoth);

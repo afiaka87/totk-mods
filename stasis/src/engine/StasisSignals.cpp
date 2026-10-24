@@ -142,7 +142,9 @@ void acceptedHit(void *record, void *victimComponent, void *attackInfo) {
     hit.attacker = attacker.actor;
     const auto weapon = weaponOf(hit.attacker);
     hit.weapon = weapon.family;
-    if (weapon.family >= 0 && startsWith(actorName(weapon.user), "Player")) {
+    hit.playerStrike = startsWith(actorName(weapon.user), "Player") ||
+                       startsWith(actorName(hit.attacker), "Player");
+    if (hit.playerStrike) {
         if (const auto body = mainBody(target); !valid(body))
             Logging.Log("[stasis] PLAYER_DIRECTION_REFUSED missing body");
         else if (const auto com = centerOfMass(body), origin = position(weapon.user);
@@ -150,6 +152,16 @@ void acceptedHit(void *record, void *victimComponent, void *attackInfo) {
             hit.direction = hit_adapter::playerDirection(hit.normal, origin, com);
         else
             Logging.Log("[stasis] PLAYER_DIRECTION_REFUSED invalid position/COM");
+    } else if (valid(hit.attacker) &&
+               call<bool (*)(std::uintptr_t, bool, bool)>(offsets::kGameActorIsProjectile)(
+                   hit.attacker, false, false)) {
+        // BotW's Bullet branch uses travel direction, retaining the incoming force magnitude.
+        if (const auto body = mainBody(hit.attacker); valid(body)) {
+            const auto velocity = call<std::uintptr_t (*)(std::uintptr_t)>(
+                offsets::kRigidBodyEntityGetLinearVelocity)(body);
+            if (valid(velocity))
+                hit.direction = hit_adapter::projectileDirection(hit.normal, read<Vec3>(velocity));
+        }
     }
     const bool queued = signals.hits.tryUpdate([&](HitQueue &queue) {
         if (queue.count < kHitCapacity)
@@ -172,6 +184,17 @@ bool pauseAiNode(std::uintptr_t node) {
 bool pauseAnimation(std::uintptr_t controller) {
     const auto target = signals.pausedAnimation.load(std::memory_order_acquire);
     return target && controller == target;
+}
+bool pauseLife(std::uintptr_t component) {
+    const auto held = signals.protectedObject.load(std::memory_order_acquire);
+    if (!held || !valid(component) || read<std::uintptr_t>(component + 24) != held)
+        return false;
+    const auto anchor = signals.enemyAnchor.read();
+    return matchesEnemyAnchor(anchor, held,
+                              read<std::uintptr_t>(held + eng::layout::kActorNamePointer),
+                              signals.frozenActor.load(std::memory_order_acquire),
+                              signals.pausedActor.load(std::memory_order_acquire),
+                              signals.generation.load(std::memory_order_acquire));
 }
 void holdEnemyPhysics(void *component) {
     const auto held = signals.pausedActor.load(std::memory_order_acquire);

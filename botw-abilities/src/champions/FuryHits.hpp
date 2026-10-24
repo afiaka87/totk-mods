@@ -35,7 +35,8 @@ public:
         }
         return false;
     }
-    std::optional<FuryBalance> takeDamage(FuryTarget target) {
+    std::optional<FuryBalance> takeDamage(FuryTarget target, bool ready = true) {
+        if (!ready) return std::nullopt;
         for (auto& hit : hits_) {
             if (!hit.damagePending || hit.target != target) continue;
             hit.damagePending = false;
@@ -43,7 +44,8 @@ public:
         }
         return std::nullopt;
     }
-    std::optional<FuryBalance> takeReaction(FuryTarget target) {
+    std::optional<FuryBalance> takeReaction(FuryTarget target, bool ready = true) {
+        if (!ready) return std::nullopt;
         for (auto& hit : hits_) {
             if (!hit.reactionPending || hit.target != target) continue;
             hit.reactionPending = false;

@@ -315,6 +315,7 @@ bool strikeEnemy(const totk::core::WorldTransform& placement) {
 void used(Blessing blessing) {
     startSpiritEffects(blessing);
     if (blessing == Blessing::Daruk) {
+        pulse(Effect::DarukShellBreak,1.0f);
         pulse(Effect::DarukFlare,1.5f);
         pulse(Effect::DarukImpact,1.0f);
         return;
@@ -334,7 +335,8 @@ void service(const SceneContext& scene, const ActorHandle& player, float seconds
         return;
     }
     for (std::size_t i = 0; i < g_slots.size(); ++i) {
-        if (i == static_cast<std::size_t>(Effect::UrbosaRange))
+        if (i == static_cast<std::size_t>(Effect::UrbosaRange) ||
+            i == static_cast<std::size_t>(Effect::DarukShellBreak))
             g_slots[i].tickWhileVisible(seconds);
         else g_slots[i].tick(seconds);
     }

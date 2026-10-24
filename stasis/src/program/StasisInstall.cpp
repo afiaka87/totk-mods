@@ -111,6 +111,18 @@ HOOK_DEFINE_TRAMPOLINE(StasisEnemyPhysicsHook) {
         return result;
     }
 };
+// Pause the held object's life simulation alongside its AI/physics. Accepted contacts still
+// reach the charge queue. Both phases resume on release; living targets retain normal damage.
+HOOK_DEFINE_TRAMPOLINE(StasisLifePreCalcHook) {
+    static std::uintptr_t Callback(std::uintptr_t component) {
+        return engine::pauseLife(component) ? component : Orig(component);
+    }
+};
+HOOK_DEFINE_TRAMPOLINE(StasisLifeCalcDamageHook) {
+    static std::uintptr_t Callback(std::uintptr_t component) {
+        return engine::pauseLife(component) ? component : Orig(component);
+    }
+};
 HOOK_DEFINE_TRAMPOLINE(StasisEnemyPositionHook) {
     static std::uintptr_t Thunk(std::uintptr_t actor, float *matrix, float frameScale) {
         return Orig(actor, matrix, frameScale);
@@ -135,6 +147,8 @@ bool stasis::install(std::uintptr_t base) {
     StasisAiUpdateHook::InstallAtOffset(offsets::kAiElementDoUpdate);
     StasisAnimationUpdateHook::InstallAtOffset(offsets::kAsControllerUpdate);
     StasisEnemyPhysicsHook::InstallAtOffset(offsets::kGamePhysicsPreCalc);
+    StasisLifePreCalcHook::InstallAtOffset(offsets::kLifePreCalc);
+    StasisLifeCalcDamageHook::InstallAtOffset(offsets::kLifeCalcDamage);
     StasisEnemyPositionHook::InstallAtOffset(offsets::kActorBaseUpdatePositionAndRotation);
     StasisWheelOpenHook::InstallAtOffset(offsets::kUIShortCutMainItemScreenOpenStartImpl);
     StasisWheelUpdateHook::InstallAtOffset(offsets::kUIShortCutMainItemScreenUpdateImpl);

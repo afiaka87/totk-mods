@@ -23,7 +23,8 @@ def append_calls(user, cues):
         identifiers.add(identifier)
         call = re.sub(r'AmiiboMarker_OK\[0x[0-9a-f]+\]',f'{name}[0x{identifier}]',donor)
         call = re.sub(r'(RuntimeAssetName|AssetName) = "[^"]+"',lambda m: f'{m[1]} = "{name}"',call)
-        if ':NV_Custom_NoActor_' in receipt['source'] and cue != 'MiphaUsed':
+        # These activation voices must remain audible during their native impact/revival mix.
+        if ':NV_Custom_NoActor_' in receipt['source'] and cue not in ('MiphaUsed', 'DarukUsed'):
             call = call.replace('GroupName = "SystemInsideWorld"','GroupName = "NpcVoice"')
             call = call.replace('Priority = 0.899999976','Priority = 0.600000024')
         extra.append(call)

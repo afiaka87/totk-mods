@@ -32,23 +32,21 @@ template<class T> void write(void* base, std::size_t offset, const T& value) {
 FuryTarget identity(const void* actor) {
     return {reinterpret_cast<std::uintptr_t>(actor), read<std::uint32_t>(actor,0x10)};
 }
-std::optional<FuryBalance> take(const void* actor, bool reaction) {
+std::optional<FuryBalance> take(const void* actor, bool reaction, bool ready) {
     if (!g_pending.load(std::memory_order_acquire)) return std::nullopt;
     Guard guard;
-    return reaction ? g_hits.takeReaction(identity(actor)) : g_hits.takeDamage(identity(actor));
+    return reaction ? g_hits.takeReaction(identity(actor),ready) : g_hits.takeDamage(identity(actor),ready);
 }
 
 void startReaction(void* info, const void* context) {
+    if (!g_pending.load(std::memory_order_acquire)) return;
     const auto actor = read<const void*>(info,8);
-    const auto hit = take(actor,true);
-    if (!hit) return;
     const auto condition = read<const void*>(info,16);
-    if ((read<std::uint8_t>(condition,40) & 4) ||
-        !call<bool(*)(const void*)>(0x9F4768)(info) || read<float>(info,168) <= 0) {
-        Logging.Log("[champions] FURY_REACTION_REFUSED actor=%p id=%u duration=%u",
-            actor,identity(actor).id,unsigned(hit->reactionFrames));
-        return;
-    }
+    const bool ready = !(read<std::uint8_t>(condition,40) & 4) &&
+        read<float>(info,168) > 0 && call<bool(*)(const void*)>(0x9F4768)(info);
+    // A temporary refusal leaves the request queued until its original deadline.
+    const auto hit = take(actor,true,ready);
+    if (!hit) return;
     const auto triggers = read<std::uint32_t>(info,40);
     const auto attack = read<std::uint64_t>(info,48);
     const auto attackType = read<std::uint32_t>(info,56);
@@ -63,15 +61,14 @@ void startReaction(void* info, const void* context) {
 }
 
 void applyDamage(void* calculator, const void* context) {
+    if (!g_pending.load(std::memory_order_acquire)) return;
     const auto actor = read<const void*>(calculator,8);
-    const auto hit = take(actor,false);
-    if (!hit) return;
     const auto condition = read<const void*>(context,56);
-    if (condition && (read<std::uint8_t>(condition,40) & 4)) {
-        Logging.Log("[champions] FURY_DAMAGE_REFUSED actor=%p id=%u reason=event",
-            actor,identity(actor).id);
-        return;
-    }
+    // registerDamage cannot add health damage while either native protection bit is set.
+    const bool ready = !(read<std::uint8_t>(condition,40) & 4) &&
+        !(read<std::uint32_t>(calculator,16) & 3);
+    const auto hit = take(actor,false,ready);
+    if (!hit) return;
     FuryDamagePacket packet{.damage = hit->damage};
     if (const auto extension = read<void*>(calculator,32)) {
         const auto vtable = read<const void*>(extension,0);

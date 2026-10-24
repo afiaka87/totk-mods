@@ -43,7 +43,6 @@ struct State {
     std::uint32_t generation{1};
     bool aiming{}, enemy{}, ready{};
     unsigned tick{}, scanStarted{}, selectionAt{};
-    Ray scanRay{}, selectionRay{};
 } g;
 eng::NpadReader g_npad;
 eng::SceneTracker g_scenes;
@@ -68,6 +67,7 @@ void setAiming(bool aiming) {
     signals.target.cancel();
 }
 void clearHoldSignals() {
+    signals.protectedObject.store(0, std::memory_order_release);
     signals.frozenActor.store(0, std::memory_order_release);
     signals.pausedActor.store(0, std::memory_order_release);
     signals.pausedAnimation.store(0, std::memory_order_release);
@@ -76,19 +76,23 @@ void clearHoldSignals() {
 void selectTarget() {
     Ray ray;
     signals.cameraRay.tryRead(ray);
-    if (!target::sameRay(ray, g.selectionRay) || g.tick - g.selectionAt > 8 || !seen(g.selected))
+    const auto underReticle = [&](Handle actor) {
+        Bounds bounds;
+        return seen(actor) && worldBounds(actor.address,bounds) &&
+            target::pointsAt(ray,bounds.min,bounds.max);
+    };
+    if (g.tick - g.selectionAt > 8 || !underReticle(g.selected))
         g.selected = {};
     target::Hit hit;
     if (signals.target.poll(hit, g.generation)) {
         g.selected = {};
         if (!hit.filterValid && g.tick % 60 < 2)
             Logging.Log("[stasis] TARGET_REFUSED native donor filter layout");
-        const auto *candidate = target::sameRay(ray, g.scanRay) && hit.hit && hit.actor
+        const auto *candidate = hit.hit && hit.actor
                                     ? inRoster(hit.actor, hit.name)
                                     : nullptr;
-        if (candidate && eligible(*candidate)) {
+        if (candidate && underReticle(*candidate) && eligible(*candidate)) {
             g.selected = *candidate;
-            g.selectionRay = ray;
             g.selectionAt = g.tick;
         }
     }
@@ -99,7 +103,6 @@ void selectTarget() {
     if (!signals.target.busy() && ray.valid) {
         const auto exclude = collisionGroup(g.player.address);
         if (signals.target.begin(ray, position(g.player.address), g.generation, exclude)) {
-            g.scanRay = ray;
             g.scanStarted = g.tick;
         } else if (!exclude.enabled && g.tick % 120 == 0)
             Logging.Log("[stasis] TARGET_REFUSED missing player collision group");
@@ -156,15 +159,12 @@ void activate() {
     }
     if (!holdAvailable(structure))
         return;
-    const bool enemy = isEnemy(g.selected.address);
-    EnemyAnchor anchor;
-    if (enemy) {
-        anchor = {g.selected.address, g.selected.capturedNamePointer, g.generation + 1};
-        if (!readPose(anchor.actor, anchor.matrix)) {
-            Logging.Log("[stasis] ACTIVATE_REFUSED nonfinite enemy anchor actor=%p",
-                        reinterpret_cast<void *>(anchor.actor));
-            return;
-        }
+    const bool enemy = isLivingTarget(g.selected.address);
+    EnemyAnchor anchor{g.selected.address, g.selected.capturedNamePointer, g.generation + 1};
+    if (!readPose(anchor.actor, anchor.matrix)) {
+        Logging.Log("[stasis] ACTIVATE_REFUSED nonfinite anchor actor=%p",
+                    reinterpret_cast<void *>(anchor.actor));
+        return;
     }
     g.frozen = g.selected;
     g.lastPosition = centre(g.frozenBounds);
@@ -180,12 +180,12 @@ void activate() {
     g.keyCount = g.keyCursor = g.strikes = 0;
     g.aiming = false;
     signals.motionRefused = 0;
-    if (enemy) {
-        signals.enemyAnchor.write(anchor);
-        signals.pausedAnimation.store(animationController(g.frozen.address),
-                                      std::memory_order_release);
-        signals.pausedActor.store(g.frozen.address, std::memory_order_release);
-    }
+    // Objects can also receive movement/rotation requests after the initial keyframe change.
+    // Use the same pose, animation and AI hold for every target until release.
+    signals.enemyAnchor.write(anchor);
+    signals.pausedAnimation.store(animationController(g.frozen.address),
+                                  std::memory_order_release);
+    signals.pausedActor.store(g.frozen.address, std::memory_order_release);
     signals.generation.store(++g.generation, std::memory_order_release);
     signals.target.cancel();
     g.held = collection;
@@ -200,6 +200,7 @@ void activate() {
             stopBody(g.held.address[i]);
     }
     signals.frozenActor.store(g.frozen.address, std::memory_order_release);
+    signals.protectedObject.store(enemy ? 0 : g.frozen.address, std::memory_order_release);
     audio::play(audio::Cue::Start);
     Logging.Log("[stasis] FREEZE actor=%s actor_ptr=%p body=%p mass=%f frames=%f enemy=%u "
                 "bodies=%u keyframed=%u",
@@ -293,7 +294,7 @@ void consumeHits() {
         g.hitFlash = 1.0f;
         audio::play(audio::Cue::Hit);
         if (!g.enemy) {
-            const Strike strike{hit.direction, hit.point, hit.weapon, true, true, true};
+            const Strike strike{hit.direction, hit.point, hit.weapon, hit.playerStrike, true, true};
             (void)acceptStrike(g.charge, strike, g.scalar, true, kParameters);
         }
         Logging.Log("[stasis] HIT n=%u weapon=%d ids=%08x,%08x,%08x,%08x normal=%f,%f,%f charge=%f",
@@ -332,6 +333,7 @@ void advance(bool running, float delta) {
 }
 Presentation drawnState(float elapsedFrames) {
     Presentation visual;
+    visual.previewOrigin = position(g.player.address);
     visual.aiming = g.aiming;
     visual.selected = g.aiming && g.selected.address != 0;
     visual.frozen = g.frozen.address != 0;

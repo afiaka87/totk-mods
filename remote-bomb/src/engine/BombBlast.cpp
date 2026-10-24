@@ -32,6 +32,11 @@ unsigned scene{};
 std::uint64_t clock{};
 bool running{};
 constexpr totk::engine::CodeSite guards[]{
+    {0x1C1F768, 0xA9BE7BFD, 0xA9014FF4}, // ExecuteSpObjTimerBomb update.
+    {0xBC7610, 0xF9400408, 0xF9400508}, // ExecuteBase actor.
+    {0x1BB61F0, 0xA9BD7BFD, 0xA90157F6}, // Non-timer barrel-bomb update.
+    {0x1066DA0, 0xF9411408, 0xB4000068}, // Actor XLink component.
+    {0x85A684, 0xA9BC7BFD, 0xA9015FF8}, // XLink emit; mode 1 is sound only.
     {0x1396A0C, 0xD10543FF, 0xFD007BEA}, {0x13884B0, 0xD10203FF, 0xA9057BFD},
     {0x138B024, 0xA9BE7BFD, 0xF9000BF3},
     {0x138B0D0, 0xD10103FF, 0x6D0123E9},
@@ -74,6 +79,42 @@ void refused(std::uintptr_t source, std::uintptr_t target, const char *reason, s
                 reinterpret_cast<void *>(source), reinterpret_cast<void *>(target), reason,
                 reinterpret_cast<void *>(value));
 }
+void emitArmingSound(std::uintptr_t node, std::uintptr_t actor) {
+    auto& flags = *reinterpret_cast<std::uint8_t*>(node + 0xE8);
+    if (flags & 4) return;
+    const auto reject = [node](const char* reason, std::uintptr_t value) {
+        static std::atomic<unsigned> reports{};
+        if (reports.fetch_add(1,std::memory_order_relaxed) < 8)
+            refused(node,0,reason,value);
+    };
+    const auto active = read<std::uintptr_t>(node + 0xD0);
+    if (!eng::isPlausibleStringAddress(active)) { reject("arming-state",active); return; }
+    bool armed = (flags & 1) || read<std::uint8_t>(active);
+    if (!armed) {
+        const auto table = read<std::uintptr_t>(node);
+        if (!valid(table)) { reject("arming-table",table); return; }
+        const auto check = read<std::uintptr_t>(table + 0x148);
+        if (check < mainBase || !eng::isPlausibleStringAddress(check) || (check & 3)) {
+            reject("arming-check",check); return;
+        }
+        armed = (reinterpret_cast<unsigned(*)(std::uintptr_t)>(check)(node) & 1) != 0;
+    }
+    if (!armed) return;
+    const auto xlink = function<std::uintptr_t(*)(std::uintptr_t)>(0x1066DA0)(actor);
+    if (!valid(xlink)) { reject("arming-xlink",xlink); return; }
+    struct Handle { std::int8_t bank{-1}; std::uint8_t padding{}; std::int16_t index{-1}; std::uint32_t serial{}; };
+    struct Emission { Handle effect{}, sound{}; ~Emission() {} };
+    static_assert(sizeof(Emission) == 16);
+    const char* event = "ExplosionSign";
+    const auto emitted = function<Emission(*)(std::uintptr_t,const char**,unsigned)>(0x85A684)(xlink,&event,1);
+    if (emitted.sound.index < 0) {
+        reject("arming-sound", std::uintptr_t(emitted.sound.index));
+        return;
+    }
+    // Retain the native event handle and once-only bit for lifecycle cleanup.
+    std::memcpy(reinterpret_cast<void*>(node + 0xC0), &emitted.sound, sizeof(Handle));
+    flags |= 4;
+}
 struct Target {
     std::uintptr_t body{};
     Vector position{};
@@ -105,6 +146,17 @@ Target targetBody(std::uintptr_t object) {
     return {body, *point, volume};
 }
 }
+std::uintptr_t updateNativeTimer(TimerUpdate original, std::uintptr_t node, std::uintptr_t context) {
+    const auto actor = function<std::uintptr_t(*)(std::uintptr_t)>(0xBC7610)(node);
+    const auto name = actorName(actor);
+    const auto identity = name ? identifyBomb(name) : std::nullopt;
+    if (!identity || !nativeBomb(identity->shape)) return original(node,context);
+    const auto result = function<TimerUpdate>(0x1BB61F0)(node,context);
+    // Preserve native arming audio without the countdown, warning animation or timer death request.
+    emitArmingSound(node, actor);
+    return result;
+}
+
 bool initialize(std::uintptr_t base) {
     mainBase = 0;
     if (!base) {

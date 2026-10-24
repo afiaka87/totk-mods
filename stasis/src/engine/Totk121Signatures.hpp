@@ -6,6 +6,15 @@
 namespace stasis::signatures {
 using Site = totk::engine::CodeSite;
 inline constexpr Site kRuntime[]{
+    {offsets::kDynamicTextureAllocatorFree, 0xD10143FF, 0xA9027BFD},
+    {offsets::kGetStaticEquipment, 0xF9411408, 0xB4000068},
+    {offsets::kStaticEquipmentGetUser, 0xD10283FF, 0xA9067BFD},
+    {offsets::kGetAttachment, 0xF9411408, 0xB4000068},
+    {offsets::kAttachmentIsValidOwner, 0xD100C3FF, 0xA9017BFD},
+    {offsets::kLifePreCalc, 0xD10143FF, 0xA9017BFD},
+    {offsets::kLifeCalcDamage, 0xD10103FF, 0xA9017BFD},
+    {offsets::kRigidBodyEntityGetLinearVelocity, 0xF9403408, 0x373800A8},
+    {offsets::kGameActorIsProjectile, 0x3952C008, 0x36280108},
     {offsets::kNativeAbilityAdmission, 0xD10143FF, 0xA9017BFD},
     {offsets::kUIShortCutMainItemScreenDoOutBeforeImpl, 0xD10103FF, 0xA9017BFD},
     {offsets::kPhysicsModuleUpdateDeltaFrame, 0xF9400828, 0xB40002A8},

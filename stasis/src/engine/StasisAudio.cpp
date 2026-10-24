@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
+
 // Plays the original Stasis sounds through a renamed copy of a UI sound entry.
 #include "StasisAudio.hpp"
 #include "StasisEngine.hpp"

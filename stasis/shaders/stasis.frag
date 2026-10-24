@@ -4,6 +4,7 @@
 #include "native-common.glsl"
 #include "native-depth.glsl"
 layout(binding=1) uniform sampler2D modelDepth;
+layout(binding=5) uniform sampler2D hoverDepth;
 layout(location=0) in vec2 screenUv;
 layout(location=0) out vec4 outColor;
 layout(location=1) out vec4 emission;
@@ -15,6 +16,15 @@ float maskAt(vec2 uv) {
     float d=texelFetch(modelDepth,pixelAt(uv,ivec2(maskDimensions.xy)),0).r;
     if(isnan(d)||isinf(d)||d<=0||d>=1) return 0;
     return step(dimensions.z+d*(dimensions.w-dimensions.z)-.16,sceneMetres(uv));
+}
+float hoveredAt(vec2 uv) {
+    if(maskDimensions.z<.5 || maskAt(uv)<.5) return 0;
+    ivec2 pixel=pixelAt(uv,ivec2(maskDimensions.xy));
+    float selected=texelFetch(hoverDepth,pixel,0).r;
+    float nearest=texelFetch(modelDepth,pixel,0).r;
+    // Identical native passes produce identical depth for the same visible geometry.
+    // Do not admit nearby surfaces using a world-space tolerance or physics bounds.
+    return float(selected>0 && selected<1 && selected==nearest);
 }
 vec3 hash3(vec3 p) {
     return fract(sin(vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),
@@ -35,7 +45,7 @@ void main() {
     vec4 color=vec4(0);vec3 e=vec3(0),gold=vec3(1,.77,.08);
     float blink=1;
     if(extra.x<90&&flags.y>.5) blink=.60+.40*step(0.0,sin(timing.y*18));
-    if(resources.w<1.5&&selectedMax.w>.5&&flags.w>.5) {
+    if(resources.w<1.5&&selectedMax.w>.5&&(flags.x>.5||flags.w>.5)) {
         float model=maskAt(screenUv);vec2 px=1.0/maskDimensions.xy;
         float l=maskAt(screenUv+vec2(px.x,0)),r=maskAt(screenUv-vec2(px.x,0));
         float u=maskAt(screenUv+vec2(0,px.y)),d=maskAt(screenUv-vec2(0,px.y));
@@ -43,8 +53,15 @@ void main() {
         float outer=(1-model)*max(max(l,r),max(u,d));
         float warmth=clamp(flags.z/0.8,0.0,1.0);
         vec3 palette=warmth<.5?mix(vec3(1,.72,.035),vec3(1,.18,.012),warmth*2):mix(vec3(1,.18,.012),vec3(1,.012,.003),(warmth-.5)*2);
-        palette=mix(vec3(.72,1,.18),palette,flags.y);
+        palette=mix(gold,palette,flags.y);
+        float hover=hoveredAt(screenUv);
+        vec3 preview=vec3(.74,.47,.025),selected=vec3(.80,1,.24);
+        if(flags.x>.5) palette=mix(preview,selected,hover);
         if(model>0) {
+            if(flags.x>.5) {
+                e=palette*mix(.08,.38,hover);
+                color=vec4(palette*mix(.12,.32,hover),mix(.18,.38,hover));
+            } else {
             vec3 w=worldAt(screenUv,modelZ(screenUv));
             vec3 dx=worldAt(screenUv+vec2(px.x,0),modelZ(screenUv+vec2(px.x,0)))-w;
             vec3 dy=worldAt(screenUv+vec2(0,px.y),modelZ(screenUv+vec2(0,px.y)))-w;
@@ -60,8 +77,19 @@ void main() {
             float spark=.5+.5*sin(q.y*7+q.z*4+timing.y*2);
             e=palette*(line*(1.1+.35*spark)+hot*.75+edge*.20+rim*.8)*(.94+.06*sin(timing.y*2));
             color=vec4(palette*.08+e,.10+.36*line);
+            }
         }
         float nearTarget=step(availableMax[0].w-.16,sceneMetres(screenUv));
+        if(flags.x>.5) {
+            float neighborHover=max(max(hoveredAt(screenUv+vec2(px.x,0)),hoveredAt(screenUv-vec2(px.x,0))),
+                                    max(hoveredAt(screenUv+vec2(0,px.y)),hoveredAt(screenUv-vec2(0,px.y))));
+            palette=mix(preview,selected,max(hover,outer*neighborHover));
+            float neighborDepth=min(min(l>0?modelZ(screenUv+vec2(px.x,0)):dimensions.w,
+                                        r>0?modelZ(screenUv-vec2(px.x,0)):dimensions.w),
+                                    min(u>0?modelZ(screenUv+vec2(0,px.y)):dimensions.w,
+                                        d>0?modelZ(screenUv-vec2(0,px.y)):dimensions.w));
+            nearTarget=step(neighborDepth-.16,sceneMetres(screenUv));
+        }
         vec3 border=palette*(inner+outer*nearTarget)*1.25;
         e+=border;color.rgb+=border;color.a=max(color.a,(inner+outer*nearTarget)*.45);
     }

@@ -45,6 +45,17 @@ void stock() {
         return i < 3;
     });
     require(failed.status == inv::Status::Deferred && failed.failed == 3, "stock probe reports the unread slot");
+    const inv::Stock one{inv::Status::Present,4,1}, two{inv::Status::Present,4,2};
+    require(inv::removalResult(one,{inv::Status::Missing}) == inv::TakeStatus::Removed,
+            "last item removal accepts an empty slot");
+    require(inv::removalResult(two,one) == inv::TakeStatus::Removed,
+            "stack removal accepts exactly one item");
+    require(inv::removalResult(two,{inv::Status::Missing}) == inv::TakeStatus::Uncertain,
+            "unexpected stack loss cannot trigger another debit");
+    require(inv::removalResult(one,{inv::Status::Deferred}) == inv::TakeStatus::Uncertain,
+            "failed read-back cannot retry a completed native call");
+    require(inv::removalResult(one,one) == inv::TakeStatus::Uncertain,
+            "unchanged read-back does not silently repeat a native call");
 }
 void nodes() {
     require(inv::validNode(reinterpret_cast<const void *>(std::uintptr_t{0x9b6c4a54})), "native sort nodes need only 4-byte alignment");

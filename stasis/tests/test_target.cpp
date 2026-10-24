@@ -140,9 +140,33 @@ TEST_CASE("A native miss or cancelled generation never becomes a selectable acto
     std::memcpy(donor + 0x60, &unchanged, sizeof(unchanged));
     mailbox.observe(noHit, &near, donor);
     CHECK(casts == 2);
-    CHECK(mailbox.poll(hit, 6));
-    CHECK_FALSE(hit.filterValid);
+    CHECK_FALSE(mailbox.poll(hit, 6));
+    CHECK(mailbox.busy());
+    std::memcpy(donor + 0x60, &donorFilter, sizeof(donorFilter));
+    mailbox.observe(noHit, &near, donor);
+    CHECK(casts == 3);
+    REQUIRE(mailbox.poll(hit, 6));
+    CHECK(hit.filterValid);
     CHECK_FALSE(hit.hit);
+}
+
+TEST_CASE("A moving camera retains a queried target only while the reticle intersects it in reach") {
+    const stasis::Vec3 low{-1,-1,-11}, high{1,1,-9};
+    const stasis::Ray original{{0,0,0},{0,0,-1},true};
+    auto moved = original;
+    moved.eye.x = 0.5f;
+    CHECK_FALSE(stasis::target::sameRay(original,moved));
+    CHECK(stasis::target::pointsAt(moved,low,high));
+    moved.direction = {0.03f,0,-1};
+    CHECK(stasis::target::pointsAt(moved,low,high));
+    moved.direction = {0.2f,0,-1};
+    CHECK_FALSE(stasis::target::pointsAt(moved,low,high));
+    CHECK_FALSE(stasis::target::pointsAt(original,{-1,-1,9},{1,1,11}));
+    CHECK_FALSE(stasis::target::pointsAt(original,{-1,-1,-32},{1,1,-31}));
+    CHECK(stasis::target::pointsAt(original,{-1,-1,-31},{1,1,-30}));
+    CHECK_FALSE(stasis::target::pointsAt({{},{},true},low,high));
+    moved.eye.x = std::numeric_limits<float>::quiet_NaN();
+    CHECK_FALSE(stasis::target::pointsAt(moved,low,high));
 }
 namespace {
 std::uint64_t bodyHit(const void *, const void *, const void *object, const void *, std::uint32_t,

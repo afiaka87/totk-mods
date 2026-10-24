@@ -5,4 +5,6 @@
 namespace remote_bomb {
 // Checks the game code and installs every Remote Bomb hook; false when the game does not match.
 bool install(std::uintptr_t base);
+bool chooseSphereFromWheel(std::uintptr_t screen);
+bool chooseCubeFromWheel(std::uintptr_t screen);
 }

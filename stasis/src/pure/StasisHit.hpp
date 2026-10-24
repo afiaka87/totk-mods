@@ -4,6 +4,11 @@
 #include "StasisCore.hpp"
 #include <cstdint>
 namespace stasis::hit_adapter {
+// BotW 1.5.0 0x734140: projectiles redirect the force along their velocity, without a lift.
+inline Vec3 projectileDirection(Vec3 force, Vec3 velocity) {
+    const float speed = length(velocity);
+    return finite(velocity) && speed > 0.0f ? scale(velocity, length(force) / speed) : force;
+}
 // BotW's player strike direction: keep the vertical force and horizontal magnitude, and point
 // the horizontal part from the player to the object's centre of mass.
 inline Vec3 playerDirection(Vec3 force, Vec3 player, Vec3 centre) {

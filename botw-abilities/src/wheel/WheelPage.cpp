@@ -16,7 +16,7 @@ using eng::writeMemory;
 using namespace game;
 
 std::uintptr_t g_base{};
-Choose g_stasis{}, g_cryonis{};
+Choose g_stasis{}, g_cryonis{}, g_sphere{}, g_cube{};
 unsigned g_offers{};
 std::atomic<bool> g_paging{};
 std::atomic<unsigned> g_turns{};
@@ -188,6 +188,10 @@ bool exiting(std::uintptr_t screen, bool cancelled) {
         chosen = g_stasis(screen);
     else if (exit.choice == Choice::Cryonis)
         chosen = g_cryonis(screen);
+    else if (exit.choice == Choice::Sphere)
+        chosen = g_sphere(screen);
+    else if (exit.choice == Choice::Cube)
+        chosen = g_cube(screen);
     Logging.Log("[botw-abilities] WHEEL_EXIT page=%u cursor=%d cancelled=%u choice=%u chosen=%u",
                 g.page, cursor, unsigned(cancelled), unsigned(exit.choice), unsigned(chosen));
     return exit.cancel;
@@ -236,13 +240,16 @@ HOOK_DEFINE_TRAMPOLINE(WheelPageCloseHook) {
 };
 } // namespace
 
-bool install(std::uintptr_t base, Choose stasis, Choose cryonis) {
+bool install(std::uintptr_t base, Choose stasis, Choose cryonis, Choose sphere, Choose cube) {
     if (!eng::codeMatches(base, kSites, "botw-abilities", "WHEEL_PAGE_REFUSED"))
         return false;
     g_base = base;
     g_stasis = stasis;
     g_cryonis = cryonis;
-    g_offers = (stasis ? offer(Choice::Stasis) : 0u) | (cryonis ? offer(Choice::Cryonis) : 0u);
+    g_sphere = sphere;
+    g_cube = cube;
+    g_offers = (stasis ? offer(Choice::Stasis) : 0u) | (cryonis ? offer(Choice::Cryonis) : 0u) |
+               (sphere ? offer(Choice::Sphere) : 0u) | (cube ? offer(Choice::Cube) : 0u);
     WheelPageNpadHook::InstallAtOffset(offset::kNpadCalc);
     WheelPageOpenHook::InstallAtOffset(offset::kWheelOpen);
     WheelPageUpdateHook::InstallAtOffset(offset::kWheelUpdate);

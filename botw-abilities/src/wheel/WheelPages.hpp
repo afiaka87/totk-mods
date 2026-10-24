@@ -11,7 +11,7 @@ inline constexpr std::size_t kPathCapacity = 64;
 inline constexpr std::uint64_t kButtonR = 1ull << 7;
 
 // An ability offered on the abilities page. Each is offered only when its mod installed.
-enum class Choice : std::uint8_t { None, Stasis, Cryonis };
+enum class Choice : std::uint8_t { None, Stasis, Cryonis, Sphere, Cube };
 constexpr unsigned offer(Choice choice) { return 1u << unsigned(choice); }
 
 // One wedge on the abilities page. A null path leaves the wedge empty and unselectable.
@@ -21,10 +21,10 @@ struct Entry {
     Choice choice;
 };
 
-// Clockwise from the top wedge: Stasis in Fuse's native slot, Cryonis in amiibo's.
+// Clockwise from the top: sphere, cube, two empty slots, Stasis, Cryonis, two empty slots.
 inline constexpr Entry kAbilityPage[kWedges]{
-    {nullptr, u"", Choice::None},
-    {nullptr, u"", Choice::None},
+    {"UI/Tex/Icon/BotwBomb.bntx", u"Remote Bomb+", Choice::Sphere},
+    {"UI/Tex/Icon/BotwBombCube.bntx", u"Remote Bomb+ (Cube)", Choice::Cube},
     {nullptr, u"", Choice::None},
     {nullptr, u"", Choice::None},
     {"UI/Tex/Icon/BotwStasis.bntx", u"Stasis+", Choice::Stasis},

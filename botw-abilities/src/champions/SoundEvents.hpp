@@ -7,7 +7,7 @@
 namespace botw_abilities::champions {
 
 struct SoundActivity {
-    bool gameplay{}, galeChannel{}, updraft{}, furyChannel{}, darukBarrier{}, galeReady{};
+    bool gameplay{}, galeChannel{}, updraft{}, furyChannel{}, galeReady{};
 };
 
 class SoundEvents {
@@ -46,8 +46,6 @@ public:
         accepted &= onRisingEdge(active.furyChannel,furyVoice_,Cue::UrbosaChargeVoice,sink);
         accepted &= onRisingEdge(active.galeReady,galeChime_,Cue::ActivationReady,sink);
         accepted &= onRisingEdge(active.furyChannel,furyChime_,Cue::ActivationReady,sink);
-        // Hits start DarukBlock (Pl_KagoShield_Count03), which loops after its 2.46 s attack, so it stops with the barrier.
-        if (!active.darukBarrier) accepted &= sink.stop(Cue::DarukBlock);
         return accepted;
     }
 

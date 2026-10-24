@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
 #include "BombInput.hpp"
+#include "BombWheelPickup.hpp"
 #include <cstdlib>
 #include <iostream>
 
@@ -129,6 +130,24 @@ void handBackToMod() {
 }
 }
 int main() {
+    pickup::Pending handoff{pickup::Stage::Waiting,Shape::Sphere,0,7};
+    handoff.inheritedButtons = L | (1ull<<7);
+    require(!pickup::cancelInput(handoff,L|(1ull<<7)|(1ull<<21)),"wheel navigation and held page key do not cancel pickup");
+    require(!pickup::cancelInput(handoff,1ull<<21),"releasing L while still pointing at wedge keeps pickup");
+    require(pickup::actionButtons((1ull<<18)|(1ull<<21))==0,"walking and camera stick directions do not block pickup");
+    require(pickup::cancelInput(handoff,1ull<<7),"new action after release cancels pending pickup");
+    handoff.inheritedButtons = B;
+    require(pickup::cancelInput(handoff,B),"cancel always wins even if held during handoff");
+    const auto sphere = pickup::request(7,Shape::Sphere), cube = pickup::request(7,Shape::Cube);
+    require(sphere != cube && pickup::belongs(sphere,7) && pickup::belongs(cube,7),"wheel carries shape and epoch");
+    require(!pickup::belongs(sphere,8) && !pickup::belongs(0,7),"old and absent choices cannot spawn");
+    require(pickup::intendedLift(123,123,4),"exact native lift target may receive A");
+    require(!pickup::intendedLift(123,456,4),"another object's lift does not receive A");
+    require(!pickup::intendedLift(123,123,3) && !pickup::intendedLift(0,0,4),"pickup and empty attention do not count as lift");
+    pickup::Pending waiting{pickup::Stage::Attention,Shape::Cube,0,7};
+    for (unsigned i=0;i<89;++i) require(!waiting.advance(1),"pickup remains within deadline");
+    require(!waiting.advance(0),"pause does not consume pickup deadline");
+    require(waiting.advance(1),"unavailable lift expires without repeating A");
     quickTap();
     wheelSticksIgnored();
     nativePriority();

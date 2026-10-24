@@ -48,7 +48,7 @@ constexpr AudioWork usedAudio(Blessing blessing, bool finalCharge) {
     switch (blessing) {
     case Blessing::Mipha: return {0,0,0,0,bit(Cue::Heal),4.0f/30.0f};
     case Blessing::Revali: return {bit(Cue::GaleLaunch), bit(Cue::GaleCharge)};
-    case Blessing::Daruk: return {bit(finalCharge ? Cue::DarukBreak : Cue::DarukBlock),
+    case Blessing::Daruk: return {bit(finalCharge ? Cue::DarukBreak : Cue::DarukBlock) | bit(Cue::ParryImpact),
                                   finalCharge ? bit(Cue::DarukBlock) : 0};
     case Blessing::Urbosa: return {0,bit(Cue::FuryCharge),0,0,bit(Cue::FuryStrike),12.0f/30.0f};
     }

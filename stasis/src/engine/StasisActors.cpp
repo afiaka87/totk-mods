@@ -2,6 +2,8 @@
 // Copyright (c) Clay Mullis
 #include "StasisActors.hpp"
 #include "StasisEnemyHold.hpp"
+#include "StasisEquipment.hpp"
+#include "StasisSignals.hpp"
 #include "totk/engine/ActorRoster.hpp"
 #include <lib.hpp>
 #include <cstring>
@@ -10,9 +12,27 @@ namespace {
 namespace eng = totk::engine;
 using Getter = std::uintptr_t (*)(std::uintptr_t);
 using VectorRequest = void (*)(std::uintptr_t, const Vec3 *);
+std::atomic<unsigned> equipmentRefusals{};
+std::uintptr_t equipmentComponent(std::uintptr_t actor, unsigned slot) {
+    const auto result = equipment::find(actor, slot, readGame);
+    if (result.error && equipmentRefusals.fetch_add(1) < 12)
+        Logging.Log("[stasis] EQUIPMENT_REFUSED actor=%p slot=%u reason=%u detail=%llx",
+            reinterpret_cast<void*>(actor),slot,result.error,
+            static_cast<unsigned long long>(result.detail));
+    return result.address;
+}
 std::uintptr_t equipmentUser(std::uintptr_t actor) {
-    const auto equipment = call<Getter>(offsets::kGetDynamicEquipment)(actor);
+    const auto equipment = equipmentComponent(actor, equipment::kDynamic);
     return valid(equipment) ? call<Getter>(offsets::kDynamicEquipmentGetUser)(equipment) : 0;
+}
+bool attachedEquipment(std::uintptr_t actor) {
+    if (equipmentUser(actor)) return true;
+    const auto equipment = equipmentComponent(actor, equipment::kStatic);
+    int slot = -1;
+    if (valid(equipment) && call<std::uintptr_t(*)(std::uintptr_t,int*)>(
+            offsets::kStaticEquipmentGetUser)(equipment,&slot)) return true;
+    const auto attachment = equipmentComponent(actor, equipment::kAttachment);
+    return valid(attachment) && call<bool(*)(std::uintptr_t)>(offsets::kAttachmentIsValidOwner)(attachment);
 }
 unsigned motionType(std::uintptr_t body) {
     return call<unsigned (*)(std::uintptr_t)>(offsets::kRigidBodyBaseGetMotionType)(body);
@@ -156,24 +176,38 @@ std::size_t snapshotRoster(totk::core::SceneToken scene, Handle *out, std::size_
     return count;
 }
 bool eligible(Handle handle) {
+    // The active list also contains BaseProc instances that are not actors. Never pass
+    // their unrelated storage to blind native component getters.
+    const int componentCount = read<int>(handle.address + 544);
+    const auto components = read<std::uintptr_t>(handle.address + 552);
+    if (componentCount <= 0 || componentCount > 256 || !valid(components))
+        return false;
     const char *name = reinterpret_cast<const char *>(handle.capturedNamePointer);
     for (const char *prefix :
          {"Player", "Camera", "GameCamera", "Npc_", "NPC_", "Effect_", "Event", "Area_", "Dm_",
-          "Enemy_Dragon", "Enemy_Ganon", "Enemy_Giant", "Enemy_Boss"})
+          "Enemy_Dragon", "Enemy_Ganon", "Enemy_Boss"})
         if (startsWith(name, prefix))
             return false;
     // Carried or fused gear has an owner even while its body is dynamic: Link's sword, bow, shield.
-    if (equipmentUser(handle.address))
+    CameraRequest camera;
+    if (signals.cameraRequest.tryRead(camera) && camera.scene == handle.scene.value &&
+        valid(camera.player) && startsWith(actorName(camera.player),"Player")) {
+        const auto user = equipmentComponent(camera.player,equipment::kUser);
+        if (user && equipment::contains(user,read<std::uint32_t>(handle.address+16),readGame))
+            return false;
+    }
+    if (attachedEquipment(handle.address))
         return false;
     const auto body = mainBody(handle.address);
     if (!valid(body))
         return false;
+    // Character-driven creatures do not need dynamic mass to be held. They receive no launch impulse.
+    if (isLivingTarget(handle.address) && valid(character(controllerSet(handle.address))))
+        return true;
     const float scalar = mass(body);
     if (!std::isfinite(scalar) || scalar <= 0.0f)
         return false;
     const auto mode = motionType(body);
-    if (startsWith(name, "Enemy_") && valid(character(controllerSet(handle.address))))
-        return true;
     return mode == kDynamic;
 }
 bool holdAvailable(std::uintptr_t structure) {

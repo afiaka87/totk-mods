@@ -82,6 +82,14 @@ def build(args):
         for cue, name in mapping.items():
             raw = waves[name]
             wave, receipt = convert_fwav(raw)
+            if cue == 'DarukBlock':
+                # The shield now drops after each hit. Keep the complete attack/tail once,
+                # instead of either cutting it on barrier removal or leaving its hum looping.
+                wave = bytearray(wave)
+                for channel in range(receipt['channels']):
+                    struct.pack_into('<I', wave, 76 + channel * 76, 0xffffffff)
+                wave = bytes(wave)
+                receipt.update(loop=False, source_loop=True)
             asset = 'BotwChampions_' + cue
             sounds.append(sound_record(clean, asset, wave, receipt['loop']))
             (work / f'{cue}.bfwav').write_bytes(raw)
@@ -92,6 +100,26 @@ def build(args):
             receipts[cue] = receipt
     if len(sounds) != sum(map(len, SOURCES.values())):
         raise ValueError('the complete source cue set is required')
+    # TotK's ReactionHit / GuardJust event uses this exact native sound. Copy its waveform
+    # into our already-resident bank so playback does not depend on a transient hit-sound user.
+    parry_source = 'Sound/Resource/Stream/Shield_JustGird.bwav'
+    wave = (args.totk_romfs / parry_source).read_bytes()
+    if (wave[:8] != b'BWAV\xff\xfe\x01\x00' or len(wave) < 128
+            or struct.unpack_from('<H', wave, 14)[0] != 1 or u32(wave, 76) != 0xffffffff):
+        raise ValueError('native parry sound must be a complete mono one-shot BWAV')
+    rate, samples = struct.unpack_from('<II', wave, 20)
+    offset = u32(wave, 64)
+    size = (samples + 13) // 14 * 8
+    if rate != 48000 or not 0 < samples < rate * 10 or offset + size > len(wave):
+        raise ValueError('invalid native parry waveform geometry')
+    cue, asset = 'ParryImpact', 'BotwChampions_ParryImpact'
+    sounds.append(sound_record(clean, asset, wave, False))
+    (work / f'{cue}.bwav').write_bytes(wave)
+    receipts[cue] = dict(source=f'TotK:{parry_source}', asset=asset, rate=rate, samples=samples,
+                        channels=1, loop=False, loop_start=0,
+                        source_sha256=hashlib.sha256(wave).hexdigest(),
+                        bwav_sha256=hashlib.sha256(wave).hexdigest(),
+                        channel_sha256=[hashlib.sha256(wave[offset:offset + size]).hexdigest()])
     raw = append_records(clean, sounds)
     merged = read_bank(raw)
     verify_preserved(clean, merged)

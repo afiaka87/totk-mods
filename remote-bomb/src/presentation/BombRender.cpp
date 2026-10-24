@@ -250,9 +250,11 @@ bool initializeTextures() {
             flush(&textures[i], nullptr, &region);
         } else {
         if (!totk::assets::withTexture(totk::assets::kBombTexturePath, source.data,
-                [&](const unsigned char *pixels) {
-                    writePixels(&textures[i], nullptr, &region, pixels);
-                    flush(&textures[i], nullptr, &region);
+                source.width,source.height,source.format,
+                [&](const unsigned char *pixels,unsigned y,unsigned rows) {
+                    NVNcopyRegion part{0,int(y),0,int(source.width),int(rows),1};
+                    writePixels(&textures[i], nullptr, &part, pixels);
+                    flush(&textures[i], nullptr, &part);
                 })) return refuse(15);
         }
 #else

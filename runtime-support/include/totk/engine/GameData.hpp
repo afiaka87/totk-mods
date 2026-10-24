@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (C) Clay Mullis
+
 // Guarded flat-int GameData access for TotK 1.2.1.
 
 #pragma once

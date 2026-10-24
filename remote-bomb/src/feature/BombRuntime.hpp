@@ -25,6 +25,7 @@ bool initialize(std::uintptr_t base);
 void tick(void *device);
 void publishPhysicsTime(float frames);
 void wheelOpened(std::uintptr_t screen);
+bool chooseFromWheel(std::uintptr_t screen, Shape shape);
 void wheelExited(std::uintptr_t screen, bool cancelled);
 void wheelClosed(std::uintptr_t screen);
 void nativeSelectionAccepted(std::uintptr_t screen);

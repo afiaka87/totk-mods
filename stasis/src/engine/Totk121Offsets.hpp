@@ -5,9 +5,17 @@
 namespace stasis::offsets {
 // TotK 1.2.1 function offsets from the module base.
 inline constexpr std::uintptr_t kGamePhysicsPreCalc = 0x6359F4;
+inline constexpr std::uintptr_t kLifePreCalc = 0x64B264;
+inline constexpr std::uintptr_t kLifeCalcDamage = 0x9DF274;
+inline constexpr std::uintptr_t kRigidBodyEntityGetLinearVelocity = 0xACFC80;
+inline constexpr std::uintptr_t kGameActorIsProjectile = 0x158B940;
 inline constexpr std::uintptr_t kAsControllerUpdate = 0x6437BC;
 inline constexpr std::uintptr_t kDynamicEquipmentGetUser = 0x666E24;
 inline constexpr std::uintptr_t kGetDynamicEquipment = 0x6A7BC0;
+inline constexpr std::uintptr_t kGetStaticEquipment = 0x15BE08C;
+inline constexpr std::uintptr_t kStaticEquipmentGetUser = 0xE4A510;
+inline constexpr std::uintptr_t kGetAttachment = 0x67B6B0;
+inline constexpr std::uintptr_t kAttachmentIsValidOwner = 0x6C3FB0;
 inline constexpr std::uintptr_t kRigidBodyBaseGetMotionType = 0x6AB438;
 inline constexpr std::uintptr_t kActorBaseForceSetMatrix = 0x6BA86C;
 inline constexpr std::uintptr_t kActorLinkBaseGetReference = 0x6CB510;
@@ -15,6 +23,7 @@ inline constexpr std::uintptr_t kGraphicsContextGraphicsContext = 0x74C19C;
 inline constexpr std::uintptr_t kAiElementDoUpdate = 0x74FF2C;
 inline constexpr std::uintptr_t kGraphicsContextApply = 0x756A08;
 inline constexpr std::uintptr_t kPhysicsModuleUpdateDeltaFrame = 0x7EDC00;
+inline constexpr std::uintptr_t kDynamicTextureAllocatorFree = 0x7EF80C;
 inline constexpr std::uintptr_t kActorBaseUpdatePositionAndRotation = 0x823FD8;
 inline constexpr std::uintptr_t kActorReferenceGetSystemGroupID = 0x84E674;
 inline constexpr std::uintptr_t kRayCast = 0x858590;
@@ -63,6 +72,8 @@ inline constexpr std::uintptr_t kEventCallbackSLinkReplaceAssetInfo = 0x28402E0;
 inline constexpr std::uintptr_t kNinJoyNpadDeviceCalc = 0x2A267BC;
 // Global slots; each holds a pointer to the named object.
 inline constexpr std::uintptr_t kRenderManagerSlot = 0x462E188;
+inline constexpr std::uintptr_t kDynamicTextureAllocatorSlot = 0x4638208;
+inline constexpr std::uintptr_t kModelNWTypeSlot = 0x462EF10;
 inline constexpr std::uintptr_t kNvnManagerSlot = 0x462EF90;
 inline constexpr std::uintptr_t kNvnGetProcAddress = 0x46707E8;
 inline constexpr std::uintptr_t kGraphicsDevice = 0x4716E48;

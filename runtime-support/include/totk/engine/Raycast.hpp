@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (C) Clay Mullis
+
 // Generation-aware gameplay/physics-thread raycast mailbox.
 
 #pragma once

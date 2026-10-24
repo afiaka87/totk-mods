@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
+
 // Draws the Stasis effects after the opaque scene, from the game's effect draw pass.
 #include "StasisRender.hpp"
 #include "StasisProjection.hpp"
@@ -84,9 +85,10 @@ PFNNVNCOMMANDBUFFERDRAWARRAYSPROC g_drawArrays{};
 PFNNVNCOMMANDBUFFERBINDUNIFORMBUFFERPROC g_bindUniform{};
 PFNNVNCOMMANDBUFFERSETSCISSORPROC g_setScissor{};
 
-// Scene and selected-model linear depth use literal fragment locations 0..1.
+// Scene, all-model and hovered-model depths. Location 5 avoids the bloom samplers.
 alignas(8) unsigned char g_samplerBindings[128]{};
-alignas(8) std::uint32_t g_samplerLocation[8]{0xffff00ff, 0, 0, 0, 0xffff01ff, 0, 0, 0};
+alignas(8) std::uint32_t g_samplerLocation[12]{0xffff00ff, 0, 0, 0, 0xffff01ff, 0, 0, 0,
+                                            0xffff05ff, 0, 0, 0};
 
 template <class T> T read(const void *p, std::size_t offset) {
     T value{};
@@ -214,7 +216,7 @@ bool initializeGpuStorage() {
         return false;
     }
 
-    write<std::uint32_t>(g_samplerBindings, 0x68, 2);
+    write<std::uint32_t>(g_samplerBindings, 0x68, 3);
     write<const void *>(g_samplerBindings, 0x70, g_samplerLocation);
     if (!g_setScissor) {
         refuse(3);
@@ -349,8 +351,8 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
     buildUniforms(camera, snapshot, uniforms);
     uniforms.resources[3] = static_cast<float>(part);
     void *modelDepth = nullptr;
-    void *modelIdentity = nullptr;
-    bool masked = useSurface && surface::masks(modelDepth, modelIdentity);
+    void *hoverDepth = nullptr;
+    bool masked = useSurface && surface::masks(modelDepth, hoverDepth);
     if (masked) {
         const auto maskWidth = read<std::uint16_t>(modelDepth, 48);
         const auto maskHeight = read<std::uint16_t>(modelDepth, 50);
@@ -361,6 +363,7 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
             // The pinned NVN compiler misbinds textureSize at nonzero bindings.
             uniforms.maskDimensions[0] = float(maskWidth);
             uniforms.maskDimensions[1] = float(maskHeight);
+            uniforms.maskDimensions[2] = hoverDepth ? 1.0f : 0.0f;
         }
     }
     if (useSurface && !masked)
@@ -404,6 +407,7 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
     bool sampled = call<bool (*)(void *, void *, unsigned, void *)>(
         offsets::kShaderProgramActivateSampler)(g_samplerBindings, drawContext, 0, sampler);
     alignas(8) unsigned char maskSampler[240]{};
+    alignas(8) unsigned char hoverSampler[240]{};
     if (masked) {
         call<void (*)(void *)>(offsets::kSamplerConstruct)(maskSampler);
         call<void (*)(void *, void *)>(offsets::kSamplerApplyTexture)(maskSampler, modelDepth);
@@ -417,6 +421,13 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
                                                               sampler) &&
                   sampled;
     }
+    if (masked && hoverDepth) {
+        call<void (*)(void *)>(offsets::kSamplerConstruct)(hoverSampler);
+        call<void (*)(void *, void *)>(offsets::kSamplerApplyTexture)(hoverSampler, hoverDepth);
+    }
+    sampled = call<bool (*)(void *, void *, unsigned, void *)>(
+        offsets::kShaderProgramActivateSampler)(g_samplerBindings,drawContext,2,
+            masked && hoverDepth ? hoverSampler : sampler) && sampled;
     alignas(8) unsigned char state[128]{};
     if (sampled) {
         const int samplerId = read<std::int16_t>(sampler, 234);
@@ -550,6 +561,10 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
     if (masked) {
         call<void (*)(void *)>(offsets::kSamplerDestroyDescriptor)(maskSampler + 234);
         call<void (*)(void *)>(offsets::kSamplerDestroyTexture)(maskSampler + 88);
+    }
+    if (masked && hoverDepth) {
+        call<void (*)(void *)>(offsets::kSamplerDestroyDescriptor)(hoverSampler + 234);
+        call<void (*)(void *)>(offsets::kSamplerDestroyTexture)(hoverSampler + 88);
     }
 
     // Restore the game's render target and state.

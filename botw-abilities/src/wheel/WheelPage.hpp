@@ -8,5 +8,5 @@ namespace botw_abilities::wheel {
 using Choose = bool (*)(std::uintptr_t screen);
 // Adds the abilities page: hold L, tap R to turn the page. A null Choose leaves that wedge empty.
 // Install after the abilities so these wheel hooks run first. False when the game does not match.
-bool install(std::uintptr_t base, Choose stasis, Choose cryonis);
+bool install(std::uintptr_t base, Choose stasis, Choose cryonis, Choose sphere, Choose cube);
 } // namespace botw_abilities::wheel

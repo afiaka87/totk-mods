@@ -3,7 +3,17 @@
 #include "doctest.h"
 #include "StasisEnemyHold.hpp"
 #include "StasisCore.hpp"
+#include "StasisActorPolicy.hpp"
 #include <array>
+TEST_CASE("Blupees use a creature hold without promoting other animals or helpers") {
+    for (const auto name : {"Animal_RupeeRabbit_A", "Animal_RupeeRabbit_FromCaveMaster",
+                           "Animal_RupeeRabbit_NushiShop", "Enemy_Bokoblin_Junior"})
+        CHECK(stasis::livingTarget(name));
+    CHECK_FALSE(stasis::livingTarget("Animal_RupeeRabbit_Unknown"));
+    CHECK_FALSE(stasis::livingTarget("Animal_Squirrel_A"));
+    CHECK_FALSE(stasis::livingTarget("Obj_WoodBox_A"));
+    CHECK_FALSE(stasis::livingTarget(""));
+}
 TEST_CASE("Enemy hold follows the physics owner and replaces movement queued each frame") {
     // TotK GamePhysics::preCalc reads the actor at component+24, not a Character context.
     constexpr std::uintptr_t component = 0x1000, enemy = 0x2000, other = 0x3000;

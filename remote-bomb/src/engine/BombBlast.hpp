@@ -5,6 +5,8 @@
 
 namespace remote_bomb::engine::explosion {
 using ContactCalculation = void (*)(std::uintptr_t, std::uintptr_t, void *);
+using TimerUpdate = std::uintptr_t (*)(std::uintptr_t, std::uintptr_t);
+std::uintptr_t updateNativeTimer(TimerUpdate original, std::uintptr_t node, std::uintptr_t context);
 bool initialize(std::uintptr_t base);
 void sceneChanged(unsigned generation);
 void publishTime(std::uint64_t clock, bool running);

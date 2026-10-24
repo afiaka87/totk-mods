@@ -18,7 +18,7 @@ struct FuryEnemy {
 };
 
 // Original actor parameters and explicit TotK-only equivalents are recorded in design/03-champions-fidelity.md.
-inline constexpr std::array<FuryEnemy, 146> kFuryEnemies{{
+inline constexpr std::array<FuryEnemy, 150> kFuryEnemies{{
     {"Enemy_Assassin_Junior", {150, 300}},
     {"Enemy_Assassin_Middle", {150, 300}},
     {"Enemy_Assassin_Shooter_Junior", {150, 300}},
@@ -142,6 +142,11 @@ inline constexpr std::array<FuryEnemy, 146> kFuryEnemies{{
     {"Enemy_Octarock_Snow", {150, 300}},
     {"Enemy_Octarock_Stone", {150, 300}},
     {"Enemy_Sandworm", {500, 0}},
+    // TotK's four living Evermeans; their inert disguise actors are not damage targets.
+    {"Enemy_Treant_Bee", {150, 0}},
+    {"Enemy_Treant_Broadleaf", {150, 0}},
+    {"Enemy_Treant_D", {150, 0}},
+    {"Enemy_Treant_E", {150, 0}},
     {"Enemy_Wizzrobe_Electric", {75, 0}},
     {"Enemy_Wizzrobe_Electric_Senior", {75, 0}},
     {"Enemy_Wizzrobe_Fire", {150, 300}},

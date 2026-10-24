@@ -115,9 +115,10 @@ void publishContext(const SceneContext& scene, std::uint64_t generation,
     g_context.store(packContext(scene.token.value, current), std::memory_order_release);
 }
 
-void serviceUseEvents(std::uint64_t generation, std::uint64_t scene) {
+void serviceUseEvents(std::uint64_t generation, std::uint64_t scene, const ActorHandle& player) {
     UseEvent event;
     while (g_uses.pop(generation, scene, event)) {
+        if (event.blessing == Blessing::Daruk) daruk::impact(player);
         effects::used(event.blessing);
         for (const auto work : activationAudio(event.blessing, event.finalCharge))
             if (work && !g_sounds.push(work))
@@ -199,12 +200,13 @@ void tick(void* device) {
     daruk::service(player.value.player, current[2], input.snapshot().held(1u << 8),
                    input.snapshot().freshSampleCount != 0);
     fury_native::service(scene.context, player.value.player, current[3]);
-    serviceUseEvents(snapshot.generation, scene.context.token.value);
+    serviceUseEvents(snapshot.generation, scene.context.token.value, player.value.player);
     hud::service(data::state().snapshot(), current);
     serviceReadyAudio(seconds);
     effects::service(scene.context, player.value.player, seconds);
-    audio::update({true, gale::active(), effects::updraftActive(), fury_native::active(), daruk::active(),
-                   gale::presentation().phase == GalePhase::Ready});
+    audio::update({.gameplay = true, .galeChannel = gale::active(),
+                   .updraft = effects::updraftActive(), .furyChannel = fury_native::active(),
+                   .galeReady = gale::presentation().phase == GalePhase::Ready});
     serviceSaveProbe(scene.generation, player.value.player, elapsed);
 }
 

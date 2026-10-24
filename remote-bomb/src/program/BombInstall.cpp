@@ -10,7 +10,19 @@
 #include "BombInventory.hpp"
 
 namespace bomb = remote_bomb::runtime;
+bool remote_bomb::chooseSphereFromWheel(std::uintptr_t screen) {
+    return bomb::chooseFromWheel(screen,Shape::Sphere);
+}
+bool remote_bomb::chooseCubeFromWheel(std::uintptr_t screen) {
+    return bomb::chooseFromWheel(screen,Shape::Cube);
+}
 namespace {
+HOOK_DEFINE_TRAMPOLINE(BombNativeTimerHook) {
+    static std::uintptr_t Callback(std::uintptr_t node, std::uintptr_t context) {
+        return remote_bomb::engine::explosion::updateNativeTimer(
+            [](std::uintptr_t n,std::uintptr_t c) { return Orig(n,c); },node,context);
+    }
+};
 HOOK_DEFINE_TRAMPOLINE(BombPouchSortHook) {
     static std::uintptr_t Callback(std::uintptr_t pouch, int mode, unsigned category, std::uintptr_t list) {
         remote_bomb::inventory::prioritizePouch(exl::util::modules::GetTargetStart(), pouch, category, list);
@@ -167,6 +179,7 @@ bool remote_bomb::install(std::uintptr_t base) {
     BombChemicalDamageHook::InstallAtOffset(0x16FEB00);
     BombExplosionListClearHook::InstallAtOffset(0x138FE84);
     BombExplosionDeathHook::InstallAtOffset(0x15A935C);
+    BombNativeTimerHook::InstallAtOffset(0x1C1F768);
     Logging.Log("[remote-bomb] automatic Materials, pinned sorting and remote detonation installed");
     return true;
 }

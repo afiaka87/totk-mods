@@ -66,7 +66,8 @@ Stock probe(std::uintptr_t base, Shape shape, Upgrade upgrade, bool committed) {
         return {Status::Unavailable};
     return scan(base, manager, pouch, engine::actorName(shape, upgrade), !committed);
 }
-Status ensure(std::uintptr_t base, Shape shape, Upgrade upgrade, bool workerAdvanced) {
+static Status grant(std::uintptr_t base, Shape shape, Upgrade upgrade, bool workerAdvanced,
+                    bool onlyMissing) {
     if (!base || !workerAdvanced)
         return deferred("gameplay", Status::Deferred);
     const auto manager = managerAt(base + 0x462E3D8);
@@ -84,7 +85,7 @@ Status ensure(std::uintptr_t base, Shape shape, Upgrade upgrade, bool workerAdva
         return Status::Rejected;
     }
     const auto existing = stock(base, manager, pouch, name.text);
-    if (existing != Status::Missing)
+    if (existing != Status::Missing && (onlyMissing || existing != Status::Present))
         return existing;
     if (!writeRoom(manager))
         return Status::Deferred;
@@ -97,5 +98,28 @@ Status ensure(std::uintptr_t base, Shape shape, Upgrade upgrade, bool workerAdva
     Logging.Log("[remote-bomb] INVENTORY_GRANT actor=%s category=%u result=%llu", name.text,
                 category, static_cast<unsigned long long>(result));
     return result ? Status::Granted : Status::Rejected;
+}
+Status ensure(std::uintptr_t base, Shape shape, Upgrade upgrade, bool workerAdvanced) {
+    return grant(base, shape, upgrade, workerAdvanced, true);
+}
+Status restoreOne(std::uintptr_t base, Shape shape, Upgrade upgrade, bool workerAdvanced) {
+    return grant(base, shape, upgrade, workerAdvanced, false);
+}
+TakeStatus takeOne(std::uintptr_t base, Shape shape, Upgrade upgrade, bool workerAdvanced) {
+    if (!base || !workerAdvanced) return TakeStatus::Deferred;
+    const auto manager = managerAt(base + 0x462E3D8), pouch = managerAt(base + 0x4630020);
+    if (!manager || !pouch || !writeRoom(manager)) return TakeStatus::Deferred;
+    const auto before = probe(base,shape,upgrade,false);
+    if (before.status != Status::Present || before.slot < 0 || before.quantity < 1)
+        return TakeStatus::Deferred;
+    // Remove one item without compacting the entire pouch. Native menu sorts read all slots.
+    // Category 5 resets at most five integer fields and two names; the normal write gate covers it.
+    reinterpret_cast<void(*)(std::uintptr_t,unsigned,int,int,bool,unsigned)>(base+0x15D1FC8)(
+        pouch,kMaterialCategory,before.slot,1,false,0);
+    const auto after = probe(base,shape,upgrade,false);
+    const auto result = removalResult(before,after);
+    Logging.Log("[remote-bomb] WHEEL_STOCK form=%u before=%d after=%d status=%u removed=%u",
+        unsigned(shape),before.quantity,after.quantity,unsigned(after.status),unsigned(result==TakeStatus::Removed));
+    return result;
 }
 }

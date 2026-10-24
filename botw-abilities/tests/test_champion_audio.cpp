@@ -105,7 +105,7 @@ TEST_CASE("All fifteen Champion cues retain independent handles and end on scene
 TEST_CASE("Channel audio retries refusals without replaying on every gameplay frame") {
     SoundEvents sounds;
     Sink sink;
-    const SoundActivity active{true, true, true, true, true};
+    const SoundActivity active{.gameplay = true, .galeChannel = true, .updraft = true, .furyChannel = true};
     sink.accepts = false;
     CHECK_FALSE(sounds.update(active, sink));
     sink.accepts = true;
@@ -116,8 +116,8 @@ TEST_CASE("Channel audio retries refusals without replaying on every gameplay fr
     CHECK(sink.loops[unsigned(Cue::Updraft)]);
     CHECK_FALSE(sink.loops[unsigned(Cue::DarukBlock)]);
     CHECK(sink.loops[unsigned(Cue::FuryCharge)]);
-    CHECK(sounds.update({true, false, false, false}, sink));
-    CHECK(sink.stopped == std::vector<Cue>{Cue::GaleCharge, Cue::DarukBlock});
+    CHECK(sounds.update({.gameplay = true}, sink));
+    CHECK(sink.stopped == std::vector<Cue>{Cue::GaleCharge});
     for (bool loop : sink.loops) CHECK_FALSE(loop);
     CHECK(sounds.update(active, sink));
     CHECK(sink.started.size() == 9);
@@ -130,21 +130,20 @@ TEST_CASE("Channel audio retries refusals without replaying on every gameplay fr
     CHECK(sink.started.size() == 12);
 }
 
-TEST_CASE("Daruk's looping hit sound keeps playing while the barrier is up and ends with it") {
+TEST_CASE("Daruk's complete hit sound and voice survive barrier removal until scene cleanup") {
     SoundEvents sounds;
     Sink sink;
     REQUIRE(sink.play(Cue::DarukBlock));
-    REQUIRE(sounds.update({true, false, false, false, true}, sink));
-    CHECK(sink.started == std::vector<Cue>{Cue::DarukBlock});
+    REQUIRE(sink.play(Cue::DarukUsed));
+    REQUIRE(sounds.update({.gameplay = true}, sink));
+    CHECK(sink.started == std::vector<Cue>{Cue::DarukBlock, Cue::DarukUsed});
     CHECK(sink.stopped.empty());
     CHECK_FALSE(sink.loops[unsigned(Cue::DarukBlock)]);
-    REQUIRE(sounds.update({true}, sink));
-    CHECK(sink.stopped == std::vector<Cue>{Cue::DarukBlock});
-    sink.accepts = false;
-    CHECK_FALSE(sounds.update({true}, sink));
-    sink.accepts = true;
-    CHECK(sounds.update({true}, sink));
-    CHECK(sink.stopped.size() == 3);
+    REQUIRE(sounds.update({.gameplay = true}, sink));
+    CHECK(sounds.update({.gameplay = true}, sink));
+    CHECK(sink.stopped.empty());
+    CHECK(sounds.update({}, sink));
+    CHECK(sink.resets == 1);
 }
 
 TEST_CASE("Native sound calls accept the resource converter four-byte alignment") {

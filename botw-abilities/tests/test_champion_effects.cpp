@@ -261,8 +261,8 @@ TEST_CASE("Ability sounds preserve their source delays independently of activati
     CHECK(usedAudio(Blessing::Revali, false).stops == bit(Cue::GaleCharge));
     CHECK(usedAudio(Blessing::Urbosa, true).deferred == bit(Cue::FuryStrike));
     CHECK(usedAudio(Blessing::Urbosa, true).stops == bit(Cue::FuryCharge));
-    CHECK(usedAudio(Blessing::Daruk, false).plays == bit(Cue::DarukBlock));
-    CHECK(usedAudio(Blessing::Daruk, true).plays == bit(Cue::DarukBreak));
+    CHECK(usedAudio(Blessing::Daruk, false).plays == (bit(Cue::DarukBlock) | bit(Cue::ParryImpact)));
+    CHECK(usedAudio(Blessing::Daruk, true).plays == (bit(Cue::DarukBreak) | bit(Cue::ParryImpact)));
     CHECK(usedAudio(Blessing::Daruk, true).stops == bit(Cue::DarukBlock));
     constexpr std::array voices{Cue::MiphaUsed,Cue::RevaliUsed,Cue::DarukUsed,Cue::UrbosaUsed};
     for (unsigned i = 0; i < voices.size(); ++i) {

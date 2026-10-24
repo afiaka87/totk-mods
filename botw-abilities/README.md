@@ -1,14 +1,16 @@
-# BotW Abilities v0.2.2
+# BotW Abilities v0.2.3
 
-This update: Revali's Gale follows Options > Swap Jump Controls (X normally, B when enabled).
-Changing that setting cancels any in-progress Gale sequence safely. The control fix has been tested in Citron.
+This update fixes Stasis selection and holds, adds sphere and cube bombs to the second
+wheel page, and restores Daruk's parry feedback and the bombs' activation sounds.
+Nearby Stasis targets have amber previews; the hovered target has a brighter full-model
+highlight. Link's equipment stays unlit. Frozen enemies and objects no longer fall or
+rotate, and breakable objects stay intact while frozen. Projectile hits use their incoming
+direction. Fury retries temporarily protected targets and reaches Evermeans.
 
-v0.2.1 added the four Champions' activation and recharge voices, keeps their charge icons
-visible during gameplay, and expands Urbosa's Fury to a 50 m radius with a growing yellow field.
-Daruk's shield drops after blocking a hit; lower and raise the shield to use it again.
-The Champions themselves do not appear. Link keeps Gale's crouch and launch animation.
-Stasis, Remote Bomb and Cryonis are unchanged. The mod keeps `subsdk7` and the second wheel page.
-The module maps 4,026,368 bytes (3.84 MiB); this excludes game-managed resources and GPU memory.
+The gameplay and restored audio have been tested in Citron. All four Champions' abilities
+also work on Switch; the final Daruk grunt and bomb audio correction awaits a short hardware
+check. Animated Champion spirits remain absent. The module maps 4,157,440 bytes (3.965 MiB),
+excluding game-managed resources and GPU memory.
 
 Breath of the Wild's Stasis, Remote Bomb, Cryonis and Champions' Blessings in Tears of the Kingdom
 1.2.1, in one add-on, usable together. Stasis, Remote Bomb and Cryonis are the abilities from the
@@ -34,16 +36,19 @@ using BotW's per-hit amounts and cap, and an arrow grows and shifts from yellow 
 stored force. On release the object launches along the arrow. Enemies take hits but are not
 launched. The cooldown is ten seconds after a full hold and shorter after an early release.
 
-The selected object glows with cracks and a rim, is held by six chains while frozen, and leaves a
-particle trail when launched. Targets are dynamic objects with a mass and enemies other than
-bosses, out to 30 m along the camera's centre line. Link, NPCs and carried or fused gear are
-skipped.
+Nearby eligible targets have amber previews and the hovered target has a brighter highlight.
+The selected object glows with cracks and a rim, is held by six chains while frozen, and leaves
+a particle trail when launched. Targets are dynamic objects with a mass and supported enemies
+out to 30 m along the camera's centre line. Link, NPCs and carried or fused gear are skipped.
+The world keeps moving while aiming, as in BotW.
 
 ## Remote Bomb
 
-BotW's sphere and cube Remote Bombs, in the Materials pouch, used through the game's own hold, throw
-and arrow controls and set off remotely with a tap of L.
+BotW's sphere and cube Remote Bombs, available from the second ability-wheel page and the
+Materials pouch, set off remotely with a tap of L.
 
+- Hold L, tap R and choose the sphere or cube on the second wheel page. The bomb appears
+  in front of Link and uses the normal pickup action.
 - After loading into gameplay, one sphere and one cube appear in Materials. They stay first when
   Materials or the throw and arrow shortcut lists are sorted.
 - Hold a bomb from Materials, hold R and press Up for an aimed throw, or press Up while aiming a
@@ -53,6 +58,7 @@ and arrow controls and set off remotely with a tap of L.
 - L does nothing while Link is lifting or holding a bomb.
 - A used form recharges for 3 seconds, then returns to Materials.
 - Ultrahand can grab both bombs.
+- Bombs play their native activation sequence but do not detonate on a timer.
 
 This is the Remote Bomb+ profile with a 3-second recharge. Both shapes use native actors for
 materials, glow, trails, physics and explosions. The sphere is resized to the previous bomb's
@@ -159,22 +165,19 @@ Both archives contain the same game payload: `exefs/subsdk7`, `exefs/main.npdm`,
 - Bombs and Stasis use native rendering/bloom; the former shared 800x450 private glow/depth
   targets are removed. Ice and interface elements retain their existing resolution.
 
-## Known issues
+## Known issues and testing limits
 
-- The v0.2.2 Swap Jump Controls fix passed the requested Citron smoke test. Earlier Citron
-  observations cover the voices, icons and Fury field. The Champions' Blessings have not yet
-  been tested on Switch hardware; v0.1.4's three abilities were. Combinations with other code mods have not yet been
-  tested on Switch.
-- Daruk's Protection blocks attacks but deflects nothing. Its shell is Vow of Sidon's shell
-  tinted orange, and the Champions' spirits from BotW are replaced by effects.
-- Urbosa's Fury has once missed an enemy close by and above Link.
-- Mipha's Grace is meant to act before a fairy is used; that order, the shrine rule and the
-  Hyrule Castle and Sage's-vow recharge speeds have not yet been checked in game.
-- At startup each ability checks the game code it uses and stays inactive on any other game
-  version.
-- Stasis does not highlight nearby objects while aiming; only the selected target is highlighted.
-- Remote Bomb does not yet match BotW's full physics and damage profiles, water behaviour,
-  environmental destruction or bomb-to-bomb interaction.
+- The final audio correction is accepted in Citron; its Switch check is pending. Earlier
+  hardware testing confirms all four Champion abilities, including Mipha's voice.
+- Hinox and Blupee freezing and exposed Octorok highlighting are untested but considered
+  likely to work based on similar beasts, fauna, swimming fish and exposed Lizalfos.
+  Constructs remain unsupported by Stasis. Gyro aiming is not part of this update.
+- Daruk blocks attacks but does not deflect them. The Champions' animated spirits are absent.
+- Mipha's fairy order and shrine behavior, and Castle/Sage-vow recharge multipliers, have
+  not been separately verified in game.
+- Bomb water behavior, environmental destruction and bomb-to-bomb interactions do not yet
+  have full BotW-parity coverage. Combinations with other code mods remain unverified.
+- Each ability checks the game code it uses and stays inactive on unsupported versions.
 
 ## Building from source
 
@@ -214,7 +217,7 @@ no guarantee that it builds or works as-is; you set up the toolchain and framewo
   and helper dependencies are not included in the source repository. Test-only SD logging
   and periodic memory sampling are absent.
   `tools/compose_resources.py` merges the three abilities' game data into one RomFS against your
-  own TotK 1.2.1 dump, `tools/build_wheel_icons.py` makes the two wheel-page icons from your own
+  own TotK 1.2.1 dump, `tools/build_wheel_icons.py` makes the four wheel-page icons from your own
   BotW 1.6.0 dump, and `tools/build_release_restbl.py` builds the resource-size table for it. The
   `tools/build_champion_*.py` scripts generate the Champion headers and game data from your own
   TotK 1.2.1 and BotW 1.6.0 dumps: effects, save data, the updraft and lightning actors, Key Items

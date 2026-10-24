@@ -15,6 +15,7 @@ struct Hit {
     std::uint32_t attack[4]{};
     std::uintptr_t attacker{}, victim{};
     int weapon{-1};
+    bool playerStrike{};
     std::uint32_t generation{};
 };
 struct HitQueue {
@@ -31,6 +32,7 @@ struct CameraRequest {
 struct Signals {
     std::atomic<std::uint64_t> wheel{}, clockTicks{};
     std::atomic<std::uintptr_t> wheelOwner{}, frozenActor{}, pausedActor{}, pausedAnimation{};
+    std::atomic<std::uintptr_t> protectedObject{};
     std::atomic<std::uint32_t> wheelEpoch{}, wheelRequest{}, generation{1}, hitDrops{};
     std::atomic<unsigned> cameraSession{1}, motionRefused{};
     std::atomic<bool> clockRunning{};
@@ -59,6 +61,7 @@ void publishPhysicsTime(float frameScale);
 void acceptedHit(void *record, void *victimComponent, void *attackInfo);
 bool pauseAiNode(std::uintptr_t node);
 bool pauseAnimation(std::uintptr_t controller);
+bool pauseLife(std::uintptr_t component);
 void holdEnemyPhysics(void *component);
 using UpdatePosition = std::uintptr_t (*)(std::uintptr_t, float *, float);
 std::uintptr_t updateEnemyPosition(UpdatePosition original, std::uintptr_t actor, float *matrix,

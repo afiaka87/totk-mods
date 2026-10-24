@@ -16,7 +16,9 @@ extern "C" void exl_main(void *, void *) {
     const bool remoteBomb = remote_bomb::install(base);
     const bool cryonis = cryonis::install(base);
     const bool page = botw_abilities::wheel::install(base, stasis ? stasis::chooseFromWheel : nullptr,
-                                                     cryonis ? cryonis::chooseFromWheel : nullptr);
+                                                     cryonis ? cryonis::chooseFromWheel : nullptr,
+                                                     remoteBomb ? remote_bomb::chooseSphereFromWheel : nullptr,
+                                                     remoteBomb ? remote_bomb::chooseCubeFromWheel : nullptr);
     const bool championAudio = botw_abilities::champions::audio::install(base);
     const bool champions = championAudio && botw_abilities::champions::install(base);
     Logging.Log("[botw-abilities] suite stasis=%u remote-bomb=%u cryonis=%u wheel-page=%u",

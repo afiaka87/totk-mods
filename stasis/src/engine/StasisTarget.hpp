@@ -46,4 +46,31 @@ inline bool sameRay(Ray a, Ray b) {
     return a.valid && b.valid && length(sub(a.eye, b.eye)) < 0.15f &&
            dot(a.direction, b.direction) > 0.9996f;
 }
+// A completed query can still identify the target after the camera moves. Revalidate
+// the current reticle against that actor's current bounds, not the old camera pose.
+inline bool pointsAt(Ray ray, Vec3 minimum, Vec3 maximum) {
+    if (!ray.valid || !finite(ray.eye) || !finite(ray.direction) ||
+        !finite(minimum) || !finite(maximum)) return false;
+    const float magnitude = length(ray.direction);
+    if (!std::isfinite(magnitude) || magnitude < 0.000001f) return false;
+    const auto direction = scale(ray.direction,1.0f/magnitude);
+    const float origin[]{ray.eye.x,ray.eye.y,ray.eye.z};
+    const float delta[]{direction.x,direction.y,direction.z};
+    const float low[]{minimum.x,minimum.y,minimum.z};
+    const float high[]{maximum.x,maximum.y,maximum.z};
+    float near = 0, far = kReach;
+    for (unsigned axis = 0; axis < 3; ++axis) {
+        if (low[axis] > high[axis]) return false;
+        if (std::fabs(delta[axis]) < 0.000001f) {
+            if (origin[axis] < low[axis] || origin[axis] > high[axis]) return false;
+            continue;
+        }
+        const float a = (low[axis]-origin[axis])/delta[axis];
+        const float b = (high[axis]-origin[axis])/delta[axis];
+        near = std::fmax(near,std::fmin(a,b));
+        far = std::fmin(far,std::fmax(a,b));
+        if (near > far) return false;
+    }
+    return true;
+}
 } // namespace stasis::target

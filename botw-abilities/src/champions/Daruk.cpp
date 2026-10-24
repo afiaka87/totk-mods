@@ -24,6 +24,8 @@ constexpr CodeSite kSites[]{
     {0x753530,0xA9BB7BFD,0xF9000BF9}, {0x86A288,0xA9BD7BFD,0xA90157F6},
     {0x679BAC,0xD10143FF,0xA9017BFD}, {0x64EEEC,0xB9405808,0x71001D1F},
     {0x276E6B4,0xB9405828,0x51001909}, {0x9EEB38,0xD10303FF,0xA9087BFD},
+    {0x11BD100,0xF9411408,0xB4000068}, {0x1725044,0x52826188,0x52800229},
+    {0x1066DA0,0xF9411408,0xB4000068}, {0x85A684,0xA9BC7BFD,0xA9015FF8},
 };
 std::uintptr_t g_base{};
 BlockLedger<> g_blocks;
@@ -32,7 +34,6 @@ std::atomic<bool> g_active{};
 std::array<std::atomic<std::uint64_t>, 3> g_reported{};
 bool g_previous{};
 bool g_shieldHeld{};
-unsigned g_previousCharges{};
 template<class Fn> Fn call(std::uintptr_t offset) { return reinterpret_cast<Fn>(g_base + offset); }
 
 struct Gate {
@@ -244,11 +245,28 @@ HOOK_DEFINE_TRAMPOLINE(EquipmentWear) {
 
 bool active() { return g_active.load(std::memory_order_acquire); }
 void reset() {
-    g_previous = false; g_previousCharges = 0; g_shieldHeld = false;
+    g_previous = false; g_shieldHeld = false;
     g_active.store(false,std::memory_order_release);
     for (auto& reported : g_reported) reported.store(0,std::memory_order_relaxed);
     effects::hold(Effect::DarukShell,false);
     effects::hold(Effect::DarukAura,false);
+}
+
+void impact(const ActorHandle& player) {
+    const auto component = call<std::uintptr_t(*)(std::uintptr_t)>(0x11BD100)(player.address);
+    if (!isPlausibleAddress(component)) return;
+    // TotK calcGuardJustSuccess uses this exact Guard request and duration.
+    const unsigned guard = 1;
+    call<void(*)(std::uintptr_t,const unsigned*,bool,float)>(0x1725044)(component,&guard,false,2.0f);
+    const auto xlink = call<std::uintptr_t(*)(std::uintptr_t)>(0x1066DA0)(player.address);
+    if (!isPlausibleAddress(xlink)) return;
+    // Native calcGuardJustSuccess emits this ELink on Player, with its two handles returned in X8.
+    // A nontrivial destructor selects that ABI; the native caller also discards these one-shot handles.
+    struct Emission { std::uintptr_t effect{}, sound{}; ~Emission() {} };
+    static_assert(sizeof(Emission) == 16);
+    const char* event = "GuardJustHit";
+    const auto emitted = call<Emission(*)(std::uintptr_t,const char**,unsigned)>(0x85A684)(xlink,&event,0);
+    Logging.Log("[champions] DARUK_PARRY effect=%llx", (unsigned long long)emitted.effect);
 }
 
 void service(const ActorHandle& player, Context context, bool shieldHeld, bool freshInput) {
@@ -265,14 +283,12 @@ void service(const ActorHandle& player, Context context, bool shieldHeld, bool f
         effects::pulse(Effect::DarukArrive,1.2f);
         effects::pulse(Effect::DarukFlare,1.5f);
     }
-    // Each blocked hit spends a charge; the shell plays Sidon's break burst, including on the last one.
-    if (g_previous && charges < g_previousCharges) effects::pulse(Effect::DarukShellBreak,1.0f);
     if (!enabled && g_previous) effects::pulse(Effect::DarukLeave,1.2f);
     effects::hold(Effect::DarukAura,enabled);
     effects::hold(Effect::DarukShell,enabled);
     if (enabled != g_previous)
         Logging.Log("[champions] DARUK_BARRIER active=%u charges=%u", unsigned(enabled),unsigned(saved.states[2].charges));
-    g_previous = enabled; g_previousCharges = charges;
+    g_previous = enabled;
     g_active.store(enabled,std::memory_order_release);
 }
 

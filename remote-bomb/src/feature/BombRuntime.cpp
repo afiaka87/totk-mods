@@ -6,6 +6,8 @@
 #include "BombInput.hpp"
 #include "BombInventory.hpp"
 #include "BombWorld.hpp"
+#include "BombPickup.hpp"
+#include "BombWheelPickup.hpp"
 #include "BombSignals.hpp"
 #include "BombVisualBackend.hpp"
 #include "BombRenderPolicy.hpp"
@@ -73,6 +75,8 @@ struct Runtime {
     unsigned pickupLogs{};
     bool pickupPress{};
     bool modChosen{};
+    std::atomic<std::uint64_t> wheelRequest{};
+    pickup::Pending wheelPickup;
     std::uint64_t priorClock{};
     unsigned generation{}, seenSelections{};
     totk::engine::AbilityChoiceWatch otherAbilities;
@@ -98,6 +102,8 @@ bool current(engine::Handle handle) {
     return state.roster.contains(handle) && handle.isCurrent(state.scene.token);
 }
 void invalidateScene(const char *reason) {
+    state.wheelRequest.store(0,std::memory_order_release);
+    state.wheelPickup = {};
     if (!state.scene.token.isValid())
         return;
     Logging.Log("[remote-bomb] SCENE_RESET reason=%s generation=%u", reason, state.generation);
@@ -423,7 +429,90 @@ highlight::Level highlightOf(unsigned form, const Hand &hand, engine::Position b
     }
     return level;
 }
-// Diagnostic for ground pickup: an A press within 3 m of a bomb, and each change of the bomb's hold state or of what Link carries while he stays that close. Ultrahand's per-frame bits are ignored.
+void serviceWheelPickup(const eng::NpadFrame& frame, bool running, float frames) {
+    using pickup::Stage;
+    auto& pending = state.wheelPickup;
+    const auto wheel = input::unpack(state.signals.wheel.load(std::memory_order_acquire));
+    const auto requested = state.wheelRequest.load(std::memory_order_acquire);
+    if (requested && !pickup::belongs(requested,wheel.epoch)) state.wheelRequest.store(0);
+    if (requested && pickup::belongs(requested,wheel.epoch) && wheel.closed && !wheel.open && running) {
+        state.wheelRequest.store(0);
+        if (!pending.active()) {
+            pending = {Stage::Waiting, unsigned(requested)==2 ? Shape::Cube : Shape::Sphere,0,wheel.epoch};
+            pending.inheritedButtons = pickup::actionButtons(frame.snapshot().buttons);
+            Logging.Log("[remote-bomb] WHEEL_PICKUP_REQUEST form=%u epoch=%u buttons=%llx",
+                index(pending.shape),wheel.epoch,(unsigned long long)frame.snapshot().buttons);
+            apply({pending.shape==Shape::Cube ? Event::SelectCube : Event::SelectSphere});
+            state.controls.remembered = true;
+            state.controls.reclaimed = state.controls.tap = false;
+            state.modChosen = false;
+            state.signals.remembered.store(true,std::memory_order_release);
+            eng::chooseAbility(eng::Ability::RemoteBomb);
+        }
+    }
+    if (!pending.active() || !running || !frame.snapshot().freshSampleCount) return;
+    const bool expired = pending.advance(frames);
+    if (pending.stage == Stage::Refund) {
+        if (inventory::restoreOne(state.base,pending.shape,state.gameplay.upgrade,frames>0)==inventory::Status::Granted)
+            pending = {};
+        else if (expired) {
+            Logging.Log("[remote-bomb] WHEEL_REFUND_DEFERRED form=%u",index(pending.shape));
+            pending = {}; // The ordinary stock watcher will reconcile the missing form.
+        }
+        return;
+    }
+    const auto sample = frame.snapshot();
+    if (expired || wheel.open || wheel.epoch != pending.epoch ||
+        pickup::cancelInput(pending,sample.buttons)) {
+        Logging.Log("[remote-bomb] WHEEL_PICKUP_CANCEL form=%u stage=%u frames=%f buttons=%llx epoch=%u open=%u",
+                    index(pending.shape),unsigned(pending.stage),double(pending.frames),
+                    (unsigned long long)sample.buttons,wheel.epoch,unsigned(wheel.open));
+        pending = {}; // An already-created bomb remains a normal usable world bomb.
+        return;
+    }
+    const auto form = index(pending.shape);
+    const auto held = engine::carriedActor(state.native,state.generation,borrow(state.player)).value;
+    const auto bomb = state.actors[form];
+    if (held) {
+        Logging.Log("[remote-bomb] WHEEL_PICKUP_HELD form=%u intended=%u",form,
+                    unsigned(bomb.address && held==borrow(bomb).value));
+        pending = {};
+        return;
+    }
+    if (pickup::actionButtons(sample.buttons) || !pickup::ready(state.base,state.player))
+        return;
+    if (pending.stage == Stage::Waiting) {
+        const auto phase = state.gameplay.slots[form].phase;
+        if (phase == Phase::Live) pending.stage = Stage::Attention;
+        else if (phase == Phase::Stored && frames>0) {
+            const auto taken = inventory::takeOne(state.base,pending.shape,state.gameplay.upgrade,true);
+            if (taken == inventory::TakeStatus::Deferred) return;
+            if (taken == inventory::TakeStatus::Uncertain) {
+                Logging.Log("[remote-bomb] WHEEL_DEBIT_UNCERTAIN form=%u",form);
+                pending = {}; // Never repeat a debit whose read-back failed.
+                return;
+            }
+            pending.stage = pickup::spawn(state.base,state.player,pending.shape,state.gameplay.upgrade) ?
+                Stage::Creating : Stage::Refund;
+            return;
+        } else if (phase==Phase::Recharging || phase==Phase::DetonationRequested) {
+            Logging.Log("[remote-bomb] WHEEL_PICKUP_UNAVAILABLE form=%u phase=%u",form,unsigned(phase));
+            pending = {};
+            return;
+        }
+    }
+    if (pending.stage==Stage::Creating && bomb.address && current(bomb)) pending.stage=Stage::Attention;
+    if (pending.stage==Stage::Attention && bomb.address && current(bomb) &&
+        pickup::focused(state.base,state.player,bomb)) {
+        // One native A edge enters PlayerPreLift/PlayerLift, owning animation and controls.
+        // No Lifter attachment, forged action node or hand-parenting is used.
+        frame.addOwnedButtons(1u);
+        pending.stage=Stage::Pressed;
+        Logging.Log("[remote-bomb] WHEEL_PICKUP_PRESS form=%u actor=%p",form,
+                    reinterpret_cast<void*>(bomb.address));
+    }
+}
+// Log native pickup transitions near a bomb; Ultrahand's per-frame bits are ignored.
 void tracePickup(unsigned form, engine::Position bomb) {
     if (!state.player.address || state.pickupLogs >= 80)
         return;
@@ -481,7 +570,8 @@ void publish(bool running) {
 }
 bool initialize(std::uintptr_t base) {
     engine::BindingFailure failure;
-    if (!engine::validateRuntime(base) || !engine::bindTotk121(base, state.native, &failure)) {
+    if (!engine::validateRuntime(base) || !pickup::validate(base) ||
+        !engine::bindTotk121(base, state.native, &failure)) {
         Logging.Log("[remote-bomb] BIND_REFUSED error=%u offset=%p expected=%016llx actual=%016llx",
                     unsigned(failure.error), reinterpret_cast<void *>(failure.offset),
                     (unsigned long long)failure.expected, (unsigned long long)failure.actual);
@@ -539,6 +629,8 @@ void tick(void *device) {
         Logging.Log("[remote-bomb] L_RETURNED to_mod=%u", unsigned(controls.next.handing));
     state.controls = controls.next;
     state.signals.remembered.store(input::blocksNative(controls.next), std::memory_order_release);
+    const bool wheelAction = state.wheelRequest.load(std::memory_order_acquire) || state.wheelPickup.active();
+    if (available) serviceWheelPickup(frame,running,frames);
     if (controls.event != input::Event::None)
         Logging.Log("[remote-bomb] INPUT event=%u remembered=%u", unsigned(controls.event),
                     unsigned(controls.next.remembered));
@@ -555,7 +647,7 @@ void tick(void *device) {
             Logging.Log("[remote-bomb] DETONATE_HELD form=%u serial=%u lifted=%u receiver_flags=%llx",
                         unsigned(index(target)), state.gameplay.slots[index(target)].ticket.serial,
                         unsigned(lifted), (unsigned long long)flags);
-        if (controls.use && running && !held && state.gameplay.slots[index(target)].phase == Phase::Live) {
+        if (controls.use && !wheelAction && running && !held && state.gameplay.slots[index(target)].phase == Phase::Live) {
             apply({target == Shape::Sphere ? Event::SelectSphere : Event::SelectCube});
             const auto action = transition(state.gameplay, {Event::UseSelected});
             state.gameplay = action.next;
@@ -570,7 +662,8 @@ void tick(void *device) {
             state.stockFrames = 0.f;
         std::array<bool, 2> missing{};
         for (unsigned form = 0; form < 2; ++form)
-            missing[form] = watchStock(form, check);
+            missing[form] = state.wheelPickup.active() && index(state.wheelPickup.shape)==form ?
+                false : watchStock(form, check);
         for (unsigned form = 0; form < 2; ++form)
             if (missing[form])
                 repairStock(form, missing[0] && missing[1]);
@@ -599,6 +692,14 @@ void publishPhysicsTime(float frames) {
                                    state.signals.running.load(std::memory_order_acquire));
 }
 void wheelOpened(std::uintptr_t screen) { engine::wheelOpened(state.signals, screen); }
+bool chooseFromWheel(std::uintptr_t screen, Shape shape) {
+    const auto wheel=input::unpack(state.signals.wheel.load(std::memory_order_acquire));
+    if (!state.signals.player.load(std::memory_order_acquire) || !wheel.open || wheel.exited ||
+        state.signals.wheelOwner.load(std::memory_order_acquire)!=screen) return false;
+    std::uint64_t empty=0;
+    return state.wheelRequest.compare_exchange_strong(empty,pickup::request(wheel.epoch,shape),
+                                                     std::memory_order_acq_rel);
+}
 void wheelExited(std::uintptr_t screen, bool cancelled) { engine::wheelExited(state.signals, screen, cancelled); }
 void wheelClosed(std::uintptr_t screen) { engine::wheelClosed(state.signals, screen); }
 void nativeSelectionAccepted(std::uintptr_t screen) { engine::nativeSelectionAccepted(state.signals, screen); }

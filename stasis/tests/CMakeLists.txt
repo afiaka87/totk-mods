@@ -25,6 +25,7 @@ add_executable(stasis_host_tests
     test_target.cpp
     test_target_layers.cpp
     test_enemy_hold.cpp
+    test_equipment.cpp
     test_hit_adapter.cpp
     test_trail.cpp
     test_input.cpp

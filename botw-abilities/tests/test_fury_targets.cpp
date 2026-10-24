@@ -31,6 +31,32 @@ TEST_CASE("Fury preserves original damage differences and excludes helpers and T
     CHECK_FALSE(furyBalance("Enemy_Drake_Attention"));
     CHECK_FALSE(furyBalance("Player"));
     CHECK_FALSE(furyBalance("Enemy_Unknown"));
+    for (const auto actor : {"Enemy_Treant_Bee", "Enemy_Treant_Broadleaf", "Enemy_Treant_D", "Enemy_Treant_E"})
+        CHECK(furyBalance(actor) == FuryBalance{150,0});
+    CHECK_FALSE(furyBalance("Enemy_Treant_Broadleaf_Dummy"));
+    CHECK_FALSE(furyBalance("Enemy_Treant_Bee_Dummy"));
+}
+
+TEST_CASE("Fury survives temporary damage and reaction refusal without duplicate delivery") {
+    FuryHits<1> hits;
+    const FuryTarget actor{0x10000,17};
+    REQUIRE(hits.insert(actor,{150,300},60));
+    for (unsigned frame = 0; frame < 10; ++frame) {
+        CHECK_FALSE(hits.takeDamage(actor,false));
+        CHECK_FALSE(hits.takeReaction(actor,false));
+        CHECK(hits.expire(frame) == 0);
+    }
+    CHECK(hits.takeDamage(actor,true) == FuryBalance{150,300});
+    CHECK_FALSE(hits.takeDamage(actor,true));
+    CHECK(hits.pending());
+    CHECK_FALSE(hits.takeReaction(actor,false));
+    CHECK(hits.takeReaction(actor,true) == FuryBalance{150,300});
+    CHECK_FALSE(hits.pending());
+    REQUIRE(hits.insert(actor,{150,300},60));
+    CHECK_FALSE(hits.takeDamage(actor,false));
+    CHECK(hits.expire(60) == 1);
+    CHECK_FALSE(hits.takeDamage(actor,true));
+    CHECK_FALSE(hits.takeReaction(actor,true));
 }
 
 TEST_CASE("Fury damage and reaction are separately claimed once in either worker order") {

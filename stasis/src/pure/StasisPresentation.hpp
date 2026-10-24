@@ -18,6 +18,7 @@ inline float radius(Bounds b) {
 
 // What the renderer and surface pass draw this frame, published by the input hook.
 struct Presentation {
+    Vec3 previewOrigin;
     Vec3 position;
     Vec3 arrowOrigin;
     Vec3 direction;

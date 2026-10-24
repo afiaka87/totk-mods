@@ -58,7 +58,8 @@ void Mailbox::observe(Cast original, const void *from, const void *object, Resol
         eng::readMemory<std::uintptr_t>(reinterpret_cast<std::uintptr_t>(query_) + 0x60);
     hit_ = {};
     if (source != reinterpret_cast<std::uintptr_t>(object) + 0x128) {
-        state_.store(cancelled_.load(std::memory_order_acquire) ? Idle : Ready,
+        // An unrelated native query is not a miss. Wait for a compatible donor.
+        state_.store(cancelled_.load(std::memory_order_acquire) ? Idle : Pending,
                      std::memory_order_release);
         return;
     }

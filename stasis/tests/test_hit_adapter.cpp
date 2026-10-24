@@ -3,6 +3,22 @@
 #include "StasisProjection.hpp"
 #include <array>
 #include <cstring>
+TEST_CASE("Projectile charge follows travel instead of becoming a raised player strike") {
+    const stasis::Vec3 force{0, 2, 0}, velocity{3, -4, 0};
+    const auto direction = stasis::hit_adapter::projectileDirection(force, velocity);
+    CHECK(direction.x == doctest::Approx(1.2f));
+    CHECK(direction.y == doctest::Approx(-1.6f));
+    CHECK(stasis::length(direction) == doctest::Approx(2));
+    stasis::ChargeState projectile, player;
+    stasis::acceptStrike(projectile, {direction, {}, -1, false, true, true}, 1, true);
+    stasis::acceptStrike(player, {direction, {}, 0, true, true, true}, 1, true);
+    CHECK(projectile.counter == 0);
+    CHECK(projectile.vector.y < 0);
+    CHECK(player.counter == 1);
+    CHECK(player.vector.y > 0);
+    CHECK(stasis::hit_adapter::projectileDirection(force, {}).y == 2);
+    CHECK(stasis::hit_adapter::projectileDirection(force, {NAN, 0, 0}).y == 2);
+}
 TEST_CASE("Player redirection matches the original ARM impulse block") {
     struct Case {
         stasis::Vec3 force, player, centre, expected;

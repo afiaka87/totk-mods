@@ -16,7 +16,8 @@ import struct
 import sys
 from pathlib import Path
 
-ICONS = {"BotwStasis": "Obj_StopTimerLv2", "BotwCryonis": "Obj_IceMaker"}
+ICONS = {"BotwStasis": "Obj_StopTimerLv2", "BotwCryonis": "Obj_IceMaker",
+         "BotwBomb": "Obj_RemoteBombBall2", "BotwBombCube": "Obj_RemoteBombCube2"}
 TEMPLATE = "UI/Tex/Icon/Obj_Camera.bntx.zs"
 TEMPLATE_NAME = "Obj_Camera"
 SIZE = 144
