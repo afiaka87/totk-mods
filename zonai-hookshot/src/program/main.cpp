@@ -40,30 +40,35 @@ HOOK_DEFINE_TRAMPOLINE(RayCastWorkerHook) {
     }
 };
 
+void updateTraversal(void* device) {
+    namespace manual = zonai_hookshot::integration;
+    namespace input = zonai_hookshot::input;
+    const auto frame = g_input.read(device);
+    const auto& snapshot = frame.snapshot();
+    const bool fresh = snapshot.freshSampleCount > 0;
+    if (fresh) g_lastButtons = snapshot.buttons;
+    const auto decision = zonai_hookshot::pure::traversalOwnership({
+        manual::ownsMovement(), arrowbound::movementEngaged(),
+        fresh, (g_lastButtons & kButtonZR) != 0,
+        (g_lastButtons & zonai_hookshot::input_policy::kAimChord) ==
+            zonai_hookshot::input_policy::kAimChord,
+        (g_lastButtons & input::kButtonB) != 0});
+    zonai_hookshot::pure::dispatchTraversal(decision,
+        [] { manual::yieldMovement(); },
+        [] { arrowbound::yieldMovement(); },
+        [device](bool allowed) { arrowbound::tick(device, allowed); },
+        [device](bool allowed) {
+            manual::allowActivation(allowed);
+            wwpg::modules::zonaiHookshot().tick(device);
+            zonai_hookshot::hooks::afterNpad(device);
+        });
+    zonai_hookshot::log::sdLogService();
+}
+
 HOOK_DEFINE_TRAMPOLINE(NpadCalcHook) {
     static void Callback(void* device) {
         Orig(device);
-        namespace manual = zonai_hookshot::integration;
-        namespace input = zonai_hookshot::input;
-        const auto frame = g_input.read(device);
-        const auto& snapshot = frame.snapshot();
-        const bool fresh = snapshot.freshSampleCount > 0;
-        if (fresh) g_lastButtons = snapshot.buttons;
-        const auto decision = zonai_hookshot::pure::traversalOwnership({
-            manual::ownsMovement(), arrowbound::movementEngaged(),
-            fresh, (g_lastButtons & kButtonZR) != 0,
-            (g_lastButtons & zonai_hookshot::input_policy::kAimChord) ==
-                zonai_hookshot::input_policy::kAimChord,
-            (g_lastButtons & input::kButtonB) != 0});
-        zonai_hookshot::pure::dispatchTraversal(decision,
-            [] { manual::yieldMovement(); },
-            [] { arrowbound::yieldMovement(); },
-            [device](bool allowed) { arrowbound::tick(device, allowed); },
-            [device](bool allowed) {
-                manual::allowActivation(allowed);
-                wwpg::modules::zonaiHookshot().tick(device);
-                zonai_hookshot::hooks::afterNpad(device);
-            });
+        updateTraversal(device);
     }
 };
 
@@ -72,12 +77,15 @@ HOOK_DEFINE_TRAMPOLINE(NpadCalcHook) {
 extern "C" void exl_main(void*, void*) {
     exl::hook::Initialize();
     const uintptr_t mainBase = exl::util::modules::GetTargetStart();
-    const auto* game = arrowbound::profiles::activate(
-        mainBase, exl::util::GetMainModuleInfo().m_Text.m_Size);
+    const auto textSize = exl::util::GetMainModuleInfo().m_Text.m_Size;
+    const auto* game = arrowbound::profiles::activate(mainBase, textSize);
     if (!game) {
-        Logging.Log("[glideshot] 0.10.4 unknown game build; nothing installed");
+        Logging.Log("[zonai-hookshot] " HOOKSHOT_VERSION " unknown game build main_text=%zx; nothing installed",
+                    textSize);
         return;
     }
+    Logging.Log("[zonai-hookshot] " HOOKSHOT_VERSION " selected TotK %s main_text=%zx self=%lx",
+                game->name, textSize, exl::util::modules::GetSelfStart() - mainBase);
     zonai_hookshot::action::useGameProfile(game->version);
     zonai_hookshot::render::configure(mainBase);
     zonai_hookshot::render::installShaderPass(mainBase);
@@ -102,7 +110,7 @@ extern "C" void exl_main(void*, void*) {
         arrowbound::parasail::onGlideEntryPredicate,
         arrowbound::sharedGripHooksReady});
     arrowbound::installFeatureHooks(mainBase);
-    Logging.Log("[glideshot] 0.10.4 + Arrowbound loaded for TotK %s (shared hooks, exclusive traversal)",
+    Logging.Log("[zonai-hookshot] " HOOKSHOT_VERSION " + Arrowbound loaded for TotK %s (shared hooks, exclusive traversal)",
                 game->name);
 }
 

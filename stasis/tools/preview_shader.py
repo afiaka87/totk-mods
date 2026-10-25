@@ -44,13 +44,24 @@ ray=np.stack(((2*(x+.5)/w-1)/px,(1-2*(y+.5)/h)/py,-np.ones((h,w))),axis=-1)
 centre=np.array([-.25,.15,-6.0]);radii=np.array([1.3,1.3,1.3])
 def project(pos):
     z=-pos[2];return np.array([(px*pos[0]/z*.5+.5)*w,(.5-py*pos[1]/z*.5)*h,z,1.0],dtype='f4')
-def fixtures(irregular=False,occluded=False,empty=False):
+def fixtures(irregular=False,occluded=False,empty=False,preview_pair=False,overlap=False):
+    global expected_hover,expected_preview
     scaled=ray/radii;origin=-centre/radii
     a=(scaled**2).sum(-1);b=2*(scaled*origin).sum(-1);c=(origin**2).sum()-1
     disc=b*b-4*a*c
     nearest=(-b-np.sqrt(np.maximum(disc,0)))/(2*a)
     mask=(disc>0)&(nearest>0)
-    if irregular:mask&=~((x>w*.5)&(y<h*.41))
+    selected_mask=mask.copy();selected_nearest=nearest.copy()
+    if preview_pair:
+        other_origin=-(centre+np.array([1.7,0,.2] if overlap else [3.2,0,0]))/radii
+        other_b=2*(scaled*other_origin).sum(-1);other_c=(other_origin**2).sum()-1
+        other_disc=other_b*other_b-4*a*other_c
+        other_nearest=(-other_b-np.sqrt(np.maximum(other_disc,0)))/(2*a)
+        other_mask=(other_disc>0)&(other_nearest>0)
+        use_other=other_mask&(~mask|(other_nearest<nearest))
+        nearest=np.where(use_other,other_nearest,nearest);mask|=other_mask
+    if irregular:
+        cut=~((x>w*.5)&(y<h*.41));mask&=cut;selected_mask&=cut
     floor=np.divide(-1.5,ray[:,:,1],out=np.full((h,w),20.0),where=ray[:,:,1]<-.0001)
     depth=np.minimum(floor,20)
     mask&=nearest<depth
@@ -69,14 +80,18 @@ def fixtures(irregular=False,occluded=False,empty=False):
     mw,mh=max(1,int(w*args.mask_scale)),max(1,int(h*args.mask_scale))
     rows=np.minimum(((np.arange(mh)+.5)*h/mh).astype(int),h-1)
     cols=np.minimum(((np.arange(mw)+.5)*w/mw).astype(int),w-1)
-    # Independent native contract: normalized linear selected-model depth, zero clear.
-    # Recall's processed ID/flow texture is intentionally absent from this renderer.
+    # Independently ray traced all-model and selected-only depth passes, zero clear.
     raw=np.where(mask&(not empty),(nearest-.1)/999.9,0)
     maskDepth=ctx.texture((mw,mh),1,raw[np.ix_(rows,cols)].astype('f4').tobytes(),dtype='f4');maskDepth.use(1)
-    return mask&~hidden,bg,world,(depthtex,maskDepth)
+    selected_raw=np.where(selected_mask&(not empty),(selected_nearest-.1)/999.9,0)
+    hoverDepth=ctx.texture((mw,mh),1,selected_raw[np.ix_(rows,cols)].astype('f4').tobytes(),dtype='f4');hoverDepth.use(5)
+    expected_hover=mask&~hidden&selected_mask&(nearest==selected_nearest)
+    expected_preview=mask&~hidden&~expected_hover
+    return mask&~hidden,bg,world,(depthtex,maskDepth,hoverDepth)
 def uniforms(frozen=False,charged=False):
     a=np.zeros((153,4),dtype='f4');a[0]=[w,h,.1,1000]
     a[52,:2]=[max(1,int(w*args.mask_scale)),max(1,int(h*args.mask_scale))]
+    a[52,2]=1
     a[1]=project(centre);a[1,3]=w*px*.5/6*.85
     a[55,:2]=[radii[0]*w*px*.5/6,radii[1]*h*py*.5/6]
     a[4]=[0,int(frozen),.25,int(True)];a[5]=[.7,1.7,0,0];a[53]=[1.7,-1,0,0]
@@ -151,6 +166,36 @@ def save(name,image,bg):
     panel=Image.fromarray((composite*255).astype('uint8'))
     ImageDraw.Draw(panel).text((16,16),name+' / native GLSL, synthetic scene',fill=(220,235,240))
     panel.save(out/(name+'.png'));panels.append(panel)
+# Two independent ray-traced surfaces share the native mask. Only the left one is selected.
+mask,bg,world,borrowed=fixtures(preview_pair=True)
+a=uniforms();a[4,0]=1;a[55,3]=1
+image,direct=render(a,chains=False,arrow=False,burst=False,particles=False)
+left=mask&(world[:,:,0]<.5)&(np.abs(world[:,:,1]-.15)<.5)
+right=mask&(world[:,:,0]>2.3)&(np.abs(world[:,:,1]-.15)<.5)
+hover_rgb=np.median(direct[left,:3],axis=0);preview_rgb=np.median(direct[right,:3],axis=0)
+assert left.sum()>500 and right.sum()>500
+assert hover_rgb[1]>hover_rgb[0] and preview_rgb[0]>preview_rgb[1]
+assert hover_rgb[1]>preview_rgb[1]*3
+save('aim-hover-and-preview',image,bg)
+checks.append({'hover_rgb':hover_rgb.tolist(),'preview_rgb':preview_rgb.tolist(),
+               'independent_visible_surfaces':2})
+for texture in borrowed:texture.release()
+# Overlap puts a neighboring surface inside the selected object's physics box. Shrinking
+# that box also leaves most selected geometry outside it. Neither may affect the tint.
+mask,bg,world,borrowed=fixtures(preview_pair=True,overlap=True)
+a=uniforms();a[4,0]=1;a[55,3]=1
+a[12,:3]=centre-.15;a[13,:3]=centre+.15
+image,direct=render(a,chains=False,arrow=False,burst=False,particles=False)
+def interior(m):
+    return m&np.roll(m,4,0)&np.roll(m,-4,0)&np.roll(m,4,1)&np.roll(m,-4,1)
+selected=interior(expected_hover);neighbor=interior(expected_preview)
+assert selected.sum()>500 and neighbor.sum()>500
+assert np.all(direct[selected,1]>direct[selected,0])
+assert np.all(direct[neighbor,0]>direct[neighbor,1])
+save('hover-full-model-overlapping-neighbor',image,bg)
+checks.append({'overlap_selected_pixels':int(selected.sum()),'overlap_neighbor_pixels':int(neighbor.sum()),
+               'physics_bounds_do_not_clip_or_spill_hover':True})
+for texture in borrowed:texture.release()
 for irregular in [False,True]:
     mask,bg,world,borrowed=fixtures(irregular)
     for name,frozen,charged in [('selected',False,False),('charged',True,True)]:
@@ -289,6 +334,26 @@ if args.geometry_baseline:
         assert np.ptp(vertices[:,-4:-1] if name=='chain' else vertices[:,-3:],axis=0).max()>1
         if name=='chain':assert np.allclose(np.linalg.norm(vertices[:,:3],axis=1),1,atol=.0001)
         checks.append({'geometry':name,'compared_vertices':count,'reference_max_error':error})
+# Native bloom receives the unchanged HDR surface, with HUD delayed until after bloom.
+mask,bg,world,borrowed=fixtures(occluded=True)
+split_errors=[]
+for frozen in (False,True):
+    a=uniforms(frozen);a[4,0]=1
+    drawObjects(a,False,False,False,False);complete=read(fbos[0])
+    scene=a.copy();scene[55,3]=1
+    drawObjects(scene,False,False,False,False);world_only=read(fbos[0])
+    hud=a.copy();hud[55,3]=2
+    ubo.write(hud.tobytes());programs['surface'].render(vertices=3)
+    joined=read(fbos[0]);error=float(np.max(np.abs(complete-joined)))
+    assert error<.004 and np.max(world_only[:,:,:3])>1
+    hud_region=(x<w*.17)&(y<h*.22)
+    assert np.max(np.abs(world_only[hud_region]))==0
+    drawObjects(hud,False,False,False,False);hud_only=read(fbos[0])
+    assert np.max(np.abs(hud_only[mask]))==0
+    split_errors.append(error)
+for t in borrowed:t.release()
+checks.append({'native_scene_hud_split_errors':split_errors,'hdr_emission_preserved':True,
+               'native_game_bloom_not_simulated':True})
 sheet=Image.new('RGB',(w*2,h*((len(panels)+1)//2)))
 for i,panel in enumerate(panels):sheet.paste(panel,((i%2)*w,(i//2)*h))
 sheet.save(out/'native-preview.png')

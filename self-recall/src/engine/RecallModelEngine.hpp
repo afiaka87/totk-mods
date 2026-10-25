@@ -1,6 +1,7 @@
 #pragma once
 
 #include "totk/engine/ReadGuard.hpp"
+#include "totk/render/PoseInput.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -763,10 +764,7 @@ inline NativeAdmissionPlan planNativeAdmission(const void* scene, std::span<cons
 
 namespace self_recall::model {
 
-enum class RenderInputStatus : std::uint8_t {
-    Ready, IdentityChanged, OriginChanged, MissingBoneMetadata, RequiresLocalAnimation,
-    MissingShapeMetadata, RequiresShapeAnimation,
-};
+using RenderInputStatus = totk::render::PoseInputStatus;
 
 inline bool followHistoricalParent(const pure::RecordedBoneMatrix& current,
         const pure::RecordedModelPose& live, const pure::RecordedBoneMatrix& parent,
@@ -975,64 +973,18 @@ inline bool appendCurrentGear(pure::RecordedPoseFrame& frame,
     return true;
 }
 
-struct NativeRenderInput {
-    alignas(16) std::byte skeleton[0x48];
-    std::byte skeletonPadding[8];
-    alignas(16) std::byte model[0x90];
-    NativeRenderInput() = default;
-    NativeRenderInput(const NativeRenderInput&) = delete;
-    NativeRenderInput& operator=(const NativeRenderInput&) = delete;
-
+struct NativeRenderInput : totk::render::PoseInput {
     RenderInputStatus prepare(const View& live, const pure::RecordedModelPose& historical,
                                const pure::RecordedBoneMatrix* bones) {
-        const auto& a = live.identity;
-        const auto& b = historical.identity;
-        if (!bones || a.unit != b.unit || a.skeleton != b.skeleton || a.resource != b.resource ||
-            a.boneCount != b.boneCount || a.materialCount != b.materialCount)
-            return RenderInputStatus::IdentityChanged;
-        if (!pure::sameRenderSpace(live.pose, historical))
-            return RenderInputStatus::OriginChanged;
-        const auto* originalSkeleton = reinterpret_cast<const std::byte*>(a.skeleton);
-        const std::byte* metadata;
-        std::memcpy(&metadata, originalSkeleton + 0x10, sizeof(metadata));
-        if (!metadata || !totk::engine::read_guard::admit(metadata, 0, std::size_t{a.boneCount} * 0x58)) return RenderInputStatus::MissingBoneMetadata;
-        for (unsigned i = 0; i < a.boneCount; ++i) {
-            std::uint32_t flags;
-            std::memcpy(&flags, metadata + i * 0x58 + 0x2C, sizeof(flags));
-            if (flags & 0x70000u) return RenderInputStatus::RequiresLocalAnimation;
-        }
-        const auto* unit = reinterpret_cast<const std::byte*>(a.unit);
-        std::uint16_t shapeCount;
-        const std::byte* shapes;
-        std::memcpy(&shapeCount, unit + g_nativeModelLayout.shapeCount, sizeof(shapeCount));
-        std::memcpy(&shapes, unit + g_nativeModelLayout.shapeArray, sizeof(shapes));
-        if (shapeCount && (!shapes || !totk::engine::read_guard::admit(shapes, 0, std::size_t{shapeCount} * 0x70)))
-            return RenderInputStatus::MissingShapeMetadata;
-        for (unsigned i = 0; i < shapeCount; ++i) {
-            const std::byte* resource;
-            std::memcpy(&resource, shapes + i * 0x70, sizeof(resource));
-            if (!resource || !totk::engine::read_guard::admit(resource, 0x5C, 1)) return RenderInputStatus::MissingShapeMetadata;
-            if (resource[0x5C] != std::byte{0}) return RenderInputStatus::RequiresShapeAnimation;
-        }
-        std::memcpy(skeleton, originalSkeleton, sizeof(skeleton));
-        std::memcpy(skeleton + 0x20, &bones, sizeof(bones));
-        std::memcpy(model, unit + g_nativeModelLayout.embeddedModel, sizeof(model));
-        const void* privateSkeleton = skeleton;
-        std::memcpy(model + 0x38, &privateSkeleton, sizeof(privateSkeleton));
-        return RenderInputStatus::Ready;
+        return PoseInput::prepare(live.identity, historical.identity,
+            pure::sameRenderSpace(live.pose, historical), bones, g_nativeModelLayout,
+            totk::engine::read_guard::admit);
     }
 };
 
-struct NativeBoundingInput {
-    alignas(16) std::byte unit[0x360];
-    NativeBoundingInput() = default;
-    NativeBoundingInput(const NativeBoundingInput&) = delete;
-    NativeBoundingInput& operator=(const NativeBoundingInput&) = delete;
-
+struct NativeBoundingInput : totk::render::PoseBoundsInput {
     void prepare(const void* liveUnit, const NativeRenderInput& animation) {
-        std::memcpy(unit, liveUnit, sizeof(unit));
-        const void* skeleton = animation.skeleton;
-        std::memcpy(unit + g_nativeModelLayout.skeleton, &skeleton, sizeof(skeleton));
+        PoseBoundsInput::prepare(liveUnit, animation, g_nativeModelLayout);
     }
 
     void prepareHistorical(const void* liveUnit, const NativeRenderInput& animation,

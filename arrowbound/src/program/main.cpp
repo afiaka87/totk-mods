@@ -38,7 +38,7 @@ extern "C" void exl_main(void*, void*) {
     const auto* game = arrowbound::profiles::activate(
         mainBase, exl::util::GetMainModuleInfo().m_Text.m_Size);
     if (!game) {
-        Logging.Log("[arrowbound] 0.2.3 unknown game build; nothing installed");
+        Logging.Log("[arrowbound] 0.2.4 unknown game build; nothing installed");
         return;
     }
     arrowbound::initialize(mainBase);
@@ -48,7 +48,7 @@ extern "C" void exl_main(void*, void*) {
     if (arrowbound::profiles::entryHookable(mainBase, game->hooks.npadCalc, "npad"))
         NpadCalcHook::InstallAtOffset(game->hooks.npadCalc.offset);
     arrowbound::hooks::install(mainBase);
-    Logging.Log("[arrowbound] 0.2.3 loaded for TotK %s", game->name);
+    Logging.Log("[arrowbound] 0.2.4 loaded for TotK %s", game->name);
 }
 
 extern "C" NORETURN void exl_exception_entry() { EXL_ABORT("unreachable"); }

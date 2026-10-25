@@ -3,7 +3,7 @@
 BotW's Stasis for Tears of the Kingdom 1.2.1: freeze an object, strike it to build up force, and
 launch it when the freeze ends.
 
-## Controls
+## Standalone controls
 
 - Hold L, highlight Camera in the ability wheel and click the right stick to aim. Holding L still
   opens the normal wheel.
@@ -25,16 +25,26 @@ after an early release.
 The selected object glows with cracks and a rim, is held by six chains while frozen, and leaves a
 particle trail when launched. A countdown and cooldown sit by the ability icon, and the original
 BotW sounds play for freezing, hits, the last three seconds and release. Targets are dynamic
-objects with a mass and enemies other than bosses, found along the camera's centre line out to
+objects with a mass and supported enemies and fauna, found along the camera's centre line out to
 30 m. Link, NPCs and carried or fused gear are skipped.
 
-## Status
+## Status and released package
 
-In development; there is no release package yet. Tested on the Citron emulator with TotK 1.2.1
-only. At startup the module checks the game code it uses and stays inactive on any other version.
-Scanning nearby objects while aiming is not implemented: only the selected target is highlighted.
-The effects need an internal resolution of 1920x1080 or lower. The mod replaces the game's
-`UI_Static` sound bank, so other mods that change that file conflict with it.
+This folder contains the standalone entry point and shared ability source. The released
+download is [BotW Abilities v0.2.3](../botw-abilities/README.md), which builds this ability
+into its second wheel page (hold L, then tap R). There is no separate standalone release
+package. The standalone controls above describe that development entry point.
+
+Nearby eligible objects now show amber previews and the hovered target has full visible coverage.
+Link and his equipment are excluded. Object and enemy holds no longer fall or rotate; those
+holds were rigorously tested. Hinox/Blupee holds and exposed Octorok highlights remain
+untested but confident, rather than individually verified.
+
+The recent source cleanup and memory changes are included in that accepted bundle. The
+standalone package has not received a new gameplay test or release capture. Other mods
+that replace the same sound bank or actor tables require the usual data merges.
+
+The standalone effects require an internal resolution of 1920x1080 or lower.
 
 ## Building from source
 

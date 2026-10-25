@@ -30,6 +30,8 @@ class FormationAssist {
 
    private:
     void reset();
+    void admitAssemblies();
+    void checkConstructionContinuity();
     void report(std::size_t slot, const char* status);
     void tick(const FleetTelemetryEndpoints& endpoints, bool enabled, float dt);
     void publishDiagnostics();

@@ -234,6 +234,49 @@ void FormationAssist::report(std::size_t slot, const char* status) {
                 static_cast<unsigned>(slot), status, reinterpret_cast<void*>(snapshot.integrator),
                 snapshot.memberCount);
 }
+inline void FormationAssist::admitAssemblies() {
+    if (!admitted_) {
+        captured_ = assemblies_;
+        for (std::uint32_t slot = 0; slot <= receiverCount_; ++slot) {
+            logSnapshot(slot, "original", captured_[slot]);
+            bindingHashes_[slot] = m::bindingFingerprint(captured_[slot]);
+        }
+        for (std::uint32_t i = 0; i < receiverCount_; ++i) {
+            matched_[i] = assemblies_[0].integrator != assemblies_[i + 1].integrator &&
+                          m::sameShape(assemblies_[0].shape, assemblies_[i + 1].shape);
+            Logging.Log(
+                "[fleet-sync][matched] SHAPE receiver=%u match=%u guide_members=%u "
+                "receiver_members=%u",
+                i + 1, matched_[i] ? 1u : 0u, assemblies_[0].memberCount,
+                assemblies_[i + 1].memberCount);
+        }
+        admitted_ = true;
+    }
+}
+
+inline void FormationAssist::checkConstructionContinuity() {
+    for (std::uint32_t slot = 0; slot <= receiverCount_; ++slot) {
+        const auto continuity = m::constructionContinuity(captured_[slot], assemblies_[slot]);
+        const auto hash = m::bindingFingerprint(assemblies_[slot]);
+        if (!continuity.safe || hash != bindingHashes_[slot]) {
+            if (evidenceStep_ || !constructionFault_ || hash != bindingHashes_[slot]) {
+                Logging.Log("[fleet-sync][matched] CONTINUITY endpoint=%u safe=%u reason=%s "
+                            "handle_changed=%u order_changed=%u body_changed=%u before=%u after=%u",
+                            slot, continuity.safe ? 1u : 0u, continuity.reason,
+                            continuity.handleChanged ? 1u : 0u, continuity.orderChanged ? 1u : 0u,
+                            continuity.bodyChanged ? 1u : 0u, continuity.before, continuity.after);
+                logSnapshot(slot, "original", captured_[slot]);
+                logSnapshot(slot, "current", assemblies_[slot]);
+            }
+            bindingHashes_[slot] = hash;
+        }
+        if (!continuity.safe && !constructionFault_) {
+            faultSlot_ = slot;
+            constructionFault_ = true;
+        }
+    }
+}
+
 void FormationAssist::tick(const FleetTelemetryEndpoints& endpoints, bool enabled, float dt) {
     if (!enabled || !endpoints.controllerActive || !endpoints.receiverCount ||
         endpoints.receiverCount > 4) {
@@ -299,43 +342,8 @@ void FormationAssist::tick(const FleetTelemetryEndpoints& endpoints, bool enable
         for (auto& controller : controllers_) controller.pauseTracking();
         return;
     }
-    if (!admitted_) {
-        captured_ = assemblies_;
-        for (std::uint32_t slot = 0; slot <= receiverCount_; ++slot) {
-            logSnapshot(slot, "original", captured_[slot]);
-            bindingHashes_[slot] = m::bindingFingerprint(captured_[slot]);
-        }
-        for (std::uint32_t i = 0; i < receiverCount_; ++i) {
-            matched_[i] = assemblies_[0].integrator != assemblies_[i + 1].integrator &&
-                          m::sameShape(assemblies_[0].shape, assemblies_[i + 1].shape);
-            Logging.Log(
-                "[fleet-sync][matched] SHAPE receiver=%u match=%u guide_members=%u "
-                "receiver_members=%u",
-                i + 1, matched_[i] ? 1u : 0u, assemblies_[0].memberCount,
-                assemblies_[i + 1].memberCount);
-        }
-        admitted_ = true;
-    }
-    for (std::uint32_t slot = 0; slot <= receiverCount_; ++slot) {
-        const auto continuity = m::constructionContinuity(captured_[slot], assemblies_[slot]);
-        const auto hash = m::bindingFingerprint(assemblies_[slot]);
-        if (!continuity.safe || hash != bindingHashes_[slot]) {
-            if (evidenceStep_ || !constructionFault_ || hash != bindingHashes_[slot]) {
-                Logging.Log("[fleet-sync][matched] CONTINUITY endpoint=%u safe=%u reason=%s "
-                            "handle_changed=%u order_changed=%u body_changed=%u before=%u after=%u",
-                            slot, continuity.safe ? 1u : 0u, continuity.reason,
-                            continuity.handleChanged ? 1u : 0u, continuity.orderChanged ? 1u : 0u,
-                            continuity.bodyChanged ? 1u : 0u, continuity.before, continuity.after);
-                logSnapshot(slot, "original", captured_[slot]);
-                logSnapshot(slot, "current", assemblies_[slot]);
-            }
-            bindingHashes_[slot] = hash;
-        }
-        if (!continuity.safe && !constructionFault_) {
-            faultSlot_ = slot;
-            constructionFault_ = true;
-        }
-    }
+    admitAssemblies();
+    checkConstructionContinuity();
     if (constructionFault_) {
         ++diagnostics_.skips;
         report(faultSlot_, "construction changed: remount");

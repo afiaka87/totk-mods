@@ -264,8 +264,9 @@ void onArrowSample(void* rawController, float nativeDelta) {
     mailbox.samplePosition.store(position);
     mailbox.sampleVelocity.store(velocity);
     const auto published = mailbox.sampleSeq.fetch_add(1, std::memory_order_release) + 1;
-    if (game().version == profiles::GameVersion::V121) {
+    {
         // Copy a weak native link while the arrow is live; drawing borrows its own reference.
+        // actor+0x1A8 and +0x10 are the native link fields on all nine builds (stage-zonai-hookshot).
         const auto handle = *reinterpret_cast<const std::uintptr_t*>(actor + 0x1A8);
         const auto generation = *reinterpret_cast<const std::int32_t*>(actor + 0x10);
         if (okPtr(handle) && generation != -1 &&

@@ -37,7 +37,7 @@ function(support_test name source)
     set(SUPPORT_TEST_TARGETS ${SUPPORT_TEST_TARGETS} ${target} PARENT_SCOPE)
 endfunction()
 
-# The public source export contains only the three coexistence suites.
+# Internal-only suites depend on generated fixtures; portable suites are selected by source presence.
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_overlay_layout.cpp")
     support_test(overlay_layout test_overlay_layout.cpp)
     support_test(harness_contract test_harness_contract.cpp)
@@ -50,6 +50,10 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_overlay_layout.cpp")
         ../src/NativeFont.cpp ../src/NativeFontRenderer.cpp)
     target_compile_definitions(runtime_support_native_fonts_test PRIVATE
         NATIVE_FONT_PROOF_PATH="${CMAKE_CURRENT_SOURCE_DIR}/native-font-diagnostic/proof.toml")
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_key_item_grant.cpp")
+    support_test(key_item_grant test_key_item_grant.cpp)
 endif()
 
 support_test(pfx_hook test_pfx_hook.cpp)

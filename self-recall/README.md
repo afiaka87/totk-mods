@@ -1,9 +1,21 @@
-# Self Recall v1.1.1
+# Self Recall v1.1.3
+
+## Changes in v1.1.3
+
+Uses the shared 8 MiB loader reservation so installing this package does not overwrite the combined-mod memory fix. Removes temporary memory probes; the 64-second history and all storage capacities are unchanged.
+
+The six-mod combination of Infinite Ascend, Fleet Sync, Self Recall (Switch), Zonai Hookshot with Arrowbound, BotW Abilities and Zonai Survey passed a physical Switch 1.2.1 session. Other game versions and combinations have not had a new test of the 8 MiB setting.
 
 Recall Link through his recent movement and animation history. Both builds now
 retain 64 seconds. The regular build keeps the whole history in memory for
 emulators. The Switch build keeps the newest 10 seconds in memory and stores older
 history on the SD card. **SD-card history is an alpha feature** (see below).
+
+## Changes in v1.1.2
+
+Shares the private pose-input preparation with the other ability code instead of keeping
+duplicate copies. The 64-second history, controls, animation, equipment handling and both
+memory profiles are unchanged. This cleanup passed rigorous user-reported emulator checks; the combined Switch session is recorded above. The v1.1.1 Airbender correction remains included.
 
 ## Changes in v1.1.1
 
@@ -222,3 +234,5 @@ the public source. Host tests use doctest 2.4.11 (MIT), Zstandard 1.5.7 (BSD) an
 LZ4 1.10.0 (BSD). Native builds use the same compression versions, caller-owned
 workspaces and the fast Zstandard strategy. The compiled module includes exlaunch
 (GPL-2.0), Zstandard and LZ4; see the accompanying notices and licenses.
+
+The sibling `runtime-support/include` supplies the shared private pose-input helper used by this source.

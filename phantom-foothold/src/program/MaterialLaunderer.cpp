@@ -1,4 +1,3 @@
-// Phantom Foothold: clears the climb-block bits of collision material sheets as the game loads them.
 // The two loaders keep pointers into the raw file buffer, so masking before parsing equals shipping edited data.
 
 #include <lib.hpp>
@@ -44,7 +43,8 @@ const profiles::GameProfile* selectGameProfile(std::uintptr_t mainBase) {
     return selected;
 }
 
-policy::Stats g_sc = {}, g_sh = {};
+constinit policy::Stats g_tileStats;
+constinit policy::Stats g_shapeStats;
 
 // Every asset load reaches these hooks, so buffers that are not collision containers pass silently.
 void launder(policy::Stats& s, const char* what, unsigned char* buf, u32 bufSize,
@@ -66,7 +66,7 @@ void launder(policy::Stats& s, const char* what, unsigned char* buf, u32 bufSize
 // World and shrine tiles (bphsc): the fixed1 material palette.
 HOOK_DEFINE_TRAMPOLINE(ScDoCreateHook) {
     static u64 Callback(u64 self, unsigned char* buf, u64 size, void* heap) {
-        launder(g_sc, "tile", buf, (u32)size, policy::locateTileSheet(buf, size));
+        launder(g_tileStats, "tile", buf, static_cast<u32>(size), policy::locateTileSheet(buf, size));
         return Orig(self, buf, size, heap);
     }
 };
@@ -74,7 +74,7 @@ HOOK_DEFINE_TRAMPOLINE(ScDoCreateHook) {
 // Object shapes (bphsh), including the shape blobs embedded in tiles.
 HOOK_DEFINE_TRAMPOLINE(ShDoCreateHook) {
     static u64 Callback(u64 self, unsigned char* buf, u32 size, void* heap) {
-        launder(g_sh, "shape", buf, size, policy::locateShapeSheet(buf, size));
+        launder(g_shapeStats, "shape", buf, size, policy::locateShapeSheet(buf, size));
         return Orig(self, buf, size, heap);
     }
 };

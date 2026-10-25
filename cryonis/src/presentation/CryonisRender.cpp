@@ -274,14 +274,16 @@ bool initializeTextures() {
             refuse(11);
             return false;
         }
-        NVNcopyRegion region{0, 0, 0, int(widths[i]), int(heights[i]), 1};
 #if defined(BOTW_ABILITIES_STREAM_TEXTURES)
         if (!totk::assets::withTexture(totk::assets::kCryonisTexturePath, pixels[i],
-                [&](const unsigned char *source) {
-                    texWrite(&g_textures[i], nullptr, &region, source);
-                    texFlush(&g_textures[i], nullptr, &region);
+                widths[i],heights[i],formats[i],
+                [&](const unsigned char *source,unsigned y,unsigned rows) {
+                    NVNcopyRegion part{0,int(y),0,int(widths[i]),int(rows),1};
+                    texWrite(&g_textures[i], nullptr, &part, source);
+                    texFlush(&g_textures[i], nullptr, &part);
                 })) { refuse(13); return false; }
 #else
+        NVNcopyRegion region{0, 0, 0, int(widths[i]), int(heights[i]), 1};
         texWrite(&g_textures[i], nullptr, &region, pixels[i]);
         texFlush(&g_textures[i], nullptr, &region);
 #endif

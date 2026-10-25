@@ -1,8 +1,8 @@
 #pragma once
 #include <stdint.h>
+#include <cstring>
 
-// Load-time material-sheet policy: container recognition, sheet location, row masking and log accounting.
-// Engine-free and host-tested; fails closed, so a sheet that fails any check is left byte-for-byte untouched.
+// Rejected sheets stay byte-for-byte untouched; all rows are validated before masking.
 
 namespace phantom::launder {
 
@@ -50,7 +50,9 @@ struct SheetLocation {
 };
 
 inline uint32_t readWord(const unsigned char* buffer, uint32_t at) {
-    return *(const uint32_t*)(buffer + at);
+    uint32_t word;
+    std::memcpy(&word, buffer + at, sizeof(word));
+    return word;
 }
 
 inline bool hasPhiveMagic(const unsigned char* buffer) {
@@ -79,7 +81,9 @@ inline SheetLocation locateShapeSheet(const unsigned char* buffer, uint32_t size
 // Returns rows cleared, or SHEET_REFUSED; every row is checked before the first write.
 inline int maskSheet(unsigned char* buffer, uint32_t bufferSize, uint32_t offset, uint32_t rows) {
     if (offset == 0 || rows == 0) { return 0; }
-    if ((uint64_t)offset + (uint64_t)ROW_BYTES * rows > bufferSize) { return SHEET_REFUSED; }
+    if (static_cast<uint64_t>(offset) + static_cast<uint64_t>(ROW_BYTES) * rows > bufferSize) {
+        return SHEET_REFUSED;
+    }
     for (uint32_t row = 0; row < rows; row++) {
         const unsigned char* entry = buffer + offset + ROW_BYTES * row;
         if (readWord(entry, 0) >= MAX_PLAUSIBLE_MATERIAL_ID
@@ -91,9 +95,11 @@ inline int maskSheet(unsigned char* buffer, uint32_t bufferSize, uint32_t offset
     for (uint32_t row = 0; row < rows; row++) {
         unsigned char* entry = buffer + offset + ROW_BYTES * row;
         if (readWord(entry, 0) == AIRWALL_MATERIAL) { continue; }
-        uint64_t* flags = (uint64_t*)(entry + FLAGS_IN_ROW);
-        if ((*flags & CLIMB_BLOCK_BITS) != 0) {
-            *flags &= ~CLIMB_BLOCK_BITS;
+        uint64_t flags;
+        std::memcpy(&flags, entry + FLAGS_IN_ROW, sizeof(flags));
+        if ((flags & CLIMB_BLOCK_BITS) != 0) {
+            flags &= ~CLIMB_BLOCK_BITS;
+            std::memcpy(entry + FLAGS_IN_ROW, &flags, sizeof(flags));
             cleared++;
         }
     }
@@ -126,7 +132,7 @@ inline NoteOutcome note(Stats& stats, int cleared) {
     }
     if (cleared == 0) { return {NoteKind::Unchanged, false}; }
     stats.containers++;
-    stats.rows += (uint32_t)cleared;
+    stats.rows += static_cast<uint32_t>(cleared);
     const bool shouldLog =
         stats.containers <= CLEAR_LOG_LIMIT || (stats.containers & CLEAR_LOG_INTERVAL) == 0;
     return {NoteKind::Cleared, shouldLog};

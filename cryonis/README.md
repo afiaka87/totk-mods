@@ -2,7 +2,7 @@
 
 BotW's Cryonis for Tears of the Kingdom 1.2.1: raise climbable ice pillars from water.
 
-## Controls
+## Standalone controls
 
 - Hold L, hover Amiibo in the ability wheel and click the right stick to aim. Holding L still opens
   the normal wheel.
@@ -24,12 +24,20 @@ and fades from 300 m. Submerged ice shows through the water, pillars cast the ga
 anything up to two feet below the surface is lifted with the ice. Sizes and timings are in
 `src/pure/CryonisTuning.hpp`.
 
-## Status
+## Status and released package
 
-In development; there is no release package yet. Tested on the Citron emulator with TotK 1.2.1
-only. At startup the module checks the game code it uses and stays inactive on any other version.
-The mod replaces the game's ActorInfo, GameActorInfo and UI_Static files, so other mods that change
-those files conflict with it.
+This folder contains the standalone entry point and shared ability source. The released
+download is [BotW Abilities v0.2.3](../botw-abilities/README.md), which builds this ability
+into its second wheel page (hold L, then tap R). There is no separate standalone release
+package. The standalone controls above describe that development entry point.
+
+Cryonis visuals, the bomb HUD and Stasis remained normal after the texture-memory work,
+with no reported hitching or crashes in the Citron check. The bundled Cryonis renderer
+loads textures in bounded row chunks through shared runtime support.
+
+The recent source cleanup and memory changes are included in that accepted bundle. The
+standalone package has not received a new gameplay test or release capture. Other mods
+that replace the same sound bank or actor tables require the usual data merges.
 
 ## Building from source
 

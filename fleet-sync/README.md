@@ -1,4 +1,10 @@
-# Fleet Sync v0.2.2
+# Fleet Sync v0.2.4
+
+## Changes in v0.2.4
+
+Uses the shared 8 MiB loader reservation so installing this package does not overwrite the combined-mod memory fix.
+
+The six-mod combination of Infinite Ascend, Fleet Sync, Self Recall (Switch), Zonai Hookshot with Arrowbound, BotW Abilities and Zonai Survey passed a physical Switch 1.2.1 session. Other game versions and combinations have not had a new test of the 8 MiB setting.
 
 Fly up to four identical receiver vehicles from one Steering Stick. Shared input and
 fast alignment keep the fleet together through takeoff and turns, without an extra HUD.
@@ -65,7 +71,8 @@ Logs use emulator debug output; this build has no persistent Fleet Sync SD-card 
 
 ## Development and license
 
-v0.2.2 cleans up the accepted flight build and prepares standalone host tests and releases.
+v0.2.3 names initial formation admission and ongoing construction checks in the existing
+physics owner. Controls, matching, flight tuning, collision rules and sounds are unchanged.
 Owned source is MIT Licensed. The executable also includes GPL-2.0 exlaunch;
 removing the text renderer does not relicense that dependency. See [LICENSE](LICENSE)
 and [NOTICE](NOTICE.txt). No game assets or fonts are distributed.
@@ -115,3 +122,11 @@ highly permissive (MIT) and I hope this adds to the community.
 ## Credits
 
 exlaunch contributors, devkitPro and doctest.
+
+## Changes in v0.2.3
+
+Code cleanup only. The module still maps 392 KiB with unchanged static storage and the same
+16 MiB process resource setting. The formation update retains its original stack frame.
+All 64 host tests pass; the existing full-session comparison passes 400,883 host checks and
+400,938 ARM checks, including formatted diagnostics. Previous gameplay observations remain
+the baseline; a new gameplay smoke test is deferred until the author is available.

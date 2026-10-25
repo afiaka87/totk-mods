@@ -5,8 +5,6 @@
 #include <cstdint>
 #include <cstring>
 
-#include "ReachConfig.hpp"
-
 namespace zonai_ascend {
 namespace {
 
@@ -17,15 +15,14 @@ bool g_leniencyHookHealthy = false;
 bool g_markerScaleHooksHealthy = false;
 SetPosAndScaleFn g_setPosAndScale = nullptr;
 std::ptrdiff_t g_actorPositionOffset = 0;
-std::atomic<std::uintptr_t> g_activeMarkerOwner{0};
-float g_markerPlayerPos[3]{};
-bool g_markerPlayerValid = false;
-
-std::uint32_t floatToBits(float value) {
-    std::uint32_t bits = 0;
-    __builtin_memcpy(&bits, &value, sizeof(bits));
-    return bits;
-}
+// Post-calc publishes this snapshot before native marker callbacks and clears it afterward.
+struct MarkerState {
+    std::atomic<std::uintptr_t> owner{0};
+    float playerPosition[3]{};
+    bool playerValid = false;
+};
+constinit MarkerState g_marker;
+constexpr std::ptrdiff_t kQueryReasonOffset = 0x7C;
 
 float readFloat(const void* base, std::ptrdiff_t offset) {
     float value = 0.0f;
@@ -38,6 +35,28 @@ float readFloat(const void* base, std::ptrdiff_t offset) {
 bool plausibleCoordinate(float value) {
     return value == value && value > -100000.0f &&
            value < 100000.0f;
+}
+
+bool readPlayerPosition(const void* updateContext, float (&position)[3]) {
+    void* actor = nullptr;
+    __builtin_memcpy(&actor, static_cast<const std::uint8_t*>(updateContext) + 8,
+                     sizeof(actor));
+    if (!actor) return false;
+    const float x = readFloat(actor, g_actorPositionOffset);
+    const float y = readFloat(actor, g_actorPositionOffset + 4);
+    const float z = readFloat(actor, g_actorPositionOffset + 8);
+    if (!plausibleCoordinate(x) || !plausibleCoordinate(y) || !plausibleCoordinate(z))
+        return false;
+    position[0] = x;
+    position[1] = y;
+    position[2] = z;
+    return true;
+}
+
+bool ownsMarker(std::uintptr_t owner, const void* handle) {
+    const auto candidate = reinterpret_cast<std::uintptr_t>(handle);
+    return candidate == owner + 0x3C || candidate == owner + 0x4C ||
+           candidate == owner + 0x5C || candidate == owner + 0x6C;
 }
 
 }
@@ -55,97 +74,59 @@ void init(std::uintptr_t mainBase, bool leniencyHookHealthy,
     }
 }
 
-std::uint32_t validationSpanBits() {
-    constexpr auto reach = pure::deriveReach(pure::kReleaseReach);
-    return floatToBits(reach.validationSpan);
-}
-
-float currentReach() {
-    return pure::kReleaseReach;
-}
-
-float markerSpan() {
-    constexpr auto reach = pure::deriveReach(pure::kReleaseReach);
-    return reach.markerSpan;
-}
-
 bool resolveQueryValid(void* manager, bool nativePassed) {
     if (nativePassed) return true;
     if (!g_leniencyHookHealthy || !manager) return false;
 
     std::uint16_t reason = 0;
     __builtin_memcpy(&reason,
-                     static_cast<std::uint8_t*>(manager) + 0x7C,
+                     static_cast<std::uint8_t*>(manager) + kQueryReasonOffset,
                      sizeof(reason));
     if (!pure::canRelaxQueryFailure(reason)) return false;
 
     const std::uint16_t cleared = static_cast<std::uint16_t>(
         pure::clearLenientReasons(reason));
-    __builtin_memcpy(static_cast<std::uint8_t*>(manager) + 0x7C,
+    __builtin_memcpy(static_cast<std::uint8_t*>(manager) + kQueryReasonOffset,
                      &cleared, sizeof(cleared));
     return true;
 }
 
 void beginMarkerPostCalc(void* manager, void* updateContext) {
-    g_activeMarkerOwner.store(0, std::memory_order_release);
-    g_markerPlayerValid = false;
+    g_marker.owner.store(0, std::memory_order_release);
+    g_marker.playerValid = false;
     if (!g_markerScaleHooksHealthy || !manager ||
         !updateContext || !g_setPosAndScale)
         return;
 
-    void* actor = nullptr;
-    __builtin_memcpy(
-        &actor,
-        static_cast<const std::uint8_t*>(updateContext) + 8,
-        sizeof(actor));
-    if (!actor) return;
-
-    const float px = readFloat(actor, g_actorPositionOffset);
-    const float py = readFloat(actor, g_actorPositionOffset + 4);
-    const float pz = readFloat(actor, g_actorPositionOffset + 8);
-    if (!plausibleCoordinate(px) ||
-        !plausibleCoordinate(py) ||
-        !plausibleCoordinate(pz))
-        return;
-
-    g_markerPlayerPos[0] = px;
-    g_markerPlayerPos[1] = py;
-    g_markerPlayerPos[2] = pz;
-    g_markerPlayerValid = true;
-    g_activeMarkerOwner.store(
+    if (!readPlayerPosition(updateContext, g_marker.playerPosition)) return;
+    g_marker.playerValid = true;
+    g_marker.owner.store(
         reinterpret_cast<std::uintptr_t>(manager),
         std::memory_order_release);
 }
 
 void endMarkerPostCalc(void* manager) {
     std::uintptr_t expected = reinterpret_cast<std::uintptr_t>(manager);
-    g_activeMarkerOwner.compare_exchange_strong(
+    g_marker.owner.compare_exchange_strong(
         expected, 0, std::memory_order_acq_rel);
-    g_markerPlayerValid = false;
+    g_marker.playerValid = false;
 }
 
 void applyMarkerScale(void* handle, const void* position) {
     if (!handle || !position || !g_setPosAndScale ||
-        !g_markerPlayerValid)
+        !g_marker.playerValid)
         return;
 
     const std::uintptr_t owner =
-        g_activeMarkerOwner.load(std::memory_order_acquire);
-    if (!owner) return;
-
-    const std::uintptr_t candidate = reinterpret_cast<std::uintptr_t>(handle);
-    if (candidate != owner + 0x3C &&
-        candidate != owner + 0x4C &&
-        candidate != owner + 0x5C &&
-        candidate != owner + 0x6C)
-        return;
+        g_marker.owner.load(std::memory_order_acquire);
+    if (!owner || !ownsMarker(owner, handle)) return;
 
     const float dx =
-        readFloat(position, 0) - g_markerPlayerPos[0];
+        readFloat(position, 0) - g_marker.playerPosition[0];
     const float dy =
-        readFloat(position, 4) - g_markerPlayerPos[1];
+        readFloat(position, 4) - g_marker.playerPosition[1];
     const float dz =
-        readFloat(position, 8) - g_markerPlayerPos[2];
+        readFloat(position, 8) - g_marker.playerPosition[2];
     if (!plausibleCoordinate(dx) ||
         !plausibleCoordinate(dy) ||
         !plausibleCoordinate(dz))

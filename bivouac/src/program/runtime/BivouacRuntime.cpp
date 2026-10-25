@@ -596,6 +596,63 @@ void comboTick(void* npadDevice, float linkX, float linkY, float linkZ) {
 #endif
 }
 
+void observeClimbing(const bivouac::engine::PlayerSnapshot& player,
+                     bivouac::runtime::ClimbObservation climbObservation) {
+    const u32 heartbeat = g_climbHeartbeat;
+    if (heartbeat != g.trigger.lastHeartbeat) {
+        g.trigger.lastHeartbeat = heartbeat;
+        g.trigger.lastHeartbeatTick = g.scene.tick;
+        if (!g.trigger.heartbeatSeen) {
+            g.trigger.heartbeatSeen = true;
+            BVLOG("climb: heartbeat hook LIVE (first pulse at tick %d)", g.scene.tick);
+        }
+    }
+    const bool pulsing = bivouac::policy::heartbeatClimbing(
+        g.scene.tick, g.trigger.lastHeartbeatTick, CLIMB_HEARTBEAT_GRACE_TICKS);
+    const bool climbing = bivouac::policy::resolveClimbing(
+        climbObservation, pulsing || player.climbing);
+    if (climbing) { g.trigger.lastClimbTick = g.scene.gameplayTick; }
+    else if (g.trigger.climbFlagPrev) { g.trigger.climbEndTick = g.scene.gameplayTick; }
+    if (climbing != g.trigger.climbFlagPrev) {
+        BVLOG("climb: %s tick=%d gp=%d hb=%u flag=%u", climbing ? "START" : "END",
+              g.scene.tick, g.scene.gameplayTick, heartbeat, player.climbing ? 1u : 0u);
+    }
+    g.trigger.climbFlagPrev = climbing;
+}
+
+void mountLedgerIfReady(bool warmedUp) {
+    if (warmedUp && g.persistence.sdState == 0 && g.scene.tick >= g.persistence.sdRetryAtTick) {
+        const bivouac::persistence::StorageResult mounted = gLedgerStore.mountSdCard();
+        if (mounted) {
+            g.persistence.sdState = 1;
+            BVLOG("sd: mounted");
+            if (bivouac::log::sdLogOpen(LEDGER_DIR, LOG_PATH)) { BVLOG("log: writing %s", LOG_PATH); }
+            else { BVLOG("log: sd file open FAILED"); }
+            if (!g.persistence.ledgerLoaded) { ledgerRead(); }
+        } else {
+            g.persistence.sdTries++;
+            g.persistence.sdRetryAtTick = g.scene.tick + SD_MOUNT_RETRY_TICKS;
+            BVLOG("sd: mount failed %x (try %d/%d)", mounted.nativeResult,
+                  g.persistence.sdTries, SD_MOUNT_MAX_TRIES);
+            if (g.persistence.sdTries >= SD_MOUNT_MAX_TRIES) { g.persistence.sdState = 2; BVLOG("sd: RAM-ONLY MODE (camps won't persist)"); }
+        }
+    }
+}
+
+void reportCampHeartbeat() {
+#if BV_DIAG
+    if (g.scene.tick % HEARTBEAT_TICKS == 0) {
+        int activeSites = 0, aliveSlots = 0;
+        for (int i = 0; i < MAX_SITES; i++) {
+            if (!g.camps.sites[i].active) { continue; }
+            activeSites++;
+            for (int p = 0; p < CAMP_PROP_COUNT; p++) { if (g.camps.sites[i].slot[p].state == SlotState::ALIVE) { aliveSlots++; } }
+        }
+        BVLOG("hb tick=%d gp=%d climbHb=%u sites=%d alive-slots=%d sd=%u trig=%u", g.scene.tick, g.scene.gameplayTick, g_climbHeartbeat, activeSites, aliveSlots, g.persistence.sdState, g.trigger.trigPending);
+    }
+#endif
+}
+
 void bvTick(void* npadDevice,
             bivouac::runtime::ClimbObservation climbObservation) {
     g.scene.tick++;
@@ -626,28 +683,7 @@ void bvTick(void* npadDevice,
     const bool workerAliveThisTick = gRaycasts.observeWorkerForTick();
     if (workerAliveThisTick) { g.scene.gameplayTick++; }
 
-    {
-        const u32 heartbeat = g_climbHeartbeat;
-        if (heartbeat != g.trigger.lastHeartbeat) {
-            g.trigger.lastHeartbeat = heartbeat;
-            g.trigger.lastHeartbeatTick = g.scene.tick;
-            if (!g.trigger.heartbeatSeen) {
-                g.trigger.heartbeatSeen = true;
-                BVLOG("climb: heartbeat hook LIVE (first pulse at tick %d)", g.scene.tick);
-            }
-        }
-        const bool pulsing = bivouac::policy::heartbeatClimbing(
-            g.scene.tick, g.trigger.lastHeartbeatTick, CLIMB_HEARTBEAT_GRACE_TICKS);
-        const bool climbing = bivouac::policy::resolveClimbing(
-            climbObservation, pulsing || player.climbing);
-        if (climbing) { g.trigger.lastClimbTick = g.scene.gameplayTick; }
-        else if (g.trigger.climbFlagPrev) { g.trigger.climbEndTick = g.scene.gameplayTick; }
-        if (climbing != g.trigger.climbFlagPrev) {
-            BVLOG("climb: %s tick=%d gp=%d hb=%u flag=%u", climbing ? "START" : "END",
-                  g.scene.tick, g.scene.gameplayTick, heartbeat, player.climbing ? 1u : 0u);
-        }
-        g.trigger.climbFlagPrev = climbing;
-    }
+    observeClimbing(player, climbObservation);
 
     updateNearStamps(linkX, linkY, linkZ);
 
@@ -659,22 +695,7 @@ void bvTick(void* npadDevice,
     g.menu.menuStarvedTicks = menuStep.starvedTicks;
     const bool menuCloseEdge = menuStep.closed;
 
-    if (warmedUp && g.persistence.sdState == 0 && g.scene.tick >= g.persistence.sdRetryAtTick) {
-        const bivouac::persistence::StorageResult mounted = gLedgerStore.mountSdCard();
-        if (mounted) {
-            g.persistence.sdState = 1;
-            BVLOG("sd: mounted");
-            if (bivouac::log::sdLogOpen(LEDGER_DIR, LOG_PATH)) { BVLOG("log: writing %s", LOG_PATH); }
-            else { BVLOG("log: sd file open FAILED"); }
-            if (!g.persistence.ledgerLoaded) { ledgerRead(); }
-        } else {
-            g.persistence.sdTries++;
-            g.persistence.sdRetryAtTick = g.scene.tick + SD_MOUNT_RETRY_TICKS;
-            BVLOG("sd: mount failed %x (try %d/%d)", mounted.nativeResult,
-                  g.persistence.sdTries, SD_MOUNT_MAX_TRIES);
-            if (g.persistence.sdTries >= SD_MOUNT_MAX_TRIES) { g.persistence.sdState = 2; BVLOG("sd: RAM-ONLY MODE (camps won't persist)"); }
-        }
-    }
+    mountLedgerIfReady(warmedUp);
 
     if ((g.scene.tick & 255) == 0) {
         BVLOG("diag tick=%d gp=%d climbHb=%u flag=%u starved=%d near=%d lastClimb=%d climbEnd=%d sd=%u",
@@ -719,17 +740,7 @@ void bvTick(void* npadDevice,
         ledgerWrite();
     }
 
-#if BV_DIAG
-    if (g.scene.tick % HEARTBEAT_TICKS == 0) {
-        int activeSites = 0, aliveSlots = 0;
-        for (int i = 0; i < MAX_SITES; i++) {
-            if (!g.camps.sites[i].active) { continue; }
-            activeSites++;
-            for (int p = 0; p < CAMP_PROP_COUNT; p++) { if (g.camps.sites[i].slot[p].state == SlotState::ALIVE) { aliveSlots++; } }
-        }
-        BVLOG("hb tick=%d gp=%d climbHb=%u sites=%d alive-slots=%d sd=%u trig=%u", g.scene.tick, g.scene.gameplayTick, g_climbHeartbeat, activeSites, aliveSlots, g.persistence.sdState, g.trigger.trigPending);
-    }
-#endif
+    reportCampHeartbeat();
 }
 
 void serviceRaycastWorker(bivouac::runtime::RaycastFn original,

@@ -4,7 +4,7 @@ BotW's sphere and cube Remote Bombs for Tears of the Kingdom 1.2.1. Both bombs l
 Materials pouch, are used through the game's own hold, throw and arrow controls, and are set off
 remotely with a tap of L.
 
-## Controls
+## Standalone controls
 
 - After loading into gameplay, one sphere and one cube appear in Materials. They stay first when
   Materials or the throw and arrow shortcut lists are sorted.
@@ -22,12 +22,23 @@ remotely with a tap of L.
 The blast is the Time Bomb's explosion. Link takes the game's normal blast reaction and damage,
 and loose objects are pushed by BotW's blast pressure calculation.
 
-## Status
+## Status and released package
 
-In development; there is no release package yet. Tested on the Citron emulator with TotK 1.2.1
-only. At startup the module checks the game code it uses and stays inactive on any other version.
-Not yet matched to BotW: the full physics and damage profiles, water, environmental destruction
-and bomb-to-bomb interaction.
+This folder contains the standalone entry point and shared ability source. The released
+download is [BotW Abilities v0.2.3](../botw-abilities/README.md), which builds this ability
+into its second wheel page (hold L, then tap R). There is no separate standalone release
+package. The standalone controls above describe that development entry point.
+
+The released bundle supports wheel selection, pickup, holding and throwing. Both activation
+sounds play on Citron and Switch, neither bomb detonates on its own, and L still detonates
+them. Daruk audio belongs to the bundle and is also confirmed on Switch.
+
+The recent source cleanup and memory changes are included in that accepted bundle. The
+standalone package has not received a new gameplay test or release capture. Other mods
+that replace the same sound bank or actor tables require the usual data merges.
+
+Exact original-game parity for every physics, damage, water and environmental interaction
+remains unproven.
 
 ## Building from source
 

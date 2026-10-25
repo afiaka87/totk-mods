@@ -1,76 +1,84 @@
-# Infinite Ascend v1.1.0
+# Infinite Ascend v1.1.2
 
-Extends Ascend in Tears of the Kingdom from about 20 m to 10,000 m. Native target
-validation, controls, and the red/green marker stay in place. Supports 1.0.0, 1.1.0,
-1.1.2, 1.2.0, 1.2.1, and 1.4.0 through 1.4.3 in Eden.
+## Changes in v1.1.2
 
-Downloads are provided on the mod sites. This repository holds source only.
+Uses the shared 8 MiB loader reservation so installing this package does not overwrite the combined-mod memory fix.
 
-## What it changes
+The six-mod combination of Infinite Ascend, Fleet Sync, Self Recall (Switch), Zonai Hookshot with Arrowbound, BotW Abilities and Zonai Survey passed a physical Switch 1.2.1 session. Other game versions and combinations have not had a new test of the 8 MiB setting.
 
-- Reach: fixed 10,000 m; the game's four native span values are all derived from that one number.
-- Validation: two local surface-shape rejections (steep/rough ceiling, surrounding-height
-  disagreement) are waived. Every other check (floor, path, collision, world layer) stays native.
-- Marker: native size through 40 m, then +1x per 240 m, capped at 4x.
-- Nothing else: no HUD, menus, buttons, or game assets.
+Extends the Ascend ability's reach from about 20 m to 10,000 m, so Link can rise
+through mountains, canyon roofs, and sky islands overhead. Target checks stay
+native: the game still validates the surface, the space above it, and the route;
+the mod only extends how far the upward search reaches, slightly relaxes two
+local surface-shape checks (steep/rough ceilings that vanilla rejects), and
+scales the target marker so it stays readable at long range. No buttons, menus,
+or HUD elements are added , Ascend works exactly as it always did, just farther.
 
 ## Requirements
 
-- Tears of the Kingdom **1.0.0, 1.1.0, 1.1.2, 1.2.0, 1.2.1, or 1.4.0 through 1.4.3**.
-  One emulator archive serves all nine versions. If the twelve guarded
-  instructions differ, all hooks remain off.
-- Tested on the Eden emulator. Switch hardware is untested.
+- The Legend of Zelda: Tears of the Kingdom **1.0.0, 1.1.0, 1.1.2, 1.2.0,
+  1.2.1, or 1.4.0–1.4.3**. The same download serves all nine versions.
+  The executable checks twelve
+  original instructions for a unique supported version before installing
+  any hook; if those guarded words do not match, it leaves all hooks off.
+- No other files, mods, or save changes required. Contains no game assets.
 
-## Install
+## Install (emulator)
 
-1. Open the game's mod/load directory (`load/0100F2C0115B6000/`).
-2. Extract the emulator archive so it produces `infinite-ascend/exefs/{main.npdm, subsdk4}`.
-3. Enable `infinite-ascend`. Do not enable another mod that supplies `subsdk4`.
+1. Right-click the game in your emulator and open the mod/load directory
+   (`load/0100F2C0115B6000/`).
+2. Extract the zip there, producing `infinite-ascend/exefs/{main.npdm, subsdk4}`.
+3. Enable **infinite-ascend** in the game's properties / add-ons list.
 
-## Building from source
+Developed and tested on an emulator. Other emulators that support
+executable mods in the load directory use the same layout.
 
-This folder contains only the mod's own code. It is **not** a complete project and comes with no
-guarantee that it builds or works as-is; you set up the toolchain and framework yourself.
+## Install (Switch hardware , untested by the author)
 
-- Toolchain: devkitPro devkitA64.
-- Framework: [exlaunch](https://github.com/shadowninja108/exlaunch) (GPL-2.0, not included).
-  Known-good base: commit `f698816d`. Apply the `InlineFloatCtx` fix from exlaunch issue #28 / PR #31;
-  without it the marker-size hook writes the wrong float register.
-- Layout: place `src/program/main.cpp`, `src/program/modules/`, and `src/pure/` in an exlaunch
-  project with `src/program` and `src/pure` on the include path.
-- Use exlaunch's own `source/program/{setting,loggers,version,offsets}.hpp`. In `setting.hpp` set
-  `EXL_MODULE_NAME "zonai-ascend"`, keep `EXL_USE_FAKEHEAP`, remove `EXL_DEBUG`, and use
-  `HeapSize 0x10000`, `JitSize 0x4000`, `InlinePoolSize 0x1000`, `LogBufferSize 512`. Leave the
-  reloc table in `offsets.hpp` empty.
-- Compile definition: `TOTK_VERSION=121`. Program ID `0100F2C0115B6000`, module `subsdk4`.
+Copy the two files in `exefs/` to
+`atmosphere/contents/0100F2C0115B6000/exefs/`. This is the standard layout for
+exlaunch-based mods, but this mod has not been tested on hardware.
 
-## Tests
+## Compatibility
 
-- `tests/run_host_tests.ps1` - builds and runs the doctest suite for reach policy and game profiles
-  (needs CMake, a C++23 compiler, and doctest; a first standalone run may fetch doctest).
-- `tests/verify_main121.ps1 -Binary <main>` - checks the twelve hooked instruction words against
-  your own 1.2.1 executable dump.
-- `tests/verify_runtime_imports.ps1 -Elf <subsdk4.elf>` - checks the linked module for a forbidden
-  runtime import.
+- Do not enable another mod that supplies `subsdk4`. Other executable slots are separate; this does not guarantee hook or memory compatibility.
+- Known accepted quirk: on very irregular ceilings the relaxed surface check may
+  occasionally accept a spot vanilla would refuse.
 
-## A note on the code
+## Payload
 
-Is this partially vibe coded? Yes. It's a mod so I don't hold myself to the same standards as I do
-with my professional work. If that bothers you, I apologize sincerely. But note that the license is
-highly permissive (MIT) and I hope this adds to the community.
+- `exefs/subsdk4` , SHA-256 `EE0ED01250F9CDB02DD420791DC4662C4D9645BC90BC281EFF3C310E17A649E6`.
+- `exefs/main.npdm` , SHA-256 `CA38B1AC9B3F152CBFDA3AEA89C6BC14B80DA525787CD6B3F6CCFCC45F13DCBE`.
 
-## Credits
+## Changes in v1.0.1
 
-- exlaunch by shadowninja108 and contributors.
-- doctest (MIT); devkitPro.
+Removes an unused symbol table and its lookup code left over from a retired
+diagnostic overlay (about 4 KB smaller). No gameplay change.
 
-## License
+## Slot-only update in v1.0.2
 
-MIT - see `LICENSE` at the repository root. `NOTICE` describes the exlaunch dependency.
+Moves the executable from subsdk9 to **subsdk4**. Gameplay is unchanged.
+Remove this mod's old `exefs/subsdk9` when upgrading. On Switch, preserve any
+slot 9 file belonging to another mod. This change separates executable filenames;
+it does not claim new compatibility testing.
 
-## Executable slot
+## Changes in v1.1.0
 
-Uses `subsdk4`. When upgrading, remove this mod's old `exefs/subsdk9`
-from its own add-on folder before installing the new package. On Switch, remove
-only the old executable belonging to this mod; preserve another mod's slot 9 file.
-Older downloads used slot 9; v1.1.0 uses slot 4.
+Adds guarded profiles for 1.0.0, 1.1.0, 1.1.2, 1.2.0, and 1.4.0–1.4.3.
+Reach, leniency, controls, and marker behavior are unchanged. The 24 MiB
+package was also tested successfully on 1.2.1 in Eden.
+
+Downloads are `infinite-ascend-v1.1.2-emulator-subsdk4.zip` and
+`infinite-ascend-v1.1.2-switch-subsdk4.zip`. The Switch archive wraps the
+same payload in `0100F2C0115B6000/`
+for extraction under `atmosphere/contents/`.
+
+## Changes in v1.1.1
+
+Refactors marker snapshot ownership and fixed reach queries. Reach, controls, validation,
+marker behavior and the nine game profiles are unchanged. The module still maps 204 KiB;
+that version retained 24 MiB. The current release uses 8 MiB as described above.
+
+The refactor passes nine host tests, 764,970 native behavior comparisons and the ARM build.
+Native call order, atomic publication and floating-point operations were checked against
+the accepted build. The refactor subsequently passed user-reported gameplay checks; the current combined Switch 1.2.1 acceptance is recorded above.

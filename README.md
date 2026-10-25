@@ -12,19 +12,19 @@ Exlaunch authors are owed attribution here.
 
 | Project | Folder | Version | Slot | What it does |
 |---|---|---|---|---|
-| Phantom Foothold | `phantom-foothold/` | | subsdk2 | Climb every surface with collision, ceilings included; no game files replaced. |
-| Infinite Ascend | `infinite-ascend/` | v1.1.0 | subsdk4 | Ascend reach extended from ~20 m to 10,000 m; native checks kept. |
-| Zonai Hookshot (formerly Glideshot) | `zonai-hookshot/` | v0.12.0 | subsdk5 | A hookshot: chain to any climbable wall, zip along it, land in the native climb. Contains Arrowbound as well. |
-| Fleet Sync | `fleet-sync/` | v0.2.2 | subsdk6 | Fly up to four identical receiver vehicles from one Steering Stick. |
-| Bivouac | `bivouac/` | v0.26.1 | subsdk7 | Eat a Hearty Truffle, Big Hearty Truffle or Big Hearty Radish while climbing to build a persistent cliff or water camp you can travel back to. |
-| BotW Abilities | `botw-abilities/` | v0.2.3 | subsdk7 | BotW's Stasis, Remote Bomb and Cryonis in one module, chosen from the ability wheel (second page: hold L, tap R), plus the four Champions' Blessings. |
-| Self Recall | `self-recall/` | v1.1.1 | subsdk8 | Recall Link through his own movement and animation history. |
-| Zonai Survey | `zonai-survey/` | v0.3.0 | subsdk9 | Scan the landscape for collectibles with visible names and icons. |
-| Arrowbound (standalone) | `arrowbound/` | v0.2.3 | subsdk9 | Shoot an arrow and Link glides along its path. Also included in Zonai Hookshot. |
-| Stasis (standalone) | `stasis/` | | subsdk9 | BotW's Stasis on its own. The same ability is built into BotW Abilities. |
-| Remote Bomb (standalone) | `remote-bomb/` | | subsdk9 | BotW's sphere and cube Remote Bombs on their own. The same ability is built into BotW Abilities. |
-| Cryonis (standalone) | `cryonis/` | | subsdk9 | BotW's Cryonis on its own. The same ability is built into BotW Abilities. |
-| Drive-by (formerly Free Rein) | `drive-by/` | v0.10.0 | none (patch files only) | Use the bow, sword and shield while holding a Zonai Steering Stick, and keep driving. |
+| Phantom Foothold | `phantom-foothold/` | v1.2.2 | subsdk2 | Climb every surface with collision, ceilings included; no game files replaced. |
+| Infinite Ascend | `infinite-ascend/` | v1.1.2 | subsdk4 | Ascend reach extended from ~20 m to 10,000 m; native checks kept. |
+| Zonai Hookshot (formerly Glideshot) | `zonai-hookshot/` | v0.12.3 | subsdk5 | A hookshot: chain to any climbable wall, zip along it, land in the native climb. Contains Arrowbound as well. |
+| Fleet Sync | `fleet-sync/` | v0.2.4 | subsdk6 | Fly up to four identical receiver vehicles from one Steering Stick. |
+| Bivouac | `bivouac/` | v0.26.3 | subsdk7 | Eat a Hearty Truffle, Big Hearty Truffle or Big Hearty Radish while climbing to build a persistent cliff or water camp you can travel back to. |
+| BotW Abilities | `botw-abilities/` | v0.2.4 | subsdk7 | BotW's Stasis, Remote Bomb and Cryonis in one module, chosen from the ability wheel (second page: hold L, tap R), plus the four Champions' Blessings. |
+| Self Recall | `self-recall/` | v1.1.3 | subsdk8 | Recall Link through his own movement and animation history. |
+| Zonai Survey | `zonai-survey/` | v0.4.1 | subsdk9 | Scan the landscape for collectibles with visible names and icons. |
+| Arrowbound (standalone) | `arrowbound/` | v0.2.5 | subsdk9 | Shoot an arrow and Link glides along its path. Also included in Zonai Hookshot. |
+| Stasis source | `stasis/` | bundled v0.2.4 | subsdk9 standalone entry | Included in BotW Abilities; no separate standalone release package. |
+| Remote Bomb source | `remote-bomb/` | bundled v0.2.4 | subsdk9 standalone entry | Included in BotW Abilities; no separate standalone release package. |
+| Cryonis source | `cryonis/` | bundled v0.2.4 | subsdk9 standalone entry | Included in BotW Abilities; no separate standalone release package. |
+| Drive-by (formerly Free Rein) | `drive-by/` | v0.12.2 | none (patch files only) | Use the bow, sword and shield while holding a Zonai Steering Stick, and keep driving. |
 | Runtime support | `runtime-support/` | | | Shared source used by several mods above (font and texture drawing, input, actor and hook helpers). Not a mod on its own. |
 
 

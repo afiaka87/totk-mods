@@ -1,4 +1,14 @@
-# Zonai Hookshot (formerly Glideshot) v0.12.0
+# Zonai Hookshot (formerly Glideshot) v0.12.3
+
+## Changes in v0.12.3
+
+Uses the shared 8 MiB loader reservation so installing this package does not overwrite the combined-mod memory fix. Arrowbound now chains Champion inventory hooks, restoring its emblem and arrow riding when BotW Abilities is installed.
+
+The six-mod combination of Infinite Ascend, Fleet Sync, Self Recall (Switch), Zonai Hookshot with Arrowbound, BotW Abilities and Zonai Survey passed a physical Switch 1.2.1 session. Other game versions and combinations have not had a new test of the 8 MiB setting.
+
+This cleanup separates controller coordination from the native hook and shares emblem
+selection/grant handling. It includes the 0.12.1 version-port fixes. Controls, travel and
+rendering are unchanged. The corrected combined build passed the Switch 1.2.1 session described above.
 
 Aim at a climbable wall and pull Link toward it with a glowing Zonai tether from his right hand.
 The double helix has layered filaments, travelling light and small motes inspired by Ascend.
@@ -38,6 +48,9 @@ The v0.11.0 gameplay and presentation passed observed tests on all nine versions
 on physical Switch **1.2.1 and 1.4.3**. Physical Switch 1.0.0 was deferred. The v0.12.0 changes
 (far chain and final-approach arms) were tested in Citron on 1.2.1 only. Other hardware/version
 combinations have not been tested with this payload.
+The 0.12.1 port was observed working in Citron on 1.0.0, 1.2.1 and 1.4.3. Its other
+versions and Switch were not separately tested. This does not establish a new refactor
+boot or resolve the known high-speed Arrowbound pose limitation.
 Earlier combined builds passed tests beside Survey and Self Recall; compatibility with every
 other executable mod is not guaranteed.
 
@@ -45,13 +58,13 @@ other executable mod is not guaranteed.
 
 Close the game and back up the existing mod installation before replacing files.
 
-- **Emulator:** extract `zonai-hookshot-v0.12.0-emulator-subsdk5.zip`. Put its `zonai-hookshot`
+- **Emulator:** extract `zonai-hookshot-v0.12.3-emulator-subsdk5.zip`. Put its `zonai-hookshot`
   folder in the game's mod directory, then enable it in the emulator's Add-Ons menu.
-- **Switch:** extract `zonai-hookshot-v0.12.0-switch-subsdk5.zip`. Merge its
+- **Switch:** extract `zonai-hookshot-v0.12.3-switch-subsdk5.zip`. Merge its
   `0100F2C0115B6000` folder under `atmosphere/contents/` on the SD card.
 
 Both packages contain the same `exefs/subsdk5` and `exefs/main.npdm`. Check `SHA256SUMS.txt`.
-The NPDM requests 24 MiB of system resource memory.
+The NPDM requests 8 MiB of system resource memory.
 
 Do not enable standalone Arrowbound beside this combined build, or another mod using `subsdk5`.
 When upgrading from Glideshot, remove the old add-on folder after backing it up so both versions
@@ -108,6 +121,10 @@ headers. Framework and SDK sources are not included.
 - Framework: [exlaunch](https://github.com/shadowninja108/exlaunch), GPL-2.0, base `f698816d`.
   The float-aware inline hook context needs the fix discussed in issue #28 / PR #31.
 - Native source uses C++26. Keep sibling `arrowbound` and `runtime-support` source folders.
+- Define `HOOKSHOT_VERSION="0.12.2"` and compile `src/lib/program/sd_logger.cpp`.
+  Supply the external exlaunch logger template with both `SvcLogger` and
+  `zonai_hookshot::log::SdFileLogger`; the first-party header is included here.
+  Its buffered SD log is serviced after each controller update.
 - Compile `src/program/main.cpp`, `src/program/modules`, `src/engine` and Arrowbound's feature
   sources, excluding its standalone entry point. `arrowbound/cmake/ImportArrowbound.cmake`
   describes the imported object target and its private include paths.

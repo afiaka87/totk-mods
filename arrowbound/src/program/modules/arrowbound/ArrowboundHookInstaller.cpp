@@ -11,6 +11,7 @@
 #include "ParasailHandoff.hpp"
 #include "HookshotLog.hpp"
 #include "WallGripService.hpp"
+#include "InlineHookAdmission.hpp"
 #include "../../../engine/FlightClock.hpp"
 #include "../../../engine/ModelVisibility.hpp"
 #include "../../../engine/RagdollTransport.hpp"
@@ -228,6 +229,15 @@ bool hookWordMatches(uintptr_t base, const arrowbound::profiles::Site& site,
         label, reinterpret_cast<void*>(site.offset), actual, site.word);
     return false;
 }
+
+bool pouchDealHookable(uintptr_t base, const arrowbound::profiles::Site& site) {
+    const auto at = base + site.offset;
+    const auto actual = *reinterpret_cast<const u32*>(at);
+    if (arrowbound::pure::inlineHookable(at, actual, site.word)) return true;
+    Logging.Log("[arrowbound] HOOK DISABLED emblem menu type: offset=%lx word=%08x expected=%08x",
+                site.offset, actual, site.word);
+    return false;
+}
 }
 
 namespace arrowbound::hooks {
@@ -272,13 +282,13 @@ void install(std::uintptr_t mainBase, bool installShared) {
     INSTALL_VERIFIED(ArrowWorldSweepHook, h.arrowSweep, "arrow world impact");
     // Install the menu and its action interception together, never a native sage action alone.
     const bool emblemReady =
-        hookWordMatches(mainBase, h.pouchSelect, "pouch selection") &&
+        profiles::entryHookable(mainBase, h.pouchSelect, "pouch selection") &&
         hookWordMatches(mainBase, h.pouchSelectArgs, "pouch selection arguments") &&
-        hookWordMatches(mainBase, h.pouchAction, "pouch action") &&
-        hookWordMatches(mainBase, h.pouchSetSlot, "emblem appearance") &&
-        hookWordMatches(mainBase, h.pouchDeal, "emblem menu type") &&
-        hookWordMatches(mainBase, h.findMessage, "emblem literal text") &&
-        hookWordMatches(mainBase, h.serializeSave, "unsaved emblem carrier");
+        profiles::entryHookable(mainBase, h.pouchAction, "pouch action") &&
+        profiles::entryHookable(mainBase, h.pouchSetSlot, "emblem appearance") &&
+        pouchDealHookable(mainBase, h.pouchDeal) &&
+        profiles::entryHookable(mainBase, h.findMessage, "emblem literal text") &&
+        profiles::entryHookable(mainBase, h.serializeSave, "unsaved emblem carrier");
     if (emblemReady) {
         if (h.pouchSelectArgs.word == arrowbound::profiles::kPouchSelectFlagForm)
             PouchOnSelectSlotFlagHook::InstallAtOffset(h.pouchSelect.offset);

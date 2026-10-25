@@ -15,6 +15,7 @@
 #include "PouchSelection.hpp"
 #include "HookshotLog.hpp"
 #include "HookshotWorld.hpp"
+#include "totk/engine/KeyItemGrant.hpp"
 #include "totk/engine/Pointer.hpp"
 #include "totk/engine/Totk121Offsets.hpp"
 
@@ -29,7 +30,6 @@ constexpr std::ptrdiff_t kKeyItemStructHandle = 0x88;
 constexpr int kActionEnable = 15;
 constexpr int kActionDisable = 16;
 constexpr std::ptrdiff_t kActionWindow = 496;
-constexpr int kGrantPushes = 6;
 constexpr int kProbeRetryTicks = aim::kTimeoutTicks + 3;
 constexpr std::uint64_t kGrantRetryTicks = 300;
 
@@ -85,26 +85,6 @@ std::uintptr_t resolvePouchMgr() {
     return okPtr(manager) ? manager : 0;
 }
 
-bool queueHasRoom(std::uintptr_t store, int pushes) {
-    using namespace totk::engine::layout;
-    if (!okPtr(store)) return false;
-    const auto capacity = *reinterpret_cast<const std::int32_t*>(
-        store + kGameDataQueueCapacity);
-    const auto buffer = *reinterpret_cast<const std::uintptr_t*>(
-        store + kGameDataQueueBuffer);
-    const auto writeIndex = static_cast<std::int32_t>(
-        *reinterpret_cast<const std::uint32_t*>(
-            store + kGameDataQueueControl) &
-        kGameDataQueueIndexMask);
-    return capacity > 0 && okPtr(buffer) &&
-           writeIndex + pushes + kGameDataQueueHeadroom <= capacity;
-}
-
-bool intStoresHaveRoom(std::uintptr_t manager, int pushes) {
-    return queueHasRoom(manager + 200, pushes) &&
-           queueHasRoom(manager + 296, pushes);
-}
-
 const char* slotName(std::uint32_t category, std::uint32_t index,
                      unsigned char record[16]) {
     if (category != kKeyItemCategory) return nullptr;
@@ -147,43 +127,28 @@ CarrierPresence findCarrier() {
 }
 
 bool grantCarrier() {
+    using namespace totk::engine;
     const auto manager = resolveGmd();
     const auto pouchMgr = resolvePouchMgr();
-    if (!manager || !pouchMgr || !intStoresHaveRoom(manager, kGrantPushes)) {
+    const auto result = grantKeyItem(
+        manager, pouchMgr, kCarrierActor,
+        reinterpret_cast<void* const*>(g.base + g.inventory->cEmptyStringSlot),
+        {reinterpret_cast<ResolvePouchCategory>(g.base + g.inventory->resolveCategory),
+         reinterpret_cast<AddToPouch>(g.base + g.inventory->addToPouch)},
+        GameDataWriteReadiness::LiveGameplayAndWorkerAlive);
+    if (result.error == KeyItemGrantError::ManagerUnavailable ||
+        result.error == KeyItemGrantError::QueueUnavailable) {
         ZHLOG("ARROW_MODE_GRANT_DEFER manager=%p pouch=%p queue_room=0",
               reinterpret_cast<void*>(manager), reinterpret_cast<void*>(pouchMgr));
         return false;
     }
-
-    struct NameRef {
-        const char* cstr;
-        std::uint64_t pad[3];
-    } nameRef{kCarrierActor, {0, 0, 0}};
-    auto* name = reinterpret_cast<const char**>(&nameRef);
-    using ResolveCategoryFn = std::uint8_t (*)(std::uint32_t*, const char**);
-    const auto resolveCategory = reinterpret_cast<ResolveCategoryFn>(
-        g.base + g.inventory->resolveCategory);
-    std::uint32_t category = 0;
-    if ((resolveCategory(&category, name) & 1u) == 0 ||
-        category != kKeyItemCategory) {
-        ZHLOG("ARROW_MODE_GRANT category resolve failed cat=%u", category);
+    if (result.error == KeyItemGrantError::WrongCategory) {
+        ZHLOG("ARROW_MODE_GRANT category resolve failed cat=%u", result.category);
         return false;
     }
-
-    using AddToPouchFn = std::uint64_t (*)(
-        void*, const char**, void*, std::uint32_t, std::int32_t, std::uint8_t,
-        std::int32_t, std::uint8_t, std::uint32_t, std::uint32_t,
-        std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t,
-        std::uint32_t*, std::uint8_t);
-    const auto addToPouch = reinterpret_cast<AddToPouchFn>(g.base + g.inventory->addToPouch);
-    void* modifier = *reinterpret_cast<void**>(g.base + g.inventory->cEmptyStringSlot);
-    const std::uint64_t result = addToPouch(
-        reinterpret_cast<void*>(pouchMgr), name, modifier, category, 1, 1, 0,
-        0, 0, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
-        0xFFFFFFFFu, nullptr, 1);
     ZHLOG("ARROW_MODE_GRANT actor=%s cat=%u result=%p", kCarrierActor,
-          category, reinterpret_cast<void*>(result));
-    return result != 0;
+          result.category, reinterpret_cast<void*>(result.nativeResult));
+    return static_cast<bool>(result);
 }
 
 void requestGameplayProbe(HookshotRuntime& rt) {

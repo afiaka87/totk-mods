@@ -46,8 +46,19 @@ target_include_directories(arrival_watch_test PRIVATE ../src/program)
 
 foreach(target motherbase_solver_test bivouac_policy_test camp_ledger_codec_test refund_service_test raycast_service_test camp_geometry_test camp_assembly_policy_test arrival_watch_test)
     target_compile_features(${target} PRIVATE cxx_std_23)
-    target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /WX /permissive- /EHsc)
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
+    endif()
 endforeach()
+
+if(MSVC)
+    # Compile-time fixture checks and explicitly aligned raycast storage are intentional.
+    target_compile_options(motherbase_solver_test PRIVATE /wd4127)
+    target_compile_options(bivouac_policy_test PRIVATE /wd4127)
+    target_compile_options(raycast_service_test PRIVATE /wd4324)
+endif()
 
 enable_testing()
 add_test(NAME motherbase_solver COMMAND motherbase_solver_test)

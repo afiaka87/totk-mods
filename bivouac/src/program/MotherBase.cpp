@@ -2,6 +2,7 @@
 // Copyright (c) Clay Mullis
 
 #include "MotherBase.hpp"
+#include <cmath>
 
 namespace motherbase {
 
@@ -37,7 +38,7 @@ namespace {
 inline float absf(float value) { return value < 0.0f ? -value : value; }
 
 inline float sqrtfPositive(float value) {
-    return value > 0.0f ? __builtin_sqrtf(value) : 0.0f;
+    return value > 0.0f ? std::sqrt(value) : 0.0f;
 }
 
 } // namespace

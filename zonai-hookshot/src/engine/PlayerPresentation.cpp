@@ -27,7 +27,7 @@ namespace pose = pure::handheld;
 using pose::Matrix;
 std::uintptr_t g_base{};
 const profiles::Profile* g_profile{};
-bool g_installed{};
+bool g_installed{}, g_arrowPresentation{};
 nn::os::MutexType g_lock{};
 
 // Model pointers are identity tokens until matched to the current engine callback.
@@ -90,11 +90,29 @@ void reject(unsigned reason, unsigned detail = 0) {
                     detail);
 }
 
+std::atomic<std::uintptr_t> g_refusedReads[16]{};
+// Logs each refusing call site once, relative to this module's start for addr2line.
+[[gnu::noinline]] void refuseRead(std::uintptr_t address, std::size_t size) {
+    const auto site = reinterpret_cast<std::uintptr_t>(__builtin_return_address(0));
+    for (auto& slot : g_refusedReads) {
+        auto seen = slot.load(std::memory_order_relaxed);
+        if (seen == site) return;
+        if (seen || !slot.compare_exchange_strong(seen, site, std::memory_order_relaxed)) {
+            if (seen == site) return;
+            continue;
+        }
+        Logging.Log("[zonai-hookshot] READ_REFUSED site=%lx address=%lx size=%zu",
+                    site - exl::util::modules::GetSelfStart(), address, size);
+        return;
+    }
+}
 template <class T> T read(const void* p, std::size_t offset) {
     T out{};
     const auto at = reinterpret_cast<std::uintptr_t>(p) + offset;
     if (p && at >= 0x1000 && ((at + sizeof(T) - 1) >> 39) == 0)
         std::memcpy(&out, reinterpret_cast<const void*>(at), sizeof(T));
+    else if (p)
+        refuseRead(at, sizeof(T));
     return out;
 }
 template <class F> F native(std::uintptr_t offset) { return reinterpret_cast<F>(g_base + offset); }
@@ -572,6 +590,22 @@ HOOK_DEFINE_TRAMPOLINE(BodyMatrixHook) {
         return result;
     }
 };
+void logArrowMerge(const Control& c, void* sourcePose, std::int16_t poseIndex, Vec3 anchor,
+                   Vec3 shift, float blend, float savedPrimary, float savedSecondary) {
+    if (!c.arrowToken || !std::isfinite(savedPrimary) || !std::isfinite(savedSecondary))
+        return;
+    static std::atomic<unsigned> samples{};
+    const auto n = samples.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (n > 12 && n % 60 != 0)
+        return;
+    const auto* finalPose = native<const void* (*)(void*, unsigned)>(
+        g_profile->functions.animatedPose.offset)(sourcePose, unsigned(poseIndex));
+    const float rootError = finalPose ? distance(read<Vec3>(finalPose, 0x10), anchor) : -1.f;
+    Logging.Log("[zonai-hookshot] ARROW_PRESENTATION shot=%u n=%u shift_cm=%d animation_milli=%d native_primary_milli=%d native_secondary_milli=%d root_error_cm=%d",
+                c.arrowShot, n, int(length(shift) * 100.f), int(blend * 1000.f),
+                int(savedPrimary * 1000.f), int(savedSecondary * 1000.f),
+                std::isfinite(rootError) ? int(rootError * 100.f) : -1);
+}
 // Keep the native merge and restoration together to preserve their call order.
 HOOK_DEFINE_TRAMPOLINE(TravelBodyAnchorHook) {
     static std::uint64_t Callback(void* structure, const Matrix* basis) {
@@ -627,16 +661,9 @@ HOOK_DEFINE_TRAMPOLINE(TravelBodyAnchorHook) {
                     reject(25, unsigned(poseIndex));
             }
         }
-        if (!g_profile->nativeTranslation) {
-            if (!correcting)
-                return Orig(structure, basis);
-            // Shift only this merge's sampled matrices; no rigid-body state is written.
-            BodyReadScope sampled(entries, count, shift);
+        if (!g_profile->nativeTranslation && !correcting)
             return Orig(structure, basis);
-        }
-        // Restore the merge translation state after the call; never move rigid bodies here.
-        const auto savedCached = read<Vec3>(structure, 0x17C),
-                   savedShift = read<Vec3>(structure, 0x188);
+        // Every build selects primary==1 ? secondary : 1-primary from these two weights.
         const float savedPrimary = c.arrowToken ? read<float>(structure, 0x30) : 0.f,
                     savedSecondary = c.arrowToken ? read<float>(structure, 0x34) : 0.f;
         const float blend = pure::arrowAnimationWeight(savedPrimary, savedSecondary,
@@ -644,21 +671,34 @@ HOOK_DEFINE_TRAMPOLINE(TravelBodyAnchorHook) {
         const bool blendArrow = correcting && c.arrowToken && c.arrowAnimationWeight > 0 &&
                                 std::isfinite(blend);
         auto* raw = static_cast<std::byte*>(structure);
+        const auto setWeights = [raw](float primary, float secondary) {
+            std::memcpy(raw + 0x30, &primary, sizeof(primary));
+            std::memcpy(raw + 0x34, &secondary, sizeof(secondary));
+        };
+        if (!g_profile->nativeTranslation) {
+            if (blendArrow) setWeights(1.f, blend);
+            std::uint64_t result{};
+            {
+                // Shift only this merge's sampled matrices; no rigid-body state is written.
+                BodyReadScope sampled(entries, count, shift);
+                result = Orig(structure, basis);
+            }
+            if (blendArrow) setWeights(savedPrimary, savedSecondary);
+            logArrowMerge(c, sourcePose, poseIndex, anchor, shift, blend, savedPrimary,
+                          savedSecondary);
+            return result;
+        }
+        // Restore the merge translation state after the call; never move rigid bodies here.
+        const auto savedCached = read<Vec3>(structure, 0x17C),
+                   savedShift = read<Vec3>(structure, 0x188);
         if (correcting) {
             const unsigned translatedFlags = flags | 0x400000;
             std::memcpy(raw + 0x17C, &cached, sizeof(cached));
             std::memcpy(raw + 0x10, &translatedFlags, sizeof(translatedFlags));
         }
-        if (blendArrow) {
-            const float primary = 1.f;
-            std::memcpy(raw + 0x30, &primary, sizeof(primary));
-            std::memcpy(raw + 0x34, &blend, sizeof(blend));
-        }
+        if (blendArrow) setWeights(1.f, blend);
         const auto result = Orig(structure, basis);
-        if (blendArrow) {
-            std::memcpy(raw + 0x30, &savedPrimary, sizeof(savedPrimary));
-            std::memcpy(raw + 0x34, &savedSecondary, sizeof(savedSecondary));
-        }
+        if (blendArrow) setWeights(savedPrimary, savedSecondary);
         if (correcting) {
             const unsigned restoredFlags =
                 (read<unsigned>(structure, 0x10) & ~0x400000u) | (flags & 0x400000u);
@@ -670,20 +710,9 @@ HOOK_DEFINE_TRAMPOLINE(TravelBodyAnchorHook) {
             std::memcpy(raw + 0x17C, &restoredCached, sizeof(restoredCached));
             std::memcpy(raw + 0x188, &restoredShift, sizeof(restoredShift));
         }
-        if (correcting && c.arrowToken && std::isfinite(savedPrimary) &&
-            std::isfinite(savedSecondary)) {
-            static std::atomic<unsigned> samples{};
-            const auto n = samples.fetch_add(1, std::memory_order_relaxed) + 1;
-            if (n <= 12 || n % 60 == 0) {
-                const auto* finalPose = native<const void* (*)(void*, unsigned)>(
-                    g_profile->functions.animatedPose.offset)(sourcePose, unsigned(poseIndex));
-                const float rootError = finalPose ? distance(read<Vec3>(finalPose, 0x10), anchor) : -1.f;
-                Logging.Log("[zonai-hookshot] ARROW_PRESENTATION shot=%u n=%u shift_cm=%d animation_milli=%d native_primary_milli=%d native_secondary_milli=%d root_error_cm=%d",
-                            c.arrowShot, n, int(length(shift) * 100.f), int(blend * 1000.f),
-                            int(savedPrimary * 1000.f), int(savedSecondary * 1000.f),
-                            std::isfinite(rootError) ? int(rootError * 100.f) : -1);
-            }
-        }
+        if (correcting)
+            logArrowMerge(c, sourcePose, poseIndex, anchor, shift, blend, savedPrimary,
+                          savedSecondary);
         return result;
     }
 };
@@ -729,7 +758,7 @@ void flushArrowModelRequest(void* model) {
     const auto flags = read<std::uint8_t>(model, 0x241);
     if (!(flags & 4)) return;
     // Consume the queued update before the scene starts its culling workers.
-    native<void (*)(void*)>(0x2216CC4)(model);
+    native<void (*)(void*)>(g_profile->functions.updateFromRequest.offset)(model);
     static_cast<std::byte*>(model)[0x241] &= ~std::byte{4};
 }
 bool renderedArrowTarget(const Control& c, Vec3& position, Vec3& velocity, unsigned& sample,
@@ -802,7 +831,7 @@ void updateArrowModel(void* model, const Matrix& root) {
     std::memcpy(static_cast<std::byte*>(model) + 0x1F8, &root, sizeof(root));
     static_cast<std::byte*>(model)[0x240] |= std::byte{1};
     // Rebuild the native model hierarchy without repeating the actor's pose modifiers.
-    native<void (*)(void*, void*)>(0x64D388)(model, nullptr);
+    native<void (*)(void*, void*)>(g_profile->functions.updateWorldMatrix.offset)(model, nullptr);
 }
 void prepareArrowScene(void* scene, const Control& c) {
     if (!c.alignArrowModels || !c.player || !arrowStillOwned(c) || !world::ready()) return;
@@ -864,7 +893,7 @@ void prepareArrowScene(void* scene, const Control& c) {
     if (!pose::inverseAffine(oldAttachment, inverse)) { reject(23, attachment); return; }
 
     // Apply the current animation frame; this does not advance animation time.
-    native<void (*)(void*, void*, unsigned)>(0x832640)(body, body, 1);
+    native<void (*)(void*, void*, unsigned)>(g_profile->functions.applyAnimation.offset)(body, body, 1);
     updateArrowModel(body, translateArrowModel(oldRoot, shift));
     Matrix gliderRoot{};
     if (!arrowAttachmentRoot(oldAttachment, matrix(c.body, attachment), oldGlider, gliderRoot)) {
@@ -1288,33 +1317,35 @@ void install(std::uintptr_t mainBase) {
         f.bodyMatrix,
     };
     for (const auto& site : guards)
-        if (!arrowbound::profiles::entryHookable(mainBase, site, "player presentation"))
+        if (!arrowbound::profiles::entryHookable(mainBase, site, "player presentation")) {
+            Logging.Log("[zonai-hookshot] PLAYER_PRESENTATION disabled version=%s site=%lx",
+                        game->name, static_cast<unsigned long>(site.offset));
             return;
+        }
     for (const auto& route : g_profile->routes)
         if (route.site.offset &&
-            !arrowbound::profiles::entryHookable(mainBase, route.site, "presentation dispatch"))
+            !arrowbound::profiles::entryHookable(mainBase, route.site, "presentation dispatch")) {
+            Logging.Log("[zonai-hookshot] PLAYER_PRESENTATION disabled version=%s route=%lx",
+                        game->name, static_cast<unsigned long>(route.site.offset));
             return;
-    constexpr arrowbound::profiles::Site cameraTarget{0x84578C, 0xD10683FF};
-    const bool arrowCamera = game->version == arrowbound::profiles::GameVersion::V121;
-    constexpr arrowbound::profiles::Site arrowSceneSites[]{
-        {0x974D9C, 0xA9BA7BFD}, {0x832640, 0xD101C3FF},
-        {0x64D388, 0xD10343FF}, {0x2216CC4, 0xA9BE7BFD},
-    };
-    if (arrowCamera) {
-        if (!arrowbound::profiles::entryHookable(mainBase, cameraTarget, "arrow camera target")) return;
-        for (const auto& site : arrowSceneSites)
-            if (!arrowbound::profiles::entryHookable(mainBase, site, "arrow scene pose")) return;
-    }
+        }
+    // A mismatch here turns off only the fast-arrow presentation; each guard logs its site.
+    bool arrowPresentation = true;
+    for (const auto& site : {f.cameraTarget, f.sceneCalc, f.applyAnimation, f.updateWorldMatrix,
+                             f.updateFromRequest})
+        arrowPresentation &=
+            arrowbound::profiles::entryHookable(mainBase, site, "arrow presentation");
     g_base = mainBase;
     nn::os::InitializeMutex(&g_lock, true, 0);
     g_installed = true;
+    g_arrowPresentation = arrowPresentation;
     PlayerAnimationHook::InstallAtOffset(f.playerAnimation.offset);
     ModelWorldHook::InstallAtOffset(f.modelWorld.offset);
     ShapeVisibleHook::InstallAtOffset(f.shapeVisible.offset);
     ModelBeforeDrawHook::InstallAtOffset(f.modelBeforeDraw.offset);
-    if (arrowCamera) {
-        ArrowCameraTargetHook::InstallAtOffset(cameraTarget.offset);
-        ArrowSceneFrameHook::InstallAtOffset(arrowSceneSites[0].offset);
+    if (arrowPresentation) {
+        ArrowCameraTargetHook::InstallAtOffset(f.cameraTarget.offset);
+        ArrowSceneFrameHook::InstallAtOffset(f.sceneCalc.offset);
     }
     EffectCalcHook::InstallAtOffset(f.effectCalc.offset);
     EffectDestroyedHook::InstallAtOffset(f.effectDestroyed.offset);
@@ -1336,7 +1367,13 @@ void install(std::uintptr_t mainBase) {
     if (g_profile->routes[3].site.offset) SoundDispatchHook1::InstallAtOffset(g_profile->routes[3].site.offset);
     if (g_profile->routes[4].site.offset) SoundDispatchHook2::InstallAtOffset(g_profile->routes[4].site.offset);
     if (g_profile->routes[5].site.offset) SoundDispatchHook3::InstallAtOffset(g_profile->routes[5].site.offset);
-    Logging.Log("[zonai-hookshot] PLAYER_PRESENTATION installed version=%s", game->name);
+    unsigned routes = 0;
+    for (const auto& route : g_profile->routes) routes += route.site.offset != 0;
+    Logging.Log("[zonai-hookshot] PLAYER_PRESENTATION installed version=%s merge=%s routes=%u arrow_presentation=%u camera=%lx scene=%lx",
+                game->name, g_profile->nativeTranslation ? "native" : "sampled",
+                routes, unsigned(arrowPresentation),
+                static_cast<unsigned long>(f.cameraTarget.offset),
+                static_cast<unsigned long>(f.sceneCalc.offset));
 }
 
 void reset() {
@@ -1364,8 +1401,7 @@ void update(const HookshotRuntime& rt) {
     c.anchorTravel = rt.machine.phase == Phase::PositionCruise && rt.positionDrive.path.active &&
                      !rt.positionDrive.failed;
     const auto& arrow = arrowbound::runtime();
-    if (!c.anchorTravel && arrowbound::profiles::active()->version ==
-                               arrowbound::profiles::GameVersion::V121) {
+    if (!c.anchorTravel && g_arrowPresentation) {
         const auto flight = arrowFlightPresentation(
             arrow.arrowTrip.phase, arrow.drive.parasailActive.load(std::memory_order_acquire) != 0,
             g_climbingPlayer.load(std::memory_order_acquire) != 0, arrow.arrowTrip.arrowVelocity);

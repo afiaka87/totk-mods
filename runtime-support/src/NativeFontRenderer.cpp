@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (C) Clay Mullis
+
 // Native UI target, NVN pools and fenced upload slots transfer from accepted BindFS rendering.
 #include "totk/ui/NativeFontRenderer.hpp"
 #include "native-font/NvnAbi.hpp"

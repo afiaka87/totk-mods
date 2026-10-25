@@ -1,71 +1,69 @@
-# Arrowbound v0.2.3
+# Arrowbound v0.2.5
 
-Activate the Arrowbound Emblem in Key Items, shoot a bow, and follow the arrow with the paraglider
-open. Arrows keep their vanilla speed, gravity, arc, range and lifetime. Aim in midair with normal
-slow motion; releasing the shot ends slow motion for the flight.
+## Changes in v0.2.5
 
-## Controls and behavior
+Uses the shared 8 MiB loader reservation so installing this package does not overwrite the combined-mod memory fix. Arrowbound now chains Champion inventory hooks, restoring its emblem and arrow riding when BotW Abilities is installed.
 
-- Activate/deactivate the emblem to toggle arrow following. Both states use the arrow icon.
-- Press B during following to let go into ordinary paragliding.
-- Draw the bow again to retire the old arrow before aiming another shot.
-- Hit a climbable wall to turn toward it and enter normal climbing. Other impacts finish in the glider.
-- No targeting reticle, chain or arrow refund is added by this feature.
+The six-mod combination of Infinite Ascend, Fleet Sync, Self Recall (Switch), Zonai Hookshot with Arrowbound, BotW Abilities and Zonai Survey passed a physical Switch 1.2.1 session. Other game versions and combinations have not had a new test of the 8 MiB setting. Arrowbound was tested inside Hookshot; the standalone build was not separately boot-tested.
 
-The same feature source is imported by [Zonai Hookshot (formerly Glideshot)](../zonai-hookshot), which also supplies manual
-ZL + L wall targeting. Zonai Hookshot and Arrowbound must not be enabled as separate code add-ons
-together: the combined Zonai Hookshot build already contains Arrowbound.
+This update carries the shared Arrowbound code from Zonai Hookshot v0.12.1: per-build
+address tables, the 1.4.x emblem and flight-clock fixes, and shared emblem selection/grant helpers. This standalone package keeps the 1.2.1 NPDM and is documented for
+1.2.1 only; it is not separately boot-tested. New gameplay checks are deferred. For 1.0.0 through 1.4.3, use Zonai Hookshot.
+The sibling runtime-support/include supplies the MIT detour decoder.
 
-## Persistence and the emblem
+Ride your arrows with the paraglider open in Tears of the Kingdom 1.2.1.
 
-`sd:/arrowbound/settings.bin` remembers activation. Emulators use their emulated SD card.
-The preference is shared by standalone Arrowbound and Zonai Hookshot across all saves/profiles on
-that SD card; loading an older save does not rewind it. Missing or invalid settings default off.
-Storage failures retain a session-only choice. No unrelated vanilla flag is used for this setting.
+## Controls
 
-The mod grants the emblem after the live inventory is ready, without requiring another item to
-be selected. New game saves omit its unearned All's Well carrier; naturally earned All's Well
-is preserved. Older saves remain unchanged until saved again. Quest progress is not reset.
-No game assets, replacement ROMFS files or custom GameData schema are distributed.
+Activate the Arrowbound Emblem in Key Items, then shoot an arrow from the ground
+or in midair. Arrow speed, gravity and range remain vanilla. Midair aiming keeps
+slow motion; releasing the arrow ends it for the flight. Press B to detach into
+ordinary paragliding. Drawing the bow again releases the old arrow before aiming.
+Climbable-wall impacts turn Link toward the wall and hand off to normal climbing.
 
-## Requirements and validation
+Activation persists in `sd:/arrowbound/settings.bin` or the emulator's emulated
+SD card. It defaults off and is shared across all saves on that SD card, including
+the combined Glideshot build. Loading an older save does not rewind the setting.
+Storage failures leave a session-only setting.
 
-The source carries checked address tables for Tears of the Kingdom 1.0.0 through 1.4.3 and
-selects one at startup; an unrecognized build installs nothing. Inside Zonai Hookshot v0.11.0 the
-shared code was observed working on Eden on all nine versions. The standalone package keeps
-1.2.1's NPDM and is documented for 1.2.1 only; it has not had its own observed boot.
-Earlier fast-arrow fixes passed Citron tests. At very high speed, Link's legs can
-still tuck backward. This folder is source, not a binary download.
+New saves exclude an unearned All's Well carrier; an emblem earned through the
+vanilla quest is preserved. Older saves are not rewritten until the game saves again.
 
-## Building from source
+## Installation
 
-This contains only mod-owned source, not a complete Switch build environment. No guarantee is
-made that it builds as-is; provide your own devkitPro/devkitA64 toolchain, exlaunch project and
-the required game-facing headers. The native source uses C++26.
+Requires game version 1.2.1, build 9B4E43650501A4D4. Close the game first.
 
-- Framework: exlaunch (GPL-2.0), known-good base `f698816d`, not included. The combined Zonai Hookshot
-  host also requires its documented InlineFloatCtx fix for the manual jump hook.
-- Standalone: compile `src/program/main.cpp`, `src/program/modules/arrowbound` and `src/engine`.
-  Include `src/program`, `src/pure`, `src/engine`, `src/support` and `src/include`.
-- Retain the sibling `runtime-support/include` folder for the MIT detour decoder.
-- Combined: `cmake/ImportArrowbound.cmake` imports the feature object target without its standalone
-  entry point, using the host's exlaunch configuration and exposing `src/include/arrowbound/Module.hpp`.
-- Use exlaunch's consumer templates, which are not included. Set `EXL_MODULE_NAME "arrowbound"`,
-  `EXL_USE_FAKEHEAP`, no `EXL_DEBUG`, `HeapSize 0x10000`, `JitSize 0x4000`,
-  `InlinePoolSize 0x1000`, `LogBufferSize 512`, and an empty reloc table.
-- Compile definition `TOTK_VERSION=121` (selects the 1.2.1 SDK headers; game addresses come from
-  `src/include/arrowbound/GameProfiles.hpp` at runtime); program ID `0100F2C0115B6000`; module `subsdk9`.
-- This release retains `ARROWBOUND_FLIGHT_DIAGNOSTICS=1` to match the tested build.
+- Emulator ZIP: copy its Arrowbound folder into the game's Mod Data Location,
+  then enable the add-on.
+- Switch ZIP: copy its 0100F2C0115B6000 folder into atmosphere/contents on the SD card.
+- Back up existing files before upgrading. Remove only old Arrowbound ROMFS
+  overrides; this package needs no ROMFS files. Leave other mods' files alone.
 
-## Host tests
+The payload is exefs/subsdk9 and exefs/main.npdm. Do not enable this standalone
+mod alongside Glideshot, which already includes Arrowbound, or another subsdk9 mod.
+Standalone Arrowbound does not include the manual ZL+R3 hookshot or visible chain.
 
-Run `tests/run_host_tests.ps1` with CMake, Ninja and a C++23 compiler installed. It fetches doctest
-2.4.11 if no vendored copy is available. The 74 cases cover following, per-build address tables,
-ownership, wall capture, carrier saving, menu text and persistence failure handling. Engine-facing tests use local stubs;
-the default suite needs no game files. Zonai Hookshot's test runner also runs this suite.
+## Testing status
 
-## Credits and license
+Earlier shared gameplay passed inside Glideshot on Eden and physical Switch.
+The 0.12.1 combined Zonai Hookshot build was observed working in Citron on
+1.0.0, 1.2.1 and 1.4.3. Its other versions and Switch were not separately tested.
+The standalone build passes 74 host tests but has not had a separate observed
+boot. New gameplay checks for this refactor are deferred; the known high-speed
+Arrowbound pose limitation remains.
+Both downloads contain the same standalone executable with different install layouts.
 
-Original mod source: MIT, see the repository's root LICENSE. exlaunch is GPL-2.0 and is not
-included here; compiled modules include it. Tests use doctest (MIT); native builds use devkitPro.
-See NOTICE.txt for source links and the dependency notice.
+## Known issues
+
+At very high speed, Link's legs can tuck backward while flight remains visible
+and smooth. This is not the previous mid-flight leg kick. Wing-fused arrows and
+every modded bow have not been exhaustively tested.
+
+## Source and license
+
+Original mod code is MIT licensed, copyright Clay Mullis.
+Source: https://github.com/afiaka87/totk-mods/tree/main/arrowbound
+The compiled module includes exlaunch (GPL-2.0):
+https://github.com/shadowninja108/exlaunch
+
+No Nintendo game assets are distributed. See NOTICE.txt.

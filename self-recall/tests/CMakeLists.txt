@@ -21,6 +21,7 @@ set(SELF_RECALL_TEST_INCLUDES
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/pure"
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/engine"
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/support"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../runtime-support/include"
 )
 
 function(configure_self_recall_target target profile)

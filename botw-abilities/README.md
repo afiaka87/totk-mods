@@ -1,4 +1,10 @@
-# BotW Abilities v0.2.3
+# BotW Abilities v0.2.4
+
+## Changes in v0.2.4
+
+Uses the shared 8 MiB loader reservation so installing this package does not overwrite the combined-mod memory fix.
+
+The six-mod combination of Infinite Ascend, Fleet Sync, Self Recall (Switch), Zonai Hookshot with Arrowbound, BotW Abilities and Zonai Survey passed a physical Switch 1.2.1 session. Other game versions and combinations have not had a new test of the 8 MiB setting.
 
 This update fixes Stasis selection and holds, adds sphere and cube bombs to the second
 wheel page, and restores Daruk's parry feedback and the bombs' activation sounds.
@@ -7,9 +13,10 @@ highlight. Link's equipment stays unlit. Frozen enemies and objects no longer fa
 rotate, and breakable objects stay intact while frozen. Projectile hits use their incoming
 direction. Fury retries temporarily protected targets and reaches Evermeans.
 
-The gameplay and restored audio have been tested in Citron. All four Champions' abilities
-also work on Switch; the final Daruk grunt and bomb audio correction awaits a short hardware
-check. Animated Champion spirits remain absent. The module maps 4,157,440 bytes (3.965 MiB),
+The gameplay and restored audio have been tested in Citron and on Switch. All four Champions'
+abilities work on Switch, including Daruk's grunt. Both bomb shapes play their activation
+sounds, stay intact without automatic detonation, and still detonate with L. Animated
+Champion spirits remain absent. The module maps 4,157,440 bytes (3.965 MiB),
 excluding game-managed resources and GPU memory.
 
 Breath of the Wild's Stasis, Remote Bomb, Cryonis and Champions' Blessings in Tears of the Kingdom
@@ -125,11 +132,11 @@ cues, and Gale uses BotW's crouch pose.
 
 Requires Tears of the Kingdom **1.2.1**, build `9B4E43650501A4D4`.
 
-**Emulator:** extract `botw-abilities-v0.2.2-emulator-subsdk7.zip` and copy its `BotW Abilities`
+**Emulator:** extract `botw-abilities-v0.2.4-emulator-subsdk7.zip` and copy its `BotW Abilities`
 folder into the game's mod folder (right-click the game, **Open Mod Data Location**). Enable
 **BotW Abilities** in the game's add-on list.
 
-**Switch (Atmosphere):** extract `botw-abilities-v0.2.2-switch-subsdk7.zip` and copy its
+**Switch (Atmosphere):** extract `botw-abilities-v0.2.4-switch-subsdk7.zip` and copy its
 `0100F2C0115B6000` folder into `atmosphere/contents/` on the SD card.
 
 **Upgrading from v0.1.0:** remove the old BotW Abilities add-on before installing this update.
@@ -167,8 +174,11 @@ Both archives contain the same game payload: `exefs/subsdk7`, `exefs/main.npdm`,
 
 ## Known issues and testing limits
 
-- The final audio correction is accepted in Citron; its Switch check is pending. Earlier
-  hardware testing confirms all four Champion abilities, including Mipha's voice.
+- A player reports that Urbosa's Fury does not trigger with a two-handed boomerang.
+  Other two-handed weapons have not been checked; this report remains open.
+- With multishot bows, remote detonation currently explodes one bomb. This is the
+  existing design; detonating the full volley is under consideration.
+
 - Hinox and Blupee freezing and exposed Octorok highlighting are untested but considered
   likely to work based on similar beasts, fauna, swimming fish and exposed Lizalfos.
   Constructs remain unsupported by Stasis. Gyro aiming is not part of this update.
@@ -176,7 +186,7 @@ Both archives contain the same game payload: `exefs/subsdk7`, `exefs/main.npdm`,
 - Mipha's fairy order and shrine behavior, and Castle/Sage-vow recharge multipliers, have
   not been separately verified in game.
 - Bomb water behavior, environmental destruction and bomb-to-bomb interactions do not yet
-  have full BotW-parity coverage. Combinations with other code mods remain unverified.
+  have full BotW-parity coverage. The six-mod Switch 1.2.1 combination above passed; other combinations remain unverified.
 - Each ability checks the game code it uses and stays inactive on unsupported versions.
 
 ## Building from source

@@ -5,6 +5,21 @@
 #include "../src/include/arrowbound/GameProfiles.hpp"
 
 #include <map>
+#include "InlineHookAdmission.hpp"
+
+TEST_CASE("Inventory inline hooks admit vanilla and chained near branches only") {
+    constexpr std::uintptr_t at = 0x1B171AC;
+    constexpr std::uint32_t original = 0x910083E0;
+    CHECK(arrowbound::pure::inlineHookable(at, original, original));
+    CHECK(arrowbound::pure::inlineHookable(at, 0x14D11ADC, original));
+    CHECK(arrowbound::pure::inlineHookable(at, 0x17FFFF00, original));
+    CHECK_FALSE(arrowbound::pure::inlineHookable(at, 0x94000100, original));
+    CHECK_FALSE(arrowbound::pure::inlineHookable(at, 0x58000051, original));
+    CHECK_FALSE(arrowbound::pure::inlineHookable(at, 0xD503201F, original));
+    CHECK_FALSE(arrowbound::pure::inlineHookable(at, 0x14000000, original));
+    CHECK_FALSE(arrowbound::pure::inlineHookable(at, 0x14000001, original));
+    CHECK_FALSE(arrowbound::pure::inlineHookable(at, 0, original));
+}
 
 using namespace arrowbound::profiles;
 

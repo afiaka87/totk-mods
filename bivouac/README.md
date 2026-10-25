@@ -1,4 +1,10 @@
-# Bivouac v0.26.1
+# Bivouac v0.26.3
+
+## Changes in v0.26.3
+
+Uses the shared 8 MiB loader reservation so installing this package does not overwrite the combined-mod memory fix.
+
+The six-mod combination of Infinite Ascend, Fleet Sync, Self Recall (Switch), Zonai Hookshot with Arrowbound, BotW Abilities and Zonai Survey passed a physical Switch 1.2.1 session. Other game versions and combinations have not had a new test of the 8 MiB setting.
 
 Build camps on cliff faces and over open water. While Link is climbing, eat one of three
 ingredients and a shelter assembles under him: a stone deck, a wooden roof that keeps the rain
@@ -47,11 +53,11 @@ when a camp travel starts, and a sign tone when a camp is taken down.
 
 Requires Tears of the Kingdom **1.2.1**, build `9B4E43650501A4D4`.
 
-**Eden or another emulator:** extract `bivouac-v0.26.0-emulator.zip` and copy its `Bivouac`
+**Eden or another emulator:** extract `bivouac-v0.26.3-emulator-subsdk7.zip` and copy its `Bivouac`
 folder into the game's mod folder (in Eden: right-click the game, **Open Mod Data Location**).
 Enable **Bivouac** in the game's add-on list.
 
-**Switch (Atmosphere):** extract `bivouac-v0.26.0-switch.zip` and copy its `0100F2C0115B6000`
+**Switch (Atmosphere):** extract `bivouac-v0.26.3-switch-subsdk7.zip` and copy its `0100F2C0115B6000`
 folder into `atmosphere/contents/` on the SD card.
 
 Both archives contain the same files: `exefs/subsdk7`, `exefs/main.npdm`, and seven files under
@@ -105,8 +111,9 @@ guarantee that it builds or works as-is; you set up the toolchain and framework 
 
 - `tests/run_host_tests.ps1` builds and runs the eight host test programs (placement policy, water
   camp solver, camp record format, refunds, raycasts, camp geometry, assembly, travel arrival). It
-  needs CMake, Ninja and a C++23 GCC or Clang on `PATH` (or pass the compiler's folder with
-  `-ToolPath`).
+  needs CMake, Ninja and a C++23 compiler on `PATH`. GCC, Clang and MSVC are supported;
+  use `-Compiler cl` from a Visual Studio developer shell for MSVC, or pass a compiler folder
+  with `-ToolPath`.
 
 ## A note on the code
 
@@ -124,9 +131,24 @@ highly permissive (MIT) and I hope this adds to the community.
 MIT - see `LICENSE` at the repository root. `NOTICE.txt` describes the exlaunch dependency and
 the game files in the release archives.
 
-## Executable slot
+## Slot-only update in v0.26.1
 
-Uses `subsdk7`. When upgrading, remove this mod's old `exefs/subsdk9`
-from its own add-on folder before installing the new package. On Switch, remove
-only the old executable belonging to this mod; preserve another mod's slot 9 file.
-Older downloads still use slot 9; use the slot-migrated version.
+Moves the executable from subsdk9 to **subsdk7**. Gameplay is unchanged.
+Remove this mod's old `exefs/subsdk9` when upgrading. On Switch, preserve any
+slot 9 file belonging to another mod. This change separates executable filenames;
+it does not claim new compatibility testing.
+
+The slot migration remains in v0.26.2.
+
+Downloads: `bivouac-v0.26.3-emulator-subsdk7.zip` and `bivouac-v0.26.3-switch-subsdk7.zip`. The Switch archive wraps the same payload in `0100F2C0115B6000/` for extraction under `atmosphere/contents/`.
+
+## Changes in v0.26.2
+
+The frame update now names its climb observation, SD-card readiness and camp reporting steps.
+Gameplay, controls, camp records and assets are unchanged. The compiled instructions and
+allocated data match v0.26.1 exactly; only the build identifier differs. The module still maps
+480 KiB and uses the same 16 MiB process resource setting. All eight host suites and 522,176
+events in the existing independent runtime comparison pass. No new gameplay test was requested
+for this source cleanup; the exact native comparison preserves the prior release evidence.
+
+Executable SHA-256 (`subsdk7`): `138834afb052f5ebb7418e33d6686ba0b5aa6db24e12b52d17e631687629a5ba`.
