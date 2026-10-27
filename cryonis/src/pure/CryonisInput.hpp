@@ -14,7 +14,11 @@ constexpr std::uint64_t A = 1ull, B = 2ull, X = 4ull, StickR = 1ull << 5, L = 1u
 // Keep consumed holds out of native actions until a fresh physical release.
 struct AimButtons {
     std::uint64_t held{};
-    std::uint64_t mask(bool aiming, std::uint64_t buttons, bool fresh) {
+    std::uint64_t mask(bool aiming, std::uint64_t buttons, bool fresh, bool running) {
+        if (!running) {
+            held = 0;
+            return 0;
+        }
         constexpr auto owned = A | B;
         if (fresh)
             held = (held & buttons) | (aiming ? (buttons & owned) : 0);

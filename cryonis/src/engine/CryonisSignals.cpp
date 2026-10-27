@@ -6,10 +6,13 @@
 #include "CryonisWheel.hpp"
 #include "Totk121Layout.hpp"
 #include "Totk121Signatures.hpp"
+#include "totk/engine/MotionCamera.hpp"
+#include "totk/engine/Totk121Offsets.hpp"
 #include <lib.hpp>
 #include <cstring>
 namespace cryonis::engine {
 namespace {
+totk::engine::motion::AimState g_motion;
 constexpr auto readGame = []<class T>(std::uintptr_t address) { return read<T>(address); };
 std::uintptr_t nodeActor(std::uintptr_t node) {
     const auto actor = executeActor(node,
@@ -30,6 +33,7 @@ template <class Change> bool updateWheel(HookContext hook, std::uintptr_t screen
 }
 }
 bool validate(std::uintptr_t base) {
+    totk::engine::motion::validate(base);
     return totk::engine::codeMatches(base, signatures::kRuntime, "cryonis", "BUILD_REFUSED");
 }
 
@@ -181,19 +185,29 @@ void frameAimCamera(HookContext hook, std::uintptr_t state, float *output, float
     const auto player = hook.signals.cameraPlayer.load(), scene = hook.signals.cameraScene.load();
     if (!player || !scene) {
         hook.camera.reset();
+        g_motion = {};
         return;
     }
     const auto component = state - layout::camera::kState;
     const auto target =
         valid(component) ? read<std::uintptr_t>(component + layout::camera::kTarget) : 0;
-    if (!valid(target) || read<std::uintptr_t>(target + layout::camera::kTargetActor) != player)
+    if (!valid(target) || read<std::uintptr_t>(target + layout::camera::kTargetActor) != player) {
+        g_motion = {};
         return;
+    }
     camera::View view{{output[0], output[1], output[2]},
                       {output[3], output[4], output[5]},
                       {output[6], output[7], output[8]},
                       output[9]};
-    if (hook.camera.apply(view, state, scene, hook.signals.aiming.load(),
-                          hook.signals.running.load() ? frames : 0))
-        std::memcpy(output, &view, sizeof(view));
+    if (!hook.camera.apply(view, state, scene, hook.signals.aiming.load(),
+                           hook.signals.running.load() ? frames : 0)) {
+        g_motion = {};
+        return;
+    }
+    std::memcpy(output, &view, sizeof(view));
+    totk::engine::motion::applyCamera(g_motion,
+        {state, scene, hook.signals.clock.load(std::memory_order_acquire), hook.signals.aiming.load(),
+         hook.signals.running.load(), input::unpack(hook.signals.wheel.load()).open}, output,
+        read<totk::engine::motion::Vector>(player + totk::engine::layout::kActorPosition));
 }
 }

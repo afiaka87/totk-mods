@@ -257,7 +257,7 @@ void tick(void *device) {
                                         eng::lHeldElsewhere(eng::Ability::Cryonis)})
                            .chord;
     // Capture ownership before any exit so held A cannot become native Climb down.
-    const auto owned = chord.mask | controls.ownedButtons.mask(gameplay.aiming, buttons, fresh);
+    const auto owned = chord.mask | controls.ownedButtons.mask(gameplay.aiming, buttons, fresh, running);
     if (gameplay.aiming && running) {
         select();
         if (fresh)

@@ -197,7 +197,7 @@ void tick(void* device) {
                   input.snapshot().freshSampleCount != 0, seconds);
     if (holdsMovement(gale::presentation().phase)) input.writeOwnedLeftStick(0, 0);
     pose::publish(scene.context, player.value.player);
-    daruk::service(player.value.player, current[2], input.snapshot().held(1u << 8),
+    daruk::service(current[2], input.snapshot().held(1u << 8),
                    input.snapshot().freshSampleCount != 0);
     fury_native::service(scene.context, player.value.player, current[3]);
     serviceUseEvents(snapshot.generation, scene.context.token.value, player.value.player);

@@ -33,7 +33,7 @@ GuardContacts<> g_guardContacts;
 std::atomic<bool> g_active{};
 std::array<std::atomic<std::uint64_t>, 3> g_reported{};
 bool g_previous{};
-bool g_shieldHeld{};
+std::atomic<bool> g_zlHeld{};
 template<class Fn> Fn call(std::uintptr_t offset) { return reinterpret_cast<Fn>(g_base + offset); }
 
 struct Gate {
@@ -47,7 +47,8 @@ struct Gate {
 Gate live() {
     const auto saved = data::state().snapshot();
     const auto context = currentContext(Blessing::Daruk);
-    if (!saved.ready || !context.gameplay || context.shrine || !saved.states[2].enabled) return {};
+    if (!saved.ready || !context.gameplay || context.shrine || !saved.states[2].enabled ||
+        !g_zlHeld.load(std::memory_order_acquire)) return {};
     const auto scene = resolveScene(g_base);
     if (!scene) return {};
     const auto players = resolvePlayerActors(scene.value);
@@ -55,7 +56,7 @@ Gate live() {
     const auto* player = reinterpret_cast<const void*>(players.value.player.address);
     const auto* equipment = read<const void*>(read<const void*>(player, 0x228), 0x230);
     const auto flags = read<std::uint64_t>(equipment, 0x4600);
-    return guardingFromEquipment(flags) ? Gate{context, saved.generation, scene.value.token.value, flags, player, equipment} : Gate{};
+    return {context, saved.generation, scene.value.token.value, flags, player, equipment};
 }
 
 bool namedPlayer(const void* actor) {
@@ -65,7 +66,7 @@ bool namedPlayer(const void* actor) {
 
 BlockResult block(const Gate& gate, AttackKey key, unsigned source) {
     const auto result = g_blocks.block(data::state(), gate.generation, gate.scene,
-        gate.context, guardingFromEquipment(gate.flags), key, simulationTick());
+        gate.context, g_zlHeld.load(std::memory_order_acquire), key, simulationTick());
     const auto signature = (std::uint64_t(key.primary.serial) << 32) | key.secondary.serial;
     const auto report = signature ^ (std::uint64_t(result.status) << 56);
     if (result.status == BlockStatus::Blocked || g_reported[source].exchange(report, std::memory_order_relaxed) != report)
@@ -245,7 +246,8 @@ HOOK_DEFINE_TRAMPOLINE(EquipmentWear) {
 
 bool active() { return g_active.load(std::memory_order_acquire); }
 void reset() {
-    g_previous = false; g_shieldHeld = false;
+    g_previous = false;
+    g_zlHeld.store(false,std::memory_order_release);
     g_active.store(false,std::memory_order_release);
     for (auto& reported : g_reported) reported.store(0,std::memory_order_relaxed);
     effects::hold(Effect::DarukShell,false);
@@ -269,16 +271,14 @@ void impact(const ActorHandle& player) {
     Logging.Log("[champions] DARUK_PARRY effect=%llx", (unsigned long long)emitted.effect);
 }
 
-void service(const ActorHandle& player, Context context, bool shieldHeld, bool freshInput) {
-    if (freshInput) g_shieldHeld = shieldHeld;
+void service(Context context, bool zlHeld, bool freshInput) {
+    if (freshInput) g_zlHeld.store(zlHeld,std::memory_order_release);
     const auto saved = data::state().snapshot();
-    const auto* components = read<const void*>(reinterpret_cast<const void*>(player.address),0x228);
-    const auto* equipment = read<const void*>(components,0x230);
     const auto scene = resolveScene(g_base);
-    const bool guarding = guardingFromEquipment(read<std::uint64_t>(equipment,0x4600));
-    const bool armed = scene && g_blocks.observeGuard(saved.generation,scene.value.token.value,g_shieldHeld);
-    const bool enabled = saved.ready && barrier(saved.states[2],context,guarding && armed);
-    const unsigned charges = saved.states[2].charges;
+    // ZL arms one new blocked hit per hold, independently of shield equipment.
+    const bool armed = scene && g_blocks.observeGuard(saved.generation,scene.value.token.value,
+        g_zlHeld.load(std::memory_order_acquire));
+    const bool enabled = saved.ready && barrier(saved.states[2],context,armed);
     if (enabled && !g_previous) {
         effects::pulse(Effect::DarukArrive,1.2f);
         effects::pulse(Effect::DarukFlare,1.5f);

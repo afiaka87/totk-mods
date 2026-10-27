@@ -16,5 +16,6 @@ bool launchStrike(const totk::core::WorldTransform& placement);
 bool strikeEnemy(const totk::core::WorldTransform& placement);
 bool updraftActive();
 void used(Blessing blessing);
+bool spawnAppearance(const char* actor,const totk::core::WorldTransform& placement);
 void service(const totk::engine::SceneContext& scene, const totk::engine::ActorHandle& player, float seconds);
 } // namespace botw_abilities::champions::effects

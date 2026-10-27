@@ -203,6 +203,14 @@ def build(args):
         for name, raw in records.items():
             if name.endswith('.bgyml'):
                 data = rewrite(byml.Byml(raw).parse(), links)
+                if actor != BLAST and '/DropTableElementList/' in name:
+                    drops = data.get('DropTableElement', [])
+                    if drops and all(row.get('DropActorName') ==
+                                     f'Work/Actor/{BLAST}.engine__actor__ActorParam.gyml'
+                                     for row in drops):
+                        # A blast is not recoverable loot. Native multishot suppresses
+                        # resurrection drops from the additional arrow attachments.
+                        data['IsResurrectionActor'] = False
                 if '/ModelInfo/' in name and actor != BLAST:
                     data['ModelProjectName'] = PROJECT
                     data['FmdbName'] = MODEL

@@ -439,12 +439,12 @@ void tick(void *device) {
     std::uint64_t owned = decision.mask;
     if (decision.releaseFreeze)
         release("manual Camera wheel release");
-    if (g.aiming) {
+    if (g.aiming && clock.running) {
         owned |= A | B;
         selectTarget();
-        if (clock.running && (fresh & B))
+        if (fresh & B)
             setAiming(false);
-        else if (clock.running && !decision.beginAim && (fresh & A))
+        else if (!decision.beginAim && (fresh & A))
             activate();
     }
     frame.maskOwnedButtons(owned);

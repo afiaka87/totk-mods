@@ -329,7 +329,7 @@ int main() {
           "water placement waits for recharge");
     input::AimButtons ownership;
     const auto native = [&](bool aiming, std::uint64_t buttons, bool fresh = true) {
-        return buttons & ~ownership.mask(aiming, buttons, fresh);
+        return buttons & ~ownership.mask(aiming, buttons, fresh, true);
     };
     check(native(true, input::A) == 0, "construction A cannot trigger native Climb down");
     check(native(true, input::A) == 0, "A held during pending construction stays consumed");

@@ -6,9 +6,6 @@
 
 namespace botw_abilities::champions {
 
-constexpr bool guardingFromEquipment(std::uint64_t flags) {
-    return (flags & 0x3C00u) != 0;
-}
 constexpr unsigned guardSlot(std::uint64_t flags) {
     return (flags & 0xC00u) ? 0 : (flags & 0x3000u) ? 4 : 8;
 }
@@ -25,8 +22,8 @@ constexpr bool activeHit(const IncomingHit& hit) {
 }
 
 constexpr bool canBlock(const State& state, const Context& context,
-                        std::uint64_t equipmentFlags, const IncomingHit& hit) {
-    return activeHit(hit) && barrier(state, context, guardingFromEquipment(equipmentFlags));
+                        bool zlHeld, const IncomingHit& hit) {
+    return activeHit(hit) && barrier(state, context, zlHeld);
 }
 
 // Called for the native charged-attack entry, not for the charging selector or an input edge.

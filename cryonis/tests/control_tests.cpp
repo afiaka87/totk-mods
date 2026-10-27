@@ -123,10 +123,20 @@ int main() {
     check(control::action(true, true, input::A, false, false, {}) == control::Action::Construct,
           "invalid water reaches native placement refusal");
     input::AimButtons held;
-    check((held.mask(true, input::A, true) & input::A) != 0, "targeting takes A before exit");
-    check((held.mask(false, input::A, true) & input::A) != 0,
+    check((held.mask(true, input::A, true, true) & input::A) != 0, "targeting takes A before exit");
+    check((held.mask(false, input::A, true, true) & input::A) != 0,
           "construction hold cannot become Climb down");
-    check(held.mask(false, 0, true) == 0, "physical release clears A ownership");
+    check(held.mask(false, 0, true, true) == 0, "physical release clears A ownership");
+    held.mask(true, input::A | input::B, true, true);
+    check(held.mask(true, input::A | input::B, false, false) == 0,
+          "pausing returns A and B to menus even before a fresh sample");
+    check(held.mask(true, input::A, true, false) == 0 &&
+              held.mask(true, input::B, true, false) == 0,
+          "menu selections and cancellation stay unmasked while targeting is retained");
+    check(held.mask(false, input::A | input::B, true, true) == 0,
+          "menu input cannot leave a held gameplay mask behind");
+    check(held.mask(true, 0, true, true) == (input::A | input::B),
+          "resuming targeting restores gameplay button ownership");
     render_policy::Camera camera{{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0}, {}, .1f, 1000};
     camera.projection[0] = camera.projection[5] = 1;
     Presentation p;

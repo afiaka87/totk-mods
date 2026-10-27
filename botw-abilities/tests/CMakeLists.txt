@@ -20,7 +20,7 @@ add_executable(botw_abilities_host_tests test_main.cpp test_wheel_pages.cpp test
     test_champion_healing.cpp test_champion_locations.cpp test_champion_combat.cpp test_champion_pose.cpp
     test_champion_audio.cpp test_champion_save.cpp test_champion_items.cpp
     test_champion_fatal.cpp test_champion_effects.cpp test_champion_gale.cpp test_champion_pose_matrices.cpp
-    test_champion_blocking.cpp test_champion_fury.cpp test_champion_hud.cpp
+    test_champion_blocking.cpp test_champion_fury.cpp test_champion_hud.cpp test_champion_appearances.cpp
     test_gale_glide.cpp test_fury_targets.cpp test_runtime_frame.cpp)
 target_include_directories(botw_abilities_host_tests PRIVATE
     "${DOCTEST_INCLUDE_DIR}"
@@ -67,3 +67,15 @@ else()
     target_compile_options(botw_native_cube_tests PRIVATE -Wall -Wextra -Werror)
 endif()
 doctest_discover_tests(botw_native_cube_tests)
+
+set(runtime_support "${CMAKE_CURRENT_SOURCE_DIR}/../../runtime-support")
+add_executable(botw_motion_aim_tests "${runtime_support}/tests/test_motion_aim.cpp")
+target_include_directories(botw_motion_aim_tests PRIVATE "${DOCTEST_INCLUDE_DIR}"
+    "${runtime_support}/include" "${runtime_support}/tests/stubs")
+target_compile_features(botw_motion_aim_tests PRIVATE cxx_std_23)
+if(MSVC)
+    target_compile_options(botw_motion_aim_tests PRIVATE /W4 /WX /permissive- /EHsc /fp:strict)
+else()
+    target_compile_options(botw_motion_aim_tests PRIVATE -Wall -Wextra -Werror -ffp-contract=off)
+endif()
+doctest_discover_tests(botw_motion_aim_tests)

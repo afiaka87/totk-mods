@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
 #include "Effects.hpp"
+#include "Appearances.hpp"
 #include "EffectPulse.hpp"
 #include "FuryField.hpp"
 #include "NativeField.hpp"
@@ -124,6 +125,7 @@ void collectBolt(CarrierRoster& roster, const ActiveProcessView& actor) {
 
 void collectCarrier(CarrierRoster& roster, const ActiveProcessView& actor) {
     if (actor.processState != 4) return;
+    if (appearances::collect(actor)) return;
     if (actor.processName.equals(kEffectActors[static_cast<std::size_t>(Effect::UrbosaBolt)])) {
         collectBolt(roster,actor);
         return;
@@ -240,7 +242,11 @@ void serviceCarrier(std::size_t i, ActorHandle actor, const SceneContext& scene,
 }
 } // namespace
 
-void reset() { field::reset(); g_slots = {}; g_hasFixed = {}; g_windIds = {}; g_bolts = {}; }
+void reset() { appearances::reset(); field::reset(); g_slots = {}; g_hasFixed = {}; g_windIds = {}; g_bolts = {}; }
+
+bool spawnAppearance(const char* actor,const totk::core::WorldTransform& placement) {
+    return spawnActor(actor,placement,{1,1,1});
+}
 
 bool pulse(Effect effect, float seconds, float delay) {
     const auto index = static_cast<std::size_t>(effect);
@@ -313,6 +319,7 @@ bool strikeEnemy(const totk::core::WorldTransform& placement) {
 }
 
 void used(Blessing blessing) {
+    appearances::used(blessing);
     startSpiritEffects(blessing);
     if (blessing == Blessing::Daruk) {
         pulse(Effect::DarukShellBreak,1.0f);
@@ -348,6 +355,7 @@ void service(const SceneContext& scene, const ActorHandle& player, float seconds
         }
     }
     CarrierRoster roster;
+    appearances::beginFrame();
     if (!collectCarriers(scene, roster)) return;
     for (std::size_t i = 0; i < g_bolts.size(); ++i)
         if (g_bolts[i].id && !roster.boltsSeen[i]) g_bolts[i] = {};
@@ -355,11 +363,13 @@ void service(const SceneContext& scene, const ActorHandle& player, float seconds
     reconcileUpdrafts(roster);
     for (std::size_t i = 0; i < g_slots.size(); ++i)
         serviceCarrier(i, roster.actors[i], scene, placement.value, transforms, seconds);
+    appearances::service(scene, placement.value, seconds);
 }
 
 bool install(std::uintptr_t base) {
     if (!codeMatches(base, kSites, "champions", "EFFECT_BUILD_REFUSED")) return false;
     if (!field::install(base)) return false;
+    if (!appearances::install(base)) return false;
     g_base = base;
     return true;
 }

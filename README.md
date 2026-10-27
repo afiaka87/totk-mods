@@ -17,13 +17,13 @@ Exlaunch authors are owed attribution here.
 | Zonai Hookshot (formerly Glideshot) | `zonai-hookshot/` | v0.12.3 | subsdk5 | A hookshot: chain to any climbable wall, zip along it, land in the native climb. Contains Arrowbound as well. |
 | Fleet Sync | `fleet-sync/` | v0.2.4 | subsdk6 | Fly up to four identical receiver vehicles from one Steering Stick. |
 | Bivouac | `bivouac/` | v0.26.3 | subsdk7 | Eat a Hearty Truffle, Big Hearty Truffle or Big Hearty Radish while climbing to build a persistent cliff or water camp you can travel back to. |
-| BotW Abilities | `botw-abilities/` | v0.2.4 | subsdk7 | BotW's Stasis, Remote Bomb and Cryonis in one module, chosen from the ability wheel (second page: hold L, tap R), plus the four Champions' Blessings. |
+| BotW Abilities | `botw-abilities/` | v0.2.8 | subsdk7 | BotW's Stasis, Remote Bomb and Cryonis in one module, chosen from the ability wheel (second page: hold L, tap R), plus the four Champions' Blessings. |
 | Self Recall | `self-recall/` | v1.1.3 | subsdk8 | Recall Link through his own movement and animation history. |
 | Zonai Survey | `zonai-survey/` | v0.4.1 | subsdk9 | Scan the landscape for collectibles with visible names and icons. |
 | Arrowbound (standalone) | `arrowbound/` | v0.2.5 | subsdk9 | Shoot an arrow and Link glides along its path. Also included in Zonai Hookshot. |
-| Stasis source | `stasis/` | bundled v0.2.4 | subsdk9 standalone entry | Included in BotW Abilities; no separate standalone release package. |
-| Remote Bomb source | `remote-bomb/` | bundled v0.2.4 | subsdk9 standalone entry | Included in BotW Abilities; no separate standalone release package. |
-| Cryonis source | `cryonis/` | bundled v0.2.4 | subsdk9 standalone entry | Included in BotW Abilities; no separate standalone release package. |
+| Stasis source | `stasis/` | bundled v0.2.6 | subsdk9 standalone entry | Included in BotW Abilities; no separate standalone release package. |
+| Remote Bomb source | `remote-bomb/` | bundled v0.2.6 | subsdk9 standalone entry | Included in BotW Abilities; no separate standalone release package. |
+| Cryonis source | `cryonis/` | bundled v0.2.6 | subsdk9 standalone entry | Included in BotW Abilities; no separate standalone release package. |
 | Drive-by (formerly Free Rein) | `drive-by/` | v0.12.2 | none (patch files only) | Use the bow, sword and shield while holding a Zonai Steering Stick, and keep driving. |
 | Runtime support | `runtime-support/` | | | Shared source used by several mods above (font and texture drawing, input, actor and hook helpers). Not a mod on its own. |
 

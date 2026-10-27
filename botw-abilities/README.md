@@ -1,4 +1,47 @@
-# BotW Abilities v0.2.4
+# BotW Abilities v0.2.8
+
+## Changes in v0.2.8
+
+Stasis and Cryonis now support gyro aiming, following the game's motion-control
+and horizontal/vertical camera inversion settings. The pause menu receives A/B
+normally while either ability is targeting. Daruk's Protection follows ZL without
+requiring an equipped or raised shield, including while holding a two-handed weapon.
+
+Gyro was accepted in Citron. The menu/Daruk candidate was cleared for release after
+deployment; no separate Switch test of these changes is claimed. Earlier Champion
+appearance tests on both platforms still apply. Release cleanup removes temporary
+gyro sample logging; normal recharge times and all game assets remain unchanged.
+
+## Changes in v0.2.7
+
+Mipha, Revali, Daruk and Urbosa now appear with their original animations when
+their blessings activate, then fade away. Daruk appears when his protection blocks
+a hit. The existing effects, voices and recharge announcements remain.
+
+All four appearances were accepted in Citron and on Switch. The release removes
+temporary memory profiling and progress logs; lifecycle behavior and all game assets
+are preserved by offline comparison. The module still maps 3.965 MiB, with the shared
+8 MiB loader reservation unchanged. Native models, textures and animation allocations
+are additional; the module figure is not total memory use.
+
+## Changes in v0.2.6
+
+Multishot bows now detonate every fused remote bomb in the volley. Three-shot
+sphere and cube volleys were tested in Citron: all three bombs explode, deal
+damage and recharge correctly. The two-handed Fury fix below is included.
+Neither fix has had a separate Switch test. Prior Switch gameplay and audio
+coverage is retained. Audio, the 3.965 MiB mapped module footprint and shared
+8 MiB loader reservation are unchanged. No refactor was performed.
+
+## Changes in v0.2.5
+
+Urbosa's Fury now works with two-handed weapons. The growing hemisphere starts after
+half a stamina wheel has been spent during the attack, regardless of starting stamina.
+Holding the attack does not strike enemies; releasing it triggers Fury once.
+This behavior, including starting with depleted stamina, was tested in Citron.
+The two-handed fix has not had a separate Switch test. One-handed weapons and spears
+retain their existing charged-release behavior. Audio assets and the 3.965 MiB mapped
+module footprint are unchanged; the shared loader reservation remains 8 MiB.
 
 ## Changes in v0.2.4
 
@@ -99,11 +142,13 @@ uses the ability wheel or a new button. All four are available from the start.
   Link stops, crouches and gathers the updraft; a chime marks it ready. Release to rise; the paraglider opens by
   itself. Releasing before the chime cancels without using a charge. Gale does not start from a
   run: land and come to a stop first. 3 charges, 6-minute recharge.
-- **Daruk's Protection:** raise the shield (ZL) and an orange shell surrounds Link. Each hit it
-  blocks uses one charge, without damage, knockback or shield wear. Lower and raise the shield
+- **Daruk's Protection:** hold ZL (no shield required) and an orange shell surrounds Link. Each hit it
+  blocks uses one charge, without damage, knockback or shield wear. Release and press ZL again
   after a block to bring the shell back. 6 charges, 18-minute recharge.
 - **Urbosa's Fury:** release a charged spin attack (hold and release Y) and lightning strikes every
-  eligible enemy within a 50 m sphere. 3 charges, 12-minute recharge.
+  eligible enemy within a 50 m sphere. With a two-handed weapon, spend half a stamina
+  wheel during the spin to start the growing hemisphere, then release Y to strike.
+  3 charges, 12-minute recharge.
 
 Recharge starts after the last charge is used and restores every charge at once, with a chime
 and the Champion's spoken ready announcement.
@@ -132,11 +177,11 @@ cues, and Gale uses BotW's crouch pose.
 
 Requires Tears of the Kingdom **1.2.1**, build `9B4E43650501A4D4`.
 
-**Emulator:** extract `botw-abilities-v0.2.4-emulator-subsdk7.zip` and copy its `BotW Abilities`
+**Emulator:** extract `botw-abilities-v0.2.8-emulator-subsdk7.zip` and copy its `BotW Abilities`
 folder into the game's mod folder (right-click the game, **Open Mod Data Location**). Enable
 **BotW Abilities** in the game's add-on list.
 
-**Switch (Atmosphere):** extract `botw-abilities-v0.2.4-switch-subsdk7.zip` and copy its
+**Switch (Atmosphere):** extract `botw-abilities-v0.2.8-switch-subsdk7.zip` and copy its
 `0100F2C0115B6000` folder into `atmosphere/contents/` on the SD card.
 
 **Upgrading from v0.1.0:** remove the old BotW Abilities add-on before installing this update.
@@ -174,15 +219,14 @@ Both archives contain the same game payload: `exefs/subsdk7`, `exefs/main.npdm`,
 
 ## Known issues and testing limits
 
-- A player reports that Urbosa's Fury does not trigger with a two-handed boomerang.
-  Other two-handed weapons have not been checked; this report remains open.
-- With multishot bows, remote detonation currently explodes one bomb. This is the
-  existing design; detonating the full volley is under consideration.
+- The two-handed Fury fix was tested in Citron; it has not had a separate Switch test.
+- Multishot bomb detonation was tested with three-shot volleys in Citron. Five-shot
+  bows and the new multishot fix on Switch have not been separately tested.
 
 - Hinox and Blupee freezing and exposed Octorok highlighting are untested but considered
   likely to work based on similar beasts, fauna, swimming fish and exposed Lizalfos.
-  Constructs remain unsupported by Stasis. Gyro aiming is not part of this update.
-- Daruk blocks attacks but does not deflect them. The Champions' animated spirits are absent.
+  Constructs remain unsupported by Stasis. Gyro aiming follows the game's motion-control and camera-inversion options.
+- Daruk blocks attacks but does not deflect them.
 - Mipha's fairy order and shrine behavior, and Castle/Sage-vow recharge multipliers, have
   not been separately verified in game.
 - Bomb water behavior, environmental destruction and bomb-to-bomb interactions do not yet
@@ -224,7 +268,9 @@ no guarantee that it builds or works as-is; you set up the toolchain and framewo
   before member include directories and include both texture sidecars in RomFS. Link the
   authored shared native-font sources and generate their shaders and atlas. Native actor/model preparation also uses the supplied native sphere data, Switch Toolbox,
   an ASTC encoder and external model compression helpers (`-ToolingHelpers`). These inputs
-  and helper dependencies are not included in the source repository. Test-only SD logging
+  and helper dependencies are not included in the source repository. The Champion capture
+importer and its private asset receipt are also omitted; generated Champion resource
+headers and converted game assets must be supplied by a separate local asset pipeline. Test-only SD logging
   and periodic memory sampling are absent.
   `tools/compose_resources.py` merges the three abilities' game data into one RomFS against your
   own TotK 1.2.1 dump, `tools/build_wheel_icons.py` makes the four wheel-page icons from your own

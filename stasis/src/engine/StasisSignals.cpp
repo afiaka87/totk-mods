@@ -6,6 +6,7 @@
 #include "StasisHit.hpp"
 #include "StasisInput.hpp"
 #include "Totk121Signatures.hpp"
+#include "totk/engine/MotionCamera.hpp"
 #include <lib.hpp>
 #include <cstring>
 namespace stasis::engine {
@@ -14,6 +15,7 @@ Signals signals;
 namespace {
 namespace eng = totk::engine;
 camera::Blend g_cameraBlend;
+eng::motion::AimState g_motion;
 // Publishes change(wheel) for the screen that owns the wheel; false if change declines or loses.
 template <class Change>
 bool updateWheel(std::uintptr_t screen, input::Wheel &wheel, Change change) {
@@ -29,6 +31,7 @@ bool firstRefusal(unsigned bit) { return !(signals.motionRefused.fetch_or(bit) &
 } // namespace
 
 bool validate(std::uintptr_t base) {
+    eng::motion::validate(base);
     return totk::engine::codeMatches(base, signatures::kRuntime, "stasis", "BUILD_REFUSED");
 }
 void nativeSelectionAccepted(std::uintptr_t screen) {
@@ -262,10 +265,13 @@ void frameAimCamera(std::uintptr_t state, float *output, float frameScale) {
     if (request.session != signals.cameraSession.load(std::memory_order_acquire) ||
         !request.player || !request.scene) {
         g_cameraBlend.reset();
+        g_motion = {};
         return;
     }
-    if (!request.aiming && g_cameraBlend.amount == 0)
+    if (!request.aiming && g_cameraBlend.amount == 0) {
+        g_motion = {};
         return;
+    }
     // The player camera's resolve state sits 1096 bytes into its component, whose target
     // record at +3144 holds the followed actor at +24.
     const auto component = state - 1096;
@@ -279,6 +285,7 @@ void frameAimCamera(std::uintptr_t state, float *output, float frameScale) {
                         reinterpret_cast<void *>(state), refusals);
         if (g_cameraBlend.owner == state)
             g_cameraBlend.reset();
+        g_motion = {};
         return;
     }
     camera::View view{{output[0], output[1], output[2]},
@@ -289,6 +296,7 @@ void frameAimCamera(std::uintptr_t state, float *output, float frameScale) {
     const float previous = g_cameraBlend.amount;
     const float frames = signals.clockRunning.load(std::memory_order_acquire) ? frameScale : 0.0f;
     if (!g_cameraBlend.apply(view, state, request.session, request.aiming, frames)) {
+        g_motion = {};
         static unsigned refusals{};
         if (++refusals <= 3 || refusals % 300 == 0)
             Logging.Log("[stasis] AIM_CAMERA_REFUSED distance=%f fovy=%f frames=%f count=%u",
@@ -297,6 +305,11 @@ void frameAimCamera(std::uintptr_t state, float *output, float frameScale) {
         return;
     }
     std::memcpy(output, &view, sizeof(view));
+    eng::motion::applyCamera(g_motion,
+        {state, request.session, signals.clockTicks.load(std::memory_order_acquire), request.aiming,
+         signals.clockRunning.load(std::memory_order_acquire),
+         input::unpack(signals.wheel.load(std::memory_order_acquire)).open}, output,
+        read<eng::motion::Vector>(request.player + eng::layout::kActorPosition));
     if ((previous < 1 && g_cameraBlend.amount == 1) || (previous > 0 && g_cameraBlend.amount == 0))
         Logging.Log("[stasis] AIM_CAMERA amount=%f shift=%f,%f,%f fovy=%f",
                     double(g_cameraBlend.amount), double(view.eye.x - before.eye.x),
