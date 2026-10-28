@@ -1,4 +1,13 @@
-# BotW Abilities v0.2.8
+# BotW Abilities v0.2.9
+
+## Changes in v0.2.9
+
+Fixes abilities disappearing when used alongside Zonai Survey and Self Recall.
+The startup check now recognizes their combined controller hooks instead of disabling
+Stasis, Cryonis, bombs, the ability wheel and Champions. Clay reports that everything
+appears to work again in Citron. No new Switch test is claimed for this correction.
+
+Existing visuals, controls, recharge times and memory reserves are unchanged.
 
 ## Changes in v0.2.8
 
@@ -177,11 +186,11 @@ cues, and Gale uses BotW's crouch pose.
 
 Requires Tears of the Kingdom **1.2.1**, build `9B4E43650501A4D4`.
 
-**Emulator:** extract `botw-abilities-v0.2.8-emulator-subsdk7.zip` and copy its `BotW Abilities`
+**Emulator:** extract `botw-abilities-v0.2.9-emulator-subsdk7.zip` and copy its `BotW Abilities`
 folder into the game's mod folder (right-click the game, **Open Mod Data Location**). Enable
 **BotW Abilities** in the game's add-on list.
 
-**Switch (Atmosphere):** extract `botw-abilities-v0.2.8-switch-subsdk7.zip` and copy its
+**Switch (Atmosphere):** extract `botw-abilities-v0.2.9-switch-subsdk7.zip` and copy its
 `0100F2C0115B6000` folder into `atmosphere/contents/` on the SD card.
 
 **Upgrading from v0.1.0:** remove the old BotW Abilities add-on before installing this update.

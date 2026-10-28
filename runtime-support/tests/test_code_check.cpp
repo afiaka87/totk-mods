@@ -8,6 +8,40 @@
 
 using namespace totk::engine;
 
+TEST_CASE("near hooks retain a validated earlier absolute detour tail") {
+    for (unsigned alignment : {0u, 1u}) {
+        alignas(8) std::array<std::uint32_t, 16> storage{};
+        auto* words = storage.data() + alignment;
+        const auto site = reinterpret_cast<std::uintptr_t>(words);
+        const std::array<CodeSite, 1> sites{{{0, 0xd102c3ff, 0xa9057bfd}}};
+        words[0] = 0x14000008;
+        words[1] = alignment ? 0x58000051 : 0xd61f0220;
+        if (alignment) words[2] = 0xd61f0220;
+        const auto literal = site + (alignment ? 12 : 8);
+        writeMemory(literal, site + 40);
+        CHECK(codeMatches(site, sites, "test", "BUILD_REFUSED"));
+        words[0] = 0x14a2c585; // exact Self Recall branch from the failed Citron boot
+        CHECK(codeMatches(site, sites, "test", "BUILD_REFUSED"));
+        words[0] = 0x14000008;
+        queryPermission = 1;
+        CHECK_FALSE(codeMatches(site, sites, "test", "BUILD_REFUSED"));
+        queryPermission = Perm_Rx;
+        queryResult = 1;
+        CHECK_FALSE(codeMatches(site, sites, "test", "BUILD_REFUSED"));
+        queryResult = 0;
+        for (auto invalid : {std::uintptr_t(0), site + 4, site + 41}) {
+            writeMemory(literal, invalid);
+            CHECK_FALSE(codeMatches(site, sites, "test", "BUILD_REFUSED"));
+        }
+        writeMemory(literal, site + 40);
+        words[0] = 0x14000001;
+        CHECK_FALSE(codeMatches(site, sites, "test", "BUILD_REFUSED"));
+        words[0] = 0x14000008;
+        words[1] = 0xd503201f;
+        CHECK_FALSE(codeMatches(site, sites, "test", "BUILD_REFUSED"));
+    }
+}
+
 TEST_CASE("a site matches its vanilla words or another mod's near hook") {
     std::array<std::uint32_t, 4> words{0xd102c3ff, 0xa9057bfd, 0xd10743ff, 0xa9187bfd};
     const auto base = reinterpret_cast<std::uintptr_t>(words.data());
