@@ -11,6 +11,7 @@
 #include "TransportController.hpp"
 #include "GripHooks.hpp"
 #include "PlayerPresentation.hpp"
+#include "HookshotMotion.hpp"
 #include <arrowbound/ActiveGame.hpp>
 
 namespace {
@@ -124,6 +125,7 @@ void installUnique(std::uintptr_t mainBase, const Observers& observers) {
     const auto* game = arrowbound::profiles::active();
     if (!game) return;
     playerPresentation::install(mainBase);
+    motion::install(mainBase);
     const auto& h = game->hooks;
     g_observers = observers;
     static std::uintptr_t s_gripController{};

@@ -1,4 +1,10 @@
-# Zonai Hookshot (formerly Glideshot) v0.12.3
+# Zonai Hookshot (formerly Glideshot) v0.12.4
+
+## Changes in v0.12.4
+
+Adds smooth gyro aiming on TotK 1.2.1, with the same motion controls and horizontal/vertical inversion settings as Stasis and Cryonis. Other supported game versions keep their existing stick aiming.
+
+Gyro aiming passed a Citron 1.2.1 test. The new gyro path has not had a separate Switch test.
 
 ## Changes in v0.12.3
 
@@ -29,8 +35,9 @@ with the paraglider open. No replacement game models, textures or sound files ar
 - Drawing the bow releases manual traversal. ZL + L releases an Arrowbound trip before aiming.
 
 During the pull, the paraglider is hidden and its sounds are muted. It returns for the final
-approach or cancellation. The tether stays connected to Link's hand. Custom gyroscopic aiming
-is disabled; aim with the normal camera controls.
+approach or cancellation. The tether stays connected to Link's hand. On 1.2.1, enable motion
+controls in the game options to aim with gyro. Both camera inversion settings are respected;
+stick aiming remains available. Other game versions use normal camera controls.
 
 ## Targets
 
@@ -121,7 +128,7 @@ headers. Framework and SDK sources are not included.
 - Framework: [exlaunch](https://github.com/shadowninja108/exlaunch), GPL-2.0, base `f698816d`.
   The float-aware inline hook context needs the fix discussed in issue #28 / PR #31.
 - Native source uses C++26. Keep sibling `arrowbound` and `runtime-support` source folders.
-- Define `HOOKSHOT_VERSION="0.12.2"` and compile `src/lib/program/sd_logger.cpp`.
+- Define `HOOKSHOT_VERSION="0.12.4"` and compile `src/lib/program/sd_logger.cpp`.
   Supply the external exlaunch logger template with both `SvcLogger` and
   `zonai_hookshot::log::SdFileLogger`; the first-party header is included here.
   Its buffered SD log is serviced after each controller update.
@@ -138,9 +145,8 @@ headers. Framework and SDK sources are not included.
 - Use exlaunch's consumer templates: `EXL_MODULE_NAME "zonai-hookshot"`, `EXL_USE_FAKEHEAP`,
   no `EXL_DEBUG`, `HeapSize 0x10000`, `JitSize 0x4000`, `InlinePoolSize 0x1000`,
   `LogBufferSize 512`, empty relocation table, `TOTK_VERSION=121`, module `subsdk5`,
-  program ID `0100F2C0115B6000`, NPDM resource size `0x1800000`.
-- Retain `ARROWBOUND_FLIGHT_DIAGNOSTICS=1` to match the tested payload. Some internal logs
-  retain the former Glideshot name and version; this release preserves the tested runtime bytes.
+  program ID `0100F2C0115B6000`, NPDM resource size `0x800000`.
+- Use `ARROWBOUND_FLIGHT_DIAGNOSTICS=0` to match the tested payload.
 
 Run `tests/run_host_tests.ps1` for the combined host suites. Tests need CMake, Ninja, a C++23
 compiler and doctest 2.4.11, fetched when absent. Keep the sibling Arrowbound folder.

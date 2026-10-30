@@ -7,6 +7,7 @@
 #include "HookshotLog.hpp"
 #include "TransportController.hpp"
 #include "PlayerPresentation.hpp"
+#include "HookshotMotion.hpp"
 
 namespace zonai_hookshot {
 namespace {
@@ -18,6 +19,7 @@ HookshotRuntime& runtime() { return g_runtime; }
 void note(const char* text) { ZHLOG("NOTE %s", text); }
 
 void resetSession(const char* reason) {
+    motion::reset();
     playerPresentation::reset();
     const bool wasActive = g_runtime.machine.phase != pure::Phase::Idle;
     pure::resetKeepingLatches(g_runtime.machine);  // quarantines survive

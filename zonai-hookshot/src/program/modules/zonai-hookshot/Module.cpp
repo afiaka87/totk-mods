@@ -17,6 +17,7 @@
 #include "HookshotRuntime.hpp"
 #include "HookshotWorld.hpp"
 #include "PlayerPresentation.hpp"
+#include "HookshotMotion.hpp"
 #include "TargetingService.hpp"
 
 namespace {
@@ -245,6 +246,7 @@ void runtimeTick(void* device) {
 
     serviceAudio(rt);
     playerPresentation::update(rt);
+    motion::publish(rt);
     presentation::publishChain(rt);
     // Mask exactly what this tick consumed.
     std::uint64_t mask =
@@ -344,6 +346,7 @@ bool ownsMovement() {
 void allowActivation(bool allowed) { g_allowActivation = allowed; }
 
 void yieldMovement() {
+    motion::reset();
     auto& rt = runtime();
     transport::stopDrive(rt, "bow aim");
     aim::abandonPending();

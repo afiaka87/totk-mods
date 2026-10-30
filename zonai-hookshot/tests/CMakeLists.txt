@@ -49,6 +49,18 @@ enable_testing()
 include("${DOCTEST_CMAKE}")
 doctest_discover_tests(zonai_hookshot_pure_tests)
 
+set(runtime_support "${CMAKE_CURRENT_SOURCE_DIR}/../../runtime-support")
+add_executable(hookshot_motion_tests "${runtime_support}/tests/test_motion_aim.cpp")
+target_include_directories(hookshot_motion_tests PRIVATE "${DOCTEST_INCLUDE_DIR}"
+    "${runtime_support}/include" "${runtime_support}/tests/stubs")
+target_compile_features(hookshot_motion_tests PRIVATE cxx_std_23)
+if(MSVC)
+    target_compile_options(hookshot_motion_tests PRIVATE /W4 /WX /permissive- /EHsc /fp:strict)
+else()
+    target_compile_options(hookshot_motion_tests PRIVATE -Wall -Wextra -Werror -ffp-contract=off)
+endif()
+doctest_discover_tests(hookshot_motion_tests)
+
 # The combined product validates its imported feature with that feature's own suite.
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../arrowbound/tests"
                  "${CMAKE_CURRENT_BINARY_DIR}/arrowbound")
