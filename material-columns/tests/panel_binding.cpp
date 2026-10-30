@@ -28,6 +28,9 @@ unsigned captions{}, binds{}, clears{}, outlines{}, reparents{}, invalidations{}
 std::uintptr_t expectedTemplate{}, expectedClone{};
 unsigned copiedControllers{};
 bool hasItem = true;
+bool centerTest = false;
+std::array<bool,11> centerHighlights{};
+std::array<unsigned,11> centerBackgroundAlpha{};
 std::uintptr_t testLayout{}, stockPanePtr{}, columnPanePtr{}, guidePtr{};
 std::array<std::uintptr_t, 3> rowPanes{};
 }
@@ -75,8 +78,16 @@ void setSlotVisible(std::uintptr_t slot, int visible) {
     assert(slot == expectedSlot);
     if (!visible) ++clears;
 }
-void setSelected(std::uintptr_t slot, bool selected, bool animate) {
-    assert(slot == expectedSlot && selected && animate);
+void setSelected(std::uintptr_t slot, bool selected, bool immediate) {
+    if (centerTest) {
+        assert(slot >= 100 && slot < 111);
+        centerHighlights[slot-100]=selected;
+        // Native setSelect: true -> StopAtMax, false -> PlayAuto(1).
+        // Owned PaIconBtnLight_01 Select/UnSelect P_Base_00 alpha endpoints.
+        centerBackgroundAlpha[slot-100]=(selected == immediate) ? 250 : 220;
+        return;
+    }
+    assert(slot == expectedSlot && selected && immediate);
     ++outlines;
 }
 std::uintptr_t lookupLayoutPane(std::uintptr_t, const char* name) {
@@ -280,14 +291,35 @@ int main() {
     }
     field<std::uintptr_t>(controlPtr,96)=reinterpret_cast<std::uintptr_t>(originals.data());
     field<int>(controlPtr,88)=11;
+    centerTest = true;
+    centerHighlights.fill(true);
     leaseCenters(panel,true);
+    for (bool lit : centerHighlights) assert(!lit);
+    for (auto alpha : centerBackgroundAlpha) assert(alpha==220);
     assert(panel.leased && reparents==11 && borrowedSlots==originalSlots);
     for (unsigned j=0;j<11;++j) assert(privateParts[j]==0x9000+j);
     assert(borrowedOwner(100)==&panel && !borrowedOwner(99));
     assert(SelectBorrowedSlot::Callback(100,true,true)==0);
     assert(BindShortcutItem::Callback(0,100,8,0)==0); // Native refresh cannot replace a leased icon.
     leaseCenters(panel,true); assert(reparents==11);
+    panel.count=2; panel.bind=bindItem;
+    for (auto& center : panel.centers) field<int>(center.page,56)=-1;
+    field<int>(panel.centers[4].page,56)=1;
+    for (unsigned frame=0; frame<60; ++frame) {
+        centerHighlights.fill(true); // Generic buttons restart stale selections after binding.
+        // Vertical refresh settles all bindings first; the draw boundary must not
+        // brighten every unselected background by restarting UnSelect at frame zero.
+        centerBackgroundAlpha.fill(220);
+        centerBackgroundAlpha[4]=250;
+        settleCenterSelection(panel,true);
+        for (unsigned j=0;j<11;++j) {
+            assert(centerHighlights[j]==(j==4));
+            assert(centerBackgroundAlpha[j]==(j==4 ? 250u : 220u));
+        }
+    }
     leaseCenters(panel,false);
+    for (bool lit : centerHighlights) assert(!lit); // No leaked highlight in weapon/bow reuse.
+    for (auto alpha : centerBackgroundAlpha) assert(alpha==220);
     assert(!panel.leased && reparents==22 && invalidations==1);
     for (unsigned j=0;j<11;++j) {
         assert(borrowedSlots[j]==0 && originalSlots[j]==100+j && privateParts[j]==0xa000+j);
@@ -295,5 +327,7 @@ int main() {
         assert(field<unsigned char>(originals[j],61)==255);
     }
     leaseCenters(panel,false); assert(reparents==22 && invalidations==1);
+    assert(SelectBorrowedSlot::Callback(100,true,true)==71); // Returned slots use native selection again.
+    assert(SelectBorrowedSlot::Callback(999,true,true)==71); // Unrelated menus always forward.
 
 }

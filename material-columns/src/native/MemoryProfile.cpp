@@ -50,7 +50,10 @@ void maximum(std::atomic<std::uint64_t>& target, std::uint64_t value) {
     auto previous = target.load(std::memory_order_relaxed);
     while (previous < value && !target.compare_exchange_weak(previous, value, std::memory_order_relaxed)) {}
 }
-// Run before the native TST restores condition flags (InlineCtx saves no NZCV). Later MOV W4,W28 / MOV W5,W23 supply the allocator dimensions. Only integer math: InlineCtx does not preserve live SIMD registers. The native world rectangle in S10/S9 stays unchanged; W28/W23 control target resolution.
+// Run before the native TST restores condition flags (InlineCtx saves no NZCV).
+// Later MOV W4,W28 / MOV W5,W23 supply the allocator dimensions.
+// Only integer math: InlineCtx does not preserve live SIMD registers. The native
+// world rectangle in S10/S9 stays unchanged; W28/W23 control target resolution.
 HOOK_DEFINE_INLINE(ScaleCaptureTarget) {
     static void Callback(exl::hook::InlineCtx* ctx) {
         const auto pane = field<std::uintptr_t>(ctx->X[29] - 24, 0);

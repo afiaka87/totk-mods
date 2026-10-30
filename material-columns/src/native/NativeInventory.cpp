@@ -12,16 +12,28 @@ namespace material_columns::native {
 namespace {
 std::uintptr_t base = 0;
 bool installed = false;
-struct Probe { SlotObservation observation{}; };
+struct UsageTable {
+    std::uintptr_t manager{};
+    std::array<std::uint64_t, 2> handle{};
+};
+struct Probe { SlotObservation observation{}; const UsageTable* usage{}; std::uint32_t count{}; };
 std::atomic<Probe*> activeProbe{nullptr};
 unsigned repeatedTypeReports = 0;
 
 template<class T> T field(std::uintptr_t object, std::size_t offset) {
     return *reinterpret_cast<const T*>(object + offset);
 }
+#ifdef MATERIAL_COLUMNS_INVENTORY_HOST_TEST
+std::uintptr_t resolveInventoryTestFunction(std::uintptr_t offset);
+template<class Function> Function function(std::uintptr_t offset) {
+    return reinterpret_cast<Function>(resolveInventoryTestFunction(offset));
+}
+#else
 template<class Function> Function function(std::uintptr_t offset) {
     return reinterpret_cast<Function>(base + offset);
 }
+
+#endif
 
 HOOK_DEFINE_TRAMPOLINE(MaterialSlotCapture) {
     static std::uintptr_t Callback(std::uintptr_t unused, std::uintptr_t slot, const void* parameters) {
@@ -30,6 +42,14 @@ HOOK_DEFINE_TRAMPOLINE(MaterialSlotCapture) {
         // Other slots, including calls from other threads, always reach the stock setter.
         if (probe && slot == reinterpret_cast<std::uintptr_t>(probe)) {
             probe->observation = observeSlot(parameters);
+            if (probe->usage && probe->observation.item) {
+                const char* actor{};
+                std::memcpy(&actor, parameters, sizeof(actor));
+                const auto key = function<std::uint32_t (*)(const char*, std::uint32_t)>(0x89011c)(actor, 0);
+                using Read = bool (*)(std::uintptr_t, std::uint32_t*, const void*, std::uint32_t);
+                if (!function<Read>(0x170f1cc)(probe->usage->manager, &probe->count, probe->usage->handle.data(), key))
+                    probe->count = 0; // Native Most used also treats absent actor counters as zero.
+            }
             return 0;
         }
         if (retainPooledSlot(slot, parameters)) return 0;
@@ -37,8 +57,9 @@ HOOK_DEFINE_TRAMPOLINE(MaterialSlotCapture) {
     }
 };
 
-bool inspect(std::uintptr_t page, std::uint32_t nativeIndex, SlotObservation& result) {
+bool inspect(std::uintptr_t page, std::uint32_t nativeIndex, SlotObservation& result, const UsageTable* usage = nullptr, std::uint32_t* count = nullptr) {
     Probe probe;
+    probe.usage = usage;
     Probe* expected = nullptr;
     if (!activeProbe.compare_exchange_strong(expected, &probe, std::memory_order_acq_rel)) {
         Logging.Log("[material-columns] inventory probe busy at native index %u", nativeIndex);
@@ -51,6 +72,7 @@ bool inspect(std::uintptr_t page, std::uint32_t nativeIndex, SlotObservation& re
                              reinterpret_cast<std::uintptr_t>(&request));
     activeProbe.store(nullptr, std::memory_order_release);
     result = probe.observation;
+    if (count) *count = probe.count;
     if (!result.captured)
         Logging.Log("[material-columns] native binding produced no slot record for index %u", nativeIndex);
     return result.captured;
@@ -65,7 +87,9 @@ bool installInventoryProbe(std::uintptr_t mainBase, bool validateOnly) {
     }
     constexpr totk::engine::CodeSite sites[] = {
         {0x1a58ee0, 0xd107c3ff, 0xa91b7bfd},
-        {0x1a7f090, 0xd102c3ff, 0xa9057bfd}
+        {0x1a7f090, 0xd102c3ff, 0xa9057bfd},
+        {0xddbb04, 0x34000262, 0xf9461008}, {0x89011c, 0x3940000d, 0x3400090d},
+        {0x170f1cc, 0xa9bd7bfd, 0xa90157f6}
     };
     // BotW Abilities and Arrowbound also intercept setSlot; preserve their trampoline chain.
     if (!totk::engine::codeMatches(mainBase, sites, "material-columns", "INVENTORY_HOOK_REFUSED"))
@@ -104,10 +128,18 @@ bool readInventory(std::uintptr_t screen, InventoryEntry* entries,
         Logging.Log("[material-columns] inventory read refused: pouch manager missing");
         return false;
     }
+    UsageTable usage;
+    const auto dataSlot = field<std::uintptr_t>(base, 0x462e3d8);
+    usage.manager = dataSlot ? field<std::uintptr_t>(dataSlot, 0) : 0;
+    using GetStruct = bool (*)(std::uintptr_t, void*, std::uint32_t);
+    const bool usageReady = usage.manager &&
+        function<GetStruct>(0xddbb04)(usage.manager, usage.handle.data(), 0x5a1a0a90);
+    if (!usageReady) Logging.Log("[material-columns] usage table unavailable; canonical tie order retained");
     using ReservedDrop = std::uint32_t (*)(std::uintptr_t, std::uint32_t, std::uint32_t, std::uint32_t*);
     for (std::int32_t index = 0; index < logicalCount - 1; ++index) {
         SlotObservation observation;
-        if (!inspect(page, static_cast<std::uint32_t>(index), observation)) return false;
+        std::uint32_t used{};
+        if (!inspect(page, static_cast<std::uint32_t>(index), observation, usageReady ? &usage : nullptr, &used)) return false;
         std::uint32_t category = 5;
         const auto physical = function<ReservedDrop>(0x19aefb0)(pouch, static_cast<std::uint32_t>(index), 5, &category);
         if (category != 5 && category != 7) {
@@ -115,7 +147,7 @@ bool readInventory(std::uintptr_t screen, InventoryEntry* entries,
             return false;
         }
         entries[index] = {observation.item, static_cast<std::uint32_t>(index), category == 7,
-                          observation.eligible};
+                          observation.eligible, used};
         if (observation.eligible && repeatedTypeReports < 8) {
             for (std::int32_t prior = 0; prior < index; ++prior) {
                 if (!entries[prior].eligible || entries[prior].id != observation.item) continue;

@@ -1,8 +1,10 @@
-# Material Columns v0.1.0
+# Material Columns v0.1.1
 
 A fifth mode for the materials quick-access menu in Tears of the Kingdom 1.2.1.
 Hold D-pad Up and press Y until Material Columns appears. Move the right stick left or right
 to choose a family, and up or down to choose an item within it. The four original sorts remain.
+
+Families are ordered by their combined native usage counts, most used first. Ties use the existing type order; items within families keep their order.
 
 The selected family shows its upper and lower items at full opacity. Its immediate neighbors
 show faded previews; farther families show only their middle item. Labels follow that focus.
@@ -22,21 +24,23 @@ Close the game before installing.
 - Upgrading a development build: remove only Material Columns' old `exefs/subsdk1`.
   Do not remove another mod's executable. Different slots do not guarantee hook compatibility.
 
-Preferences and bounded profiling logs are stored under `sdmc:/material-columns/`.
-The mod does not edit the game's save files. Other quick-menu replacements are unverified.
-Category labels are English. Graphics and navigation were accepted in Citron; the final refactor
-and slot migration preserve code behavior by offline comparison, not a new hardware play-test.
-The mapped module is 376 KiB; this is not the complete mod memory cost.
+Preferences are stored under `sdmc:/material-columns/`. This release writes no diagnostic logs.
+The mod does not edit game saves. Category labels are English; other quick-menu replacements are unverified.
+The cursor, navigation, category order and background fixes were accepted on a real Switch.
+The release removes diagnostic output and SD log storage; that final build has offline validation.
+Mapped module memory is 364 KiB, not the complete mod memory cost.
+
+v0.1.1 fixes duplicate gold highlights, D-pad scrolling in equipment menus and flickering row backgrounds.
 
 ## Source and tests
 
 This is first-party source, not a complete Switch build environment. No game dumps, generated
 catalogs/layout data, SDK headers, exlaunch template headers or binaries belong in this source tree.
 Native compilation requires devkitA64, exlaunch, compatible engine declarations, C++20,
-`TOTK_VERSION=121`, `MATERIAL_COLUMNS_VERSION="0.1.0"`, and generated `LayoutAssets.hpp` and
+`TOTK_VERSION=121`, `MATERIAL_COLUMNS_RELEASE`, `MATERIAL_COLUMNS_VERSION="0.1.1"`, and generated `LayoutAssets.hpp` and
 `MaterialCatalog.hpp` from an owned game. Include `src/` and `runtime-support/include/`.
 The module uses slot6, a 64 KiB fake heap, 16 KiB JIT space, 4 KiB inline pool, 512-byte
-framework log buffer and an 8 MiB process-wide NPDM reservation. The latter is shared process
+framework log-buffer setting (unused by the silent release logger) and an 8 MiB process-wide NPDM reservation. The latter is shared process
 configuration, not an estimate of this mod's RAM use.
 
 The exlaunch InlineFloatCtx accessor fix is required; see upstream issue #28 / PR #31 at

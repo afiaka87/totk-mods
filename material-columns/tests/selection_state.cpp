@@ -49,6 +49,17 @@ int main() {
     assert(restarted.load(saved));
     assert(restarted.rebuild(entries, 6, lookup, other, device));
     assert(restarted.selected()->id == 22);
+    for (auto& entry : entries) entry.usage = entry.id >= 20 ? 100 : 1;
+    rebuild();
+    assert(state.groupId(0)==2 && state.selected()->id==22);
+    assert(state.horizontal(1) && state.selected()->id==13);
+    auto reordered = state.memory();
+    SelectionState<32,8> usageRestart;
+    assert(usageRestart.load(reordered) && usageRestart.rebuild(entries,6,lookup,other,device));
+    assert(usageRestart.selected()->id==13);
+    for (auto& entry : entries) entry.usage = 0;
+    rebuild();
+    assert(state.selected()->id==13 && state.horizontal(1) && state.selected()->id==22);
     // Empty groups can disappear and return without replacing persistent selection.
     for (auto& entry : entries) if (entry.id >= 20) entry.eligible = false;
     rebuild();

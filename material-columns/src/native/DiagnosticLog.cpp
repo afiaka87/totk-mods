@@ -1,3 +1,4 @@
+#ifndef MATERIAL_COLUMNS_RELEASE
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
 #include "DiagnosticLog.hpp"
@@ -69,7 +70,7 @@ void drain() {
     char header[224]{};
     int headerSize=0;
     if (!written) headerSize=std::snprintf(header,sizeof(header),
-        "Material Columns pool-lifecycle-01; queue=8192B drain-stack=2048B file-cap=524288B; UI-detail is nested; parent/pool/cache costs unisolated\n");
+        "Material Columns background-stability-01; queue=8192B drain-stack=2048B file-cap=524288B; UI-detail is nested; parent/pool/cache costs unisolated\n");
     if (lost) headerSize+=std::snprintf(header+headerSize,sizeof(header)-headerSize,"\n[SD profile] dropped-lines=%u\n",lost);
     const auto total=std::size_t(headerSize)+count;
     if (written+total>fileLimit) { disabled.store(true);status("file cap reached",0);return; }
@@ -107,3 +108,5 @@ void pumpDiagnostics(bool force) {
     writerLock.clear(std::memory_order_release);
 }
 }
+
+#endif

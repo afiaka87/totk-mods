@@ -217,8 +217,24 @@ bool prepareCenters(Panel& panel) {
     Logging.Log("[material-columns] memory native-slots reusable=11 private-slots=6 ownership=borrowed outer-pool=6");
     return true;
 }
+void settleCenterSelection(Panel& panel, bool showSelection) {
+    const bool wasBinding = panel.binding;
+    panel.binding = true;
+    for (const auto& center : panel.centers) {
+        if (!center.slot) continue;
+        const int group = field<int>(center.page, 56);
+        std::uint32_t native{}; bool selected{};
+        const bool populated = showSelection && panel.bind && group >= 0 &&
+            static_cast<std::size_t>(group) < panel.count &&
+            panel.bind(panel.context, static_cast<unsigned>(group) * 3, native, selected);
+        // true finishes the chosen track; false restarts it and flashes the background.
+        function<void (*)(std::uintptr_t, bool, bool)>(0x1a584ec)(center.slot, populated && selected, true);
+    }
+    panel.binding = wasBinding;
+}
 void leaseCenters(Panel& panel, bool borrow) {
     if (panel.leased == borrow) return;
+    settleCenterSelection(panel, false);
     for (const auto& center : panel.centers) {
         reparent(center.pane, borrow ? center.target : center.parent);
         field<std::uintptr_t>(center.destination, 0) = borrow ? center.slot : 0;
@@ -244,7 +260,9 @@ HOOK_DEFINE_TRAMPOLINE(CopyColumnRowLayout) {
     static std::uintptr_t Callback(std::uintptr_t controller, std::uintptr_t heap,
                                    std::uintptr_t source, std::uintptr_t destination) {
         if (auto* panel = forController(controller); panel && source && destination) {
-            // Native setUpElementPanes_ passes row zero as the source for every cloned row. Our row zero is inert; each outer row must copy its own native controllers (including nested icon controllers) instead.
+            // Native setUpElementPanes_ passes row zero as the source for every
+            // cloned row. Our row zero is inert; each outer row must copy its own
+            // native controllers (including nested icon controllers) instead.
             const auto pages = field<std::uintptr_t>(controller, 96);
             const auto first = pages ? field<std::uintptr_t>(pages, 0) : 0;
             const auto rows = first ? field<std::uintptr_t>(first, 24) : 0;
@@ -390,7 +408,9 @@ void placeOuterTiles(Panel& panel) {
             const auto container = field<std::uintptr_t>(field<std::uintptr_t>(page, 24), row * 8);
             const auto target = field<std::uintptr_t>(field<std::uintptr_t>(container, 232), 24);
             reparent(tile.pane, target);
-            // Leave page+40 on the inert button and page+72 empty. onInactive_ clears icons/quantities and enables button animations through +72; page updates select/reindex buttons through +40 independently of us.
+            // Leave page+40 on the inert button and page+72 empty. onInactive_
+            // clears icons/quantities and enables button animations through +72;
+            // page updates select/reindex buttons through +40 independently of us.
             tile.page = page;
         }
         const int group = field<int>(page, 56);
@@ -405,11 +425,11 @@ bool hasOuterTiles(const Panel& panel, std::uintptr_t page) {
 }
 void bindOuterTiles(Panel& panel);
 HOOK_DEFINE_TRAMPOLINE(SelectBorrowedSlot) {
-    static std::uintptr_t Callback(std::uintptr_t slot, bool selected, bool animate) {
+    static std::uintptr_t Callback(std::uintptr_t slot, bool selected, bool immediate) {
         const auto* panel = borrowedOwner(slot);
         if (!panel) panel = outerOwner(slot);
         if (panel && !panel->binding) return 0;
-        return Orig(slot, selected, animate);
+        return Orig(slot, selected, immediate);
     }
 };
 std::uintptr_t captionPane(std::uintptr_t page) {
@@ -646,20 +666,82 @@ HOOK_DEFINE_TRAMPOLINE(UpdateShortcutParts) {
         return result;
     }
 };
+HOOK_DEFINE_TRAMPOLINE(ShortcutCursorFocus) {
+    static std::uintptr_t Callback(std::uintptr_t node, unsigned drawTarget) {
+        const auto screen = node ? field<std::uintptr_t>(node, 32) : 0;
+        if (!find(screen)) return Orig(node, drawTarget);
+        // Native shortcuts draw their own Select frames. Exclude their nodes
+        // from the independent BoxCursor's search, movement and frame attachment.
+        static std::array<unsigned, 4> checks{};
+        const auto type = field<unsigned>(screen, 440);
+        if (type < checks.size() && checks[type] <= 4096) {
+            const auto count = ++checks[type];
+            if (count == 1 || count == 64 || count == 4096)
+                Logging.Log("[material-columns] cursor excluded type=%u checks=%u node=%llx button=%llx",
+                    type, count, static_cast<unsigned long long>(node),
+                    static_cast<unsigned long long>(field<std::uintptr_t>(node, 24)));
+        }
+        return 0;
+    }
+};
+unsigned discardCursorNavigation(std::uintptr_t controller) {
+    // Shortcuts move their index directly. Generic cursor requests are a second
+    // input path, including D-pad repeat; private columns are presentation-only.
+    const unsigned pending = (field<std::uint8_t>(controller, 195) != 255 ? 1u : 0u) |
+        (field<std::uintptr_t>(controller, 208) ? 2u : 0u) |
+        (field<std::uint8_t>(controller, 190) & 1 ? 4u : 0u);
+    field<std::uint8_t>(controller, 195) = 255;
+    field<std::uintptr_t>(controller, 208) = 0;
+    field<std::uintptr_t>(controller, 216) = 0;
+    field<std::uint8_t>(controller, 190) &= ~1u;
+    return pending;
+}
+#ifndef MATERIAL_COLUMNS_RELEASE
+void traceEquipmentInput(std::uintptr_t screen, std::uintptr_t controller, int before, unsigned pending) {
+    struct Trace { unsigned ticks{}, reports{}, held{~0u}, blocked{}; int focus{-1}; };
+    static std::array<Trace, 3> traces{};
+    const auto type = field<unsigned>(screen, 440);
+    auto& trace = traces[type];
+    if (trace.reports >= 48) return;
+    const auto table = field<std::uintptr_t>(screen, 0);
+    const auto input = reinterpret_cast<std::uintptr_t (*)(std::uintptr_t)>(field<std::uintptr_t>(table, 56))(screen);
+    if (!input) return;
+    const auto held = field<unsigned>(input, 276);
+    const int after = field<int>(controller, 140);
+    trace.blocked += pending != 0;
+    if (held != trace.held || after != trace.focus || before != after || ++trace.ticks >= 120) {
+        const auto child = field<std::uintptr_t>(screen, 424);
+        Logging.Log("[material-columns] input type=%u held=%08x pressed=%08x stick=%d,%d focus=%d/%d/%d cursor=%u blocked=%u optional=%u,%u",
+            type, held, field<unsigned>(input, 8), int(field<float>(input, 296) * 1000),
+            int(field<float>(input, 300) * 1000), trace.focus, before, after, pending, trace.blocked,
+            unsigned(field<std::uint8_t>(child, 155)), unsigned(field<std::uint8_t>(child, 156)));
+        ++trace.reports;
+        trace.ticks = trace.blocked = 0;
+    }
+    trace.held = held;
+    trace.focus = after;
+}
+#else
+void traceEquipmentInput(std::uintptr_t, std::uintptr_t, int, unsigned) {}
+#endif
+
 HOOK_DEFINE_TRAMPOLINE(UpdateColumnController) {
     static std::uintptr_t Callback(std::uintptr_t controller, float frames) {
-        for (const auto& candidate : panels) if (candidate.leased) {
+        std::uintptr_t equipment{};
+        for (const auto& candidate : panels) if (candidate.owner) {
             const auto stock = field<std::uintptr_t>(candidate.owner, 424);
-            if (stock && field<std::uintptr_t>(stock, 80) == controller) return 0;
+            if (stock && field<std::uintptr_t>(stock, 80) == controller) {
+                if (candidate.leased) return 0;
+                if (field<unsigned>(candidate.owner, 440) < 3) equipment = candidate.owner;
+                break;
+            }
         }
         auto* panel = forController(controller);
-        if (panel && panel->ready && panel->visible) {
-            synchronizeAnimations(*panel);
-            field<std::uint8_t>(controller, 195) = 255;
-            field<std::uintptr_t>(controller, 208) = 0;
-            field<std::uintptr_t>(controller, 216) = 0;
-        }
+        const auto pending = panel || equipment ? discardCursorNavigation(controller) : 0;
+        const int before = equipment ? field<int>(controller, 140) : 0;
+        if (panel && panel->ready && panel->visible) synchronizeAnimations(*panel);
         const auto result = Orig(controller, frames);
+        if (equipment) traceEquipmentInput(equipment, controller, before, pending);
         if (panel && panel->ready && panel->visible) {
             updateRows(*panel, frames);
             if (++panel->updates == 90 && !panel->calculations) {
@@ -672,7 +754,9 @@ HOOK_DEFINE_TRAMPOLINE(UpdateColumnController) {
         return result;
     }
 };
-// Screen::update dispatches LayoutEx virtual184; the base Layout calculator is bypassed. LayoutEx::CalculateImpl computes pane matrices. Apply private presentation here so later native tracks cannot win.
+// Screen::update dispatches LayoutEx virtual184; the base Layout calculator is bypassed.
+// LayoutEx::CalculateImpl computes
+// pane matrices. Apply private presentation here so later native tracks cannot win.
 [[maybe_unused]] void traceOuterTiles(Panel& panel) {
     static unsigned remaining=144;
     for (unsigned i=0;remaining && i<panel.outer.size();++i) {
@@ -712,9 +796,10 @@ HOOK_DEFINE_TRAMPOLINE(CalculateColumnLayoutEx) {
             visible(panel.stockPane, false);
             visible(panel.pane, true);
             updateRows(panel, 0.f, true);
+            settleCenterSelection(panel, true);
         }
         const auto result = Orig(layout, drawInfo, force);
-#ifndef MATERIAL_COLUMNS_PANEL_HOST_TEST
+#if !defined(MATERIAL_COLUMNS_PANEL_HOST_TEST) && !defined(MATERIAL_COLUMNS_RELEASE)
         for (auto& panel : panels)
             if (panel.ready && panel.visible && field<std::uintptr_t>(panel.owner,40)==layout) traceOuterTiles(panel);
 #endif
@@ -814,7 +899,8 @@ bool installColumnPanel(std::uintptr_t mainBase, bool validateOnly) {
         {0xe744fc, 0xa9ba7bfd, 0xa9016ffc}, {0x1a584ec, 0xa9be7bfd, 0xa9014ff4},
         {0x22a8130, 0xa9bc7bfd, 0xa9015ff8},
         {0x6ff4e0, 0xa9bb7bfd, 0xf9000bf9}, {0x6ff27c, 0x39400028, 0x34000c28}, {0xf84cf0, 0xd10183ff, 0xa9037bfd},
-        {0x1a58204, 0xa9be7bfd, 0xf9000bf3}, {0x2a65cf8, 0xb9404008, 0x7200003f}
+        {0x1a58204, 0xa9be7bfd, 0xf9000bf3}, {0x2a65cf8, 0xb9404008, 0x7200003f},
+        {0x2a66f00, 0xa9bd7bfd, 0xf9000bf5}
     };
     if (!totk::engine::codeMatches(mainBase, sites, "material-columns", "PANEL_HOOK_REFUSED")) return false;
     if (validateOnly) return true;
@@ -830,6 +916,7 @@ bool installColumnPanel(std::uintptr_t mainBase, bool validateOnly) {
     InitializeColumnPage::InstallAtOffset(sites[8].offset);
     SelectBorrowedSlot::InstallAtOffset(sites[9].offset);
     CopyColumnRowLayout::InstallAtOffset(sites[10].offset);
+    ShortcutCursorFocus::InstallAtOffset(sites[16].offset);
     installed = true;
     return true;
 }

@@ -54,6 +54,23 @@ int main() {
     assert(snapshot.column(0).items[1].native_slot == 2);
     duplicate[1] = {11, 2, false, true};
     assert(!snapshot.rebuild(duplicate, 2, lookup, fallback, deviceFallback));
+    InventoryEntry used[]{{10,0,false,true,4}, {11,1,false,true,5}, {20,2,false,true,8},
+                          {30,3,true,true,0}, {10,4,false,true,4}};
+    assert(snapshot.rebuild(used,5,lookup,fallback,deviceFallback));
+    assert(snapshot.column(0).group==fruit && snapshot.group(0)->usage==9);
+    assert(snapshot.column(0).count==3); // Repeated actor slots survive, but usage is counted once.
+    used[2].usage=10;
+    assert(snapshot.rebuild(used,5,lookup,fallback,deviceFallback));
+    assert(snapshot.column(0).group==eyes && snapshot.group(0)->usage==10);
+    used[2].usage=9; // Ties use the former deterministic category order.
+    assert(snapshot.rebuild(used,5,lookup,fallback,deviceFallback));
+    assert(snapshot.column(0).group==fruit);
+    used[0].usage=used[1].usage=used[4].usage=0xffffffffu;
+    assert(snapshot.rebuild(used,5,lookup,fallback,deviceFallback));
+    assert(snapshot.group(0)->usage==0x1fffffffeULL);
+    used[0].eligible=used[1].eligible=used[4].eligible=false;
+    assert(snapshot.rebuild(used,5,lookup,fallback,deviceFallback));
+    assert(snapshot.groupCount()==2 && snapshot.column(0).group==eyes);
     assert(snapshot.rebuild(nullptr, 0, lookup, fallback, deviceFallback));
     assert(snapshot.column(0).count == 0 && snapshot.group(0) == nullptr);
     assert(!snapshot.rebuild(source, 17, lookup, fallback, deviceFallback));

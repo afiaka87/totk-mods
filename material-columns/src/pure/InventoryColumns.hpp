@@ -18,6 +18,7 @@ struct InventoryEntry {
     std::uint32_t native_slot;
     bool device;
     bool eligible;
+    std::uint32_t usage{};
 };
 
 // Snapshot storage is bounded by the adapter's verified native inventory capacity.
@@ -29,6 +30,7 @@ public:
         GroupOrder order{};
         std::size_t begin{};
         std::size_t count{};
+        std::uint64_t usage{};
     };
 
     template<class Lookup>
@@ -44,7 +46,9 @@ public:
             }
             // Actor identity names an item type, not a unique native inventory record.
             // Keep repeated types as separate slots; never merge quantities or action tokens.
+            bool firstType = true;
             for (std::size_t j = 0; j < size_; ++j) {
+                if (items_[j].id == source[i].id) firstType = false;
                 if (items_[j].native_slot == source[i].native_slot) {
                     clear();
                     return false;
@@ -54,11 +58,13 @@ public:
             while (group < groups_count_ && groups_[group].order.id != match.group) ++group;
             if (group == groups_count_) {
                 if (groups_count_ == MaxGroups) { clear(); return false; }
-                groups_[groups_count_++].order = {match.group, match.group_rank};
+                groups_[groups_count_++] = {{match.group, match.group_rank}, 0, 0, 0};
             } else if (match.group_rank != groups_[group].order.rank) {
                 clear();
                 return false;
             }
+            // Usage belongs to the actor type, even when native inventory has repeated records.
+            if (firstType) groups_[group].usage += source[i].usage;
             items_[size_] = {source[i].id, match.item_rank, source[i].native_slot};
             item_groups_[size_++] = match.group;
         }
@@ -107,6 +113,7 @@ public:
 
 private:
     static bool groupBefore(const Group& a, const Group& b) {
+        if (a.usage != b.usage) return a.usage > b.usage;
         return a.order.rank < b.order.rank || (a.order.rank == b.order.rank && a.order.id < b.order.id);
     }
     std::size_t groupIndex(GroupId id) const {
