@@ -1,0 +1,5 @@
+First-party source: MIT, copyright Clay Mullis.
+The compiled module includes exlaunch (GPL-2.0), with its upstream component licenses.
+Build tooling: devkitPro/devkitA64. Framework and SDK sources are external dependencies.
+The four small UI layout derivatives in the binary package originate from the owned game.
+They are not MIT-licensed; no full UI archives, textures, fonts or game executable are included.
