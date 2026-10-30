@@ -127,6 +127,7 @@ std::uintptr_t animationController(std::uintptr_t actor) {
 }
 Weapon weaponOf(std::uintptr_t attacker) {
     auto weapon = attacker;
+    bool unarmedPlayer = false;
     ActorReference equipped;
     if (const char *name = actorName(weapon);
         startsWith(name, "Player") || startsWith(name, "Enemy_")) {
@@ -138,9 +139,11 @@ Weapon weaponOf(std::uintptr_t attacker) {
             equipped.owns = reference.owns;
             reference.owns = false;
             weapon = equipped.actor;
+            unarmedPlayer = !weapon && startsWith(actorName(attacker), "Player");
         }
     }
     Weapon out;
+    out.unarmedPlayer = unarmedPlayer;
     const char *name = actorName(weapon);
     out.family = startsWith(name, "Weapon_Sword_")    ? 0
                  : startsWith(name, "Weapon_Lsword_") ? 1

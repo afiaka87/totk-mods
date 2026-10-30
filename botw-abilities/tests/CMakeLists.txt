@@ -21,7 +21,7 @@ add_executable(botw_abilities_host_tests test_main.cpp test_wheel_pages.cpp test
     test_champion_audio.cpp test_champion_save.cpp test_champion_items.cpp
     test_champion_fatal.cpp test_champion_effects.cpp test_champion_gale.cpp test_champion_pose_matrices.cpp
     test_champion_blocking.cpp test_champion_fury.cpp test_champion_hud.cpp test_champion_appearances.cpp
-    test_gale_glide.cpp test_fury_targets.cpp test_runtime_frame.cpp)
+    test_gale_glide.cpp test_fury_targets.cpp test_runtime_frame.cpp test_private_effects.cpp)
 target_include_directories(botw_abilities_host_tests PRIVATE
     "${DOCTEST_INCLUDE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/wheel"

@@ -257,6 +257,20 @@ def merge_ui_sound_calls(clean, members, block):
     return clean.replace(original,combined,1)
 
 
+def private_elink_text(clean, combined, user_blocks):
+    """Extract additions only; a private resource must never override stock users."""
+    prefix = clean.split('Users {', 1)[0]
+    if combined.split('Users {', 1)[0] != prefix:
+        raise ValueError('effect parameter definitions changed')
+    base, users = user_blocks(clean), user_blocks(combined)
+    if any(users.get(name) != value for name, value in base.items()):
+        raise ValueError('private effects cannot edit or remove stock users')
+    additions = {name: value for name, value in users.items() if name not in base}
+    if not additions:
+        raise ValueError('private effects contain no additions')
+    return prefix + 'Users {\n' + '\n'.join(additions.values()) + '\n}\n'
+
+
 def merge_elink_text(clean, members, user_blocks, sound_block=None):
     base = user_blocks(clean)
     prefix = clean.split('Users {', 1)[0]

@@ -144,15 +144,17 @@ void acceptedHit(void *record, void *victimComponent, void *attackInfo) {
         actorReference(hit_adapter::actorLink(reinterpret_cast<std::uintptr_t>(attackInfo)));
     hit.attacker = attacker.actor;
     const auto weapon = weaponOf(hit.attacker);
-    hit.weapon = weapon.family;
+    hit.weapon = hit_adapter::chargeWeaponKind(weapon.family, weapon.unarmedPlayer);
     hit.playerStrike = startsWith(actorName(weapon.user), "Player") ||
                        startsWith(actorName(hit.attacker), "Player");
     if (hit.playerStrike) {
         if (const auto body = mainBody(target); !valid(body))
             Logging.Log("[stasis] PLAYER_DIRECTION_REFUSED missing body");
-        else if (const auto com = centerOfMass(body), origin = position(weapon.user);
+        else if (const auto com = centerOfMass(body),
+                 origin = position(hit_adapter::strikeOriginActor(hit.attacker, weapon.user));
                  finite(com) && finite(origin))
-            hit.direction = hit_adapter::playerDirection(hit.normal, origin, com);
+            hit.direction = weapon.unarmedPlayer ? hit_adapter::unarmedDirection(hit.normal, origin, com)
+                                                 : hit_adapter::playerDirection(hit.normal, origin, com);
         else
             Logging.Log("[stasis] PLAYER_DIRECTION_REFUSED invalid position/COM");
     } else if (valid(hit.attacker) &&

@@ -40,6 +40,7 @@ struct Bodies {
 struct Weapon {
     int family{-1};
     std::uintptr_t user{};
+    bool unarmedPlayer{};
 };
 
 bool startsWith(const char *value, const char *prefix);

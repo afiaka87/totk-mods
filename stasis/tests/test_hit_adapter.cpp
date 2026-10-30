@@ -3,6 +3,20 @@
 #include "StasisProjection.hpp"
 #include <array>
 #include <cstring>
+TEST_CASE("Unarmed Player hits use Link's position without reading a missing weapon owner") {
+    const std::uintptr_t player = 0x10000, owner = 0x20000;
+    const auto source = stasis::hit_adapter::strikeOriginActor(player, 0);
+    REQUIRE(source == player);
+    CHECK(stasis::hit_adapter::strikeOriginActor(0x30000, owner) == owner);
+    const auto direction = stasis::hit_adapter::playerDirection({1, 0, 0}, {0, 0, 0}, {0, 0, 4});
+    stasis::ChargeState charge;
+    stasis::acceptStrike(charge, {direction, {}, -1, true, true, true}, 100, true);
+    CHECK(charge.charged);
+    CHECK(charge.counter == 1);
+    CHECK(charge.vector.z > 0);
+    CHECK(std::isfinite(charge.vector.y));
+}
+
 TEST_CASE("Projectile charge follows travel instead of becoming a raised player strike") {
     const stasis::Vec3 force{0, 2, 0}, velocity{3, -4, 0};
     const auto direction = stasis::hit_adapter::projectileDirection(force, velocity);
@@ -18,6 +32,23 @@ TEST_CASE("Projectile charge follows travel instead of becoming a raised player 
     CHECK(player.vector.y > 0);
     CHECK(stasis::hit_adapter::projectileDirection(force, {}).y == 2);
     CHECK(stasis::hit_adapter::projectileDirection(force, {NAN, 0, 0}).y == 2);
+}
+TEST_CASE("Unarmed contacts charge heavy objects without depending on a mod attack name or force") {
+    for (const float mass : {1.0f, 1000.0f}) {
+        for (const stasis::Vec3 force : {stasis::Vec3{}, stasis::Vec3{0, 0, 100}}) {
+            stasis::ChargeState charge;
+            const auto kind = stasis::hit_adapter::chargeWeaponKind(-1, true);
+            const auto direction = stasis::hit_adapter::unarmedDirection(force, {}, {-4, 0, 0});
+            stasis::acceptStrike(charge, {direction, {}, kind, true, true, true}, mass, true);
+            CHECK(charge.charged);
+            CHECK(stasis::length(charge.vector) / mass == doctest::Approx(7.5f));
+            CHECK(charge.vector.x < 0);
+            CHECK(charge.vector.z == doctest::Approx(0));
+        }
+    }
+    for (const int kind : {-1, 0, 1, 2})
+        CHECK(stasis::hit_adapter::chargeWeaponKind(kind, false) == kind);
+    CHECK_FALSE(stasis::finite(stasis::hit_adapter::unarmedDirection({NAN, 0, 0}, {}, {})));
 }
 TEST_CASE("Player redirection matches the original ARM impulse block") {
     struct Case {

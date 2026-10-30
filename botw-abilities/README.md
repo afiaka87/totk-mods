@@ -1,4 +1,37 @@
-# BotW Abilities v0.2.9
+# BotW Abilities v0.2.11
+
+Upgrading: replace the previous add-on folder so its obsolete shared ELink file is
+removed. On Switch, remove the old ELink override only if it belongs to this mod;
+keep any ELink file supplied by another mod or mod manager.
+
+## Changes in v0.2.11
+
+Fixes missing Champion and bomb effects when another mod replaces the effect-bank
+index. Existing entries keep priority; BotW Abilities supplies only its four missing
+private aliases. Its effects do not require a user-run merge tool.
+
+Unarmed hits now charge Stasis using the one-handed weapon rate, including punches
+from Empty-Handed Combat. The missing-weapon crash guard remains.
+
+The combined Switch test passed with Empty-Handed Combat, ELink2 Compatibility Patch,
+Master Deity Sword, Warrior of Sunlight and Silent Sorrow. Punch charging, Fury's dome,
+both bomb explosions and prompt Mipha presentation were confirmed. The previous Mipha
+delay's exact cause is unestablished; no recharge or presentation timing was changed.
+Ryujinx has not had a direct retest. Other shared-data conflicts remain possible.
+
+Temporary SD logging is removed from the release. Community test mods are not bundled.
+
+## Changes in v0.2.10
+
+Custom effects now load from a private ELink file, so other mods can replace the
+shared ELink table without removing BotW Abilities effects. No manual effect merge
+is required. Tested with three individual ELink overlays and a community merged
+bundle in Citron, then the merged bundle on Switch. Other shared-file conflicts
+still require compatible mod data; this is not a blanket TKMM compatibility claim.
+
+Also guards Stasis against a missing weapon when processing unarmed hits.
+That correction passes host tests but has not had a dedicated gameplay test.
+Visuals, controls, recharge times and memory reserves are unchanged.
 
 ## Changes in v0.2.9
 
@@ -186,11 +219,11 @@ cues, and Gale uses BotW's crouch pose.
 
 Requires Tears of the Kingdom **1.2.1**, build `9B4E43650501A4D4`.
 
-**Emulator:** extract `botw-abilities-v0.2.9-emulator-subsdk7.zip` and copy its `BotW Abilities`
+**Emulator:** extract `botw-abilities-v0.2.11-emulator-subsdk7.zip` and copy its `BotW Abilities`
 folder into the game's mod folder (right-click the game, **Open Mod Data Location**). Enable
 **BotW Abilities** in the game's add-on list.
 
-**Switch (Atmosphere):** extract `botw-abilities-v0.2.9-switch-subsdk7.zip` and copy its
+**Switch (Atmosphere):** extract `botw-abilities-v0.2.11-switch-subsdk7.zip` and copy its
 `0100F2C0115B6000` folder into `atmosphere/contents/` on the SD card.
 
 **Upgrading from v0.1.0:** remove the old BotW Abilities add-on before installing this update.
@@ -211,14 +244,14 @@ Both archives contain the same game payload: `exefs/subsdk7`, `exefs/main.npdm`,
 - Do not enable it together with the standalone Stasis, Remote Bomb or Cryonis mods.
 - It replaces the interface sound bank (`UI_Static`), five RSDB tables (actor, attachment, game
   actor, pouch and tag), the save-data schema (`GameDataList`), the English text archive, the
-  effect and sound link tables, the effect file list and the resource-size table, and adds
+  sound link table, the effect file list and the resource-size table, and adds
   the pillar and bomb actor packs, the Champion effect, updraft and lightning actor packs,
   native models, textures, an effect bank, Gale's pose file and inventory, Key Item and wheel
   icons. Mods that replace any of those files conflict
   unless their changes are merged. Installing this add-on separately beside TKMM's output does
   not merge those shared files; changing load order cannot retain both mods' additions.
 - TKMM compatibility is not yet verified. TKMM merges several of these formats, but its current
-  merger uses priority for the effect/sound link tables and interface sound bank, and recalculates
+  merger uses priority for sound link tables and the interface sound bank, and recalculates
   resource budgets instead of preserving the supplied resource-size table. A combined setup needs
   those files and budgets checked after merging. Simply importing the mod is not a confirmed fix.
   The TKMM **Use romfslite** option selects the Optimizer's alternate file loader; it does not
