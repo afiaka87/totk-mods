@@ -1,22 +1,26 @@
-# Material Columns: custom materials
+# Material Columns: guide for mod authors
 
-## For mod authors
+## Overview
 
-The mappings of custom materials can be adjusted through Material Columns by adding lines to an INI according to the categories you use. Included are configs for Remote Bombs, FuseablesEX and Invisible Attachments Shop.
+If you want to make your own compatibility file, add `romfs/MaterialColumns/Categories/your-mod.ini` to your mod. You can choose a category for each material, or add a category of your own. For a different language, add the translation into your category's section. English is required as a fallback.
 
-If you want to make your own compatibility patch, the file to add is `romfs/MaterialColumns/Categories/your-mod.ini`. Use your actor's internal name for the material. You can choose its category: `fruit`, `mushrooms`, `special-materials`, or a category of your own. The full list is below.
+Include the INI with your download; Material Columns v0.1.4 or later is required too. For game versions 1.2.1 and 1.4.2. Your material mod must work on the player's version of the game. You still need that mod to add the actors and inventory data. No rebuild of Material Columns is needed.
 
-For a different language, add the translation into your category's section. English is required as a fallback. You can find a complete example with all 16 locales below, along with the Remote Bombs config.
+## Contents
 
-To install, drag your INI into that folder in your mod. Include it with your download; Material Columns is required too. For game versions 1.2.1 and 1.4.2. Close the game before editing the files and restart afterward. No rebuild needed.
+- [Quick start: use an existing category](#quick-start-use-an-existing-category)
+- [Find your actor's ID](#find-your-actors-id)
+- [Create a new category](#create-a-new-category)
+- [Add translations](#add-translations)
+- [Examples and companion files](#examples-and-companion-files)
+- [Built-in category IDs](#built-in-category-ids)
+- [File rules](#file-rules)
+- [Troubleshooting](#troubleshooting)
 
-## Examples
+## Quick start: use an existing category
 
-- [All 16 locales, two new categories and five fictional materials](examples/fictional-materials.ini)
-- [Remote Bombs: four actors and all 16 category translations](../config/botw-abilities.ini)
-- [FuseablesEX: two added materials assigned to special-materials](../config/fuseables-ex.ini)
-- [Invisible Attachments Shop: 35 added materials in one new category](../config/invisible-attachments.ini)
-- [The Second Quest: 32 additional material/device records, including bundles](../config/second-quest.ini)
+1. Create `romfs/MaterialColumns/Categories/your-mod.ini` inside your mod's folder. Give it a filename unique to your mod and save it as UTF-8.
+2. Add `[General]` with `Version = 1`, then a `[Materials]` section with one assignment per line:
 
 ```ini
 [General]
@@ -26,56 +30,64 @@ Version = 1
 Obj_RemoteBombSphere = special-materials
 ```
 
-## Reference
+3. Replace `Obj_RemoteBombSphere` with your material's exact actor ID. Replace `special-materials` with an ID from the [built-in category list](#built-in-category-ids), if needed.
+4. Include the INI with your mod. The player needs both your mod and Material Columns installed and enabled.
+5. Close and restart the game after changing the file. Open Material Columns while carrying the item to check its category.
 
-| Setting | Limit or rule |
-| --- | --- |
-| Actor name source | Exact `__RowId` in the material's `RSDB/PouchActorInfo` entry; preserve capitalization |
-| Assignment | `[Materials]`, then `ActorName = friendly-category-id` |
-| New definition | `[Category.your-mod.category]`, followed by `Name.<locale> = Caption` |
-| Existing categories | Translations stay unchanged; custom definitions cannot replace them |
-| Identity | Category ID persists remembered selection; changing the caption does not change the ID |
-| Appearance | Only categories containing eligible owned items appear |
-| Menu behavior | Existing navigation, previews, fades, actions and remembered selections retained |
-| Prerequisite | Material mod must register its actors and inventory data for the installed game version |
-| Encoding | UTF-8, optional BOM; Windows CRLF or Unix LF |
-| Values | One setting per line; no quotes, escapes, multiline values or inline comments |
-| Comments | A line beginning with `;` or `#`, after optional whitespace |
-| Read timing | Once at the first entry into Material Columns; restart to reload |
-| File order | Filename byte order, case-sensitive; later assignments win |
-| Category replacement | Later complete definition wins; English caption required again |
-| Cross-file references | All category definitions read before assignments |
-| User override | Optional `zz-user-overrides.ini` in the same folder |
-| Same file path in two mods | Only the mod manager's selected or last installed file is available |
-| Files | 32 `.ini` files; no subdirectories; lowercase `.ini` extension |
-| Filename | 63 UTF-8 bytes maximum; ordinary ASCII filenames recommended |
-| File size | 65,536 bytes maximum |
-| Line | 512 bytes maximum, excluding the newline |
-| Actor ID | 1â€“63 ASCII letters, digits or underscores; case-sensitive |
-| Category ID | 1â€“63 lowercase ASCII letters, digits, hyphens or dots; no leading, trailing or consecutive dots |
-| Custom category ID | At least one dot, for example `botw-abilities.remote-bombs` |
-| New categories | 44 definitions in total, alongside the 52 built-in categories |
-| Material mappings | 256 distinct actor IDs; replacing an assignment does not consume another entry |
-| Caption | Nonempty UTF-8; at most 63 UTF-16 units and 191 UTF-8 bytes; no control characters |
-| Display fit | Native caption width unchanged; keep labels short even below the encoding limit |
-| English | `Name.en-US` required in every custom category definition |
-| Same-language fallback | `en-GB` â†’ `en-US`; `fr-CA` â†’ `fr`; `es-419` â†’ `es`; `pt-BR` â†’ `pt` |
-| Final fallback | `en-US` |
-| Equal usage | Built-ins retain their type-order rank; custom categories follow definition order |
-| Custom item order | Existing catalog rank when known; otherwise stable actor identity order |
-| Missing folder | No overrides; existing behavior retained |
-| Missing/unsupported Version | Entire file skipped |
-| Directory read failure, too many files or overlong INI filename | All INI loading skipped; existing behavior retained |
-| Category/mapping capacity reached | Additional entries skipped; existing entries retained |
-| Invalid assignment | Prior assignment or original classification retained |
-| Unmapped custom actor | Original unknown-material/device fallback retained |
-| Actor absent or misspelled | Mapping accepted if the ID syntax is valid; unused until a matching actor appears in inventory. Actor existence is not checked. |
-| Malformed content | Invalid entries are skipped; valid entries can still apply. A broken section is ignored until a valid header. |
-| Partial loading | No per-file rollback; a later read failure can leave earlier accepted entries in place. |
-| Diagnostics | Diagnostic builds only: 0 syntax; 1 version; 2 name/caption; 3 locale; 4 category; 5 capacity; 6 assignment override. Release builds write no diagnostic logs. |
-| Registry memory | 12,904 bytes reserved; only the selected caption retained per custom category |
+The file is read once, on the first entry into Material Columns. Only categories with eligible items in the player's inventory appear. This example assigns an existing Remote Bombs actor; it does not add a bomb to the game or to a save.
 
-| Locale | Language |
+## Find your actor's ID
+
+You will need to write the exact internal game name for the material (you can find it in your `RSDB/PouchActorInfo` entry, under `__RowId`). This is case-sensitive, so leave the capitalization as it is.
+
+For the Remote Bombs example above, the actor name is `Obj_RemoteBombSphere` and the category is `special-materials`. Put the actor on the left of the equals sign and the category on the right. The name you see in the inventory, such as "Remote bomb", won't work in place of the actor name.
+
+You can include a config for another mod without having it installed. If you don't have its items, those assignments just go unused. Please double-check the actor name if an item ends up in the wrong column: a misspelled name is accepted too, but won't match your item.
+
+## Create a new category
+
+Add a `[Category.<id>]` section and an English caption, then assign actors to that ID:
+
+```ini
+[General]
+Version = 1
+
+[Category.my-mod.crystals]
+Name.en-US = Crystals
+
+[Materials]
+MyMod_Crystal_Blue = my-mod.crystals
+MyMod_Crystal_Red = my-mod.crystals
+```
+
+`MyMod_Crystal_Blue` and `MyMod_Crystal_Red` are fictional examples. Replace them with actors your mod registers.
+
+Use an ID that includes your mod's name and a dot, such as `my-mod.crystals`, to avoid collisions. Every custom category definition must include a valid `Name.en-US`. Built-in categories cannot be redefined or renamed through an INI.
+
+Keep the category ID stable between updates. Remembered selections use the ID, so changing its caption is safe; changing the ID gives it a new identity.
+
+Custom categories use the same navigation and item actions as built-in categories. Categories remain ordered by their combined usage counts.
+
+## Add translations
+
+Add `Name.<locale>` entries to the category section. The active language is selected automatically from the system language:
+
+```ini
+[General]
+Version = 1
+
+[Category.my-mod.crystals]
+Name.en-US = Crystals
+Name.fr = Cristaux
+Name.de = Kristalle
+
+[Materials]
+MyMod_Crystal_Blue = my-mod.crystals
+```
+
+English is required even when you supply another language. Keep captions short enough to fit above a column. Built-in category translations are already provided by Material Columns.
+
+| Locale key | Language |
 | --- | --- |
 | `ja` | Japanese |
 | `en-US` | American English |
@@ -94,68 +106,101 @@ Obj_RemoteBombSphere = special-materials
 | `zh-Hans` | Simplified Chinese |
 | `zh-Hant` | Traditional Chinese |
 
-## Community fixtures
+The loader first tries the exact locale. If it is missing, `fr-CA` tries `fr`, `es-419` tries `es`, and `pt-BR` tries `pt`. All remaining missing translations fall back to `en-US`, including a missing `en-GB` caption.
 
-| Download inspected | Evidence | Scope |
-| --- | --- | --- |
-| [FuseablesEX v1.5](https://gamebanana.com/mods/454956), file 1022941 | Product.120 pouch table: `Animal_Kokko_A`, `KorokCarryPassenger_Pair` become materials | Classification checked offline; visibility/grouping accepted in the merged Citron 1.2.1 setup |
-| [Invisible Attachments Shop](https://gamebanana.com/mods/450826), file 1026021 | Product.120 pouch table: 35 additional material entries | Classification checked offline; visibility/grouping accepted in the merged Citron 1.2.1 setup |
-| Both original downloads | Older game-data overlays | Used in a local merge with The Second Quest for the 1.2.1 test; original downloads are not automatically compatible together. No 1.4.2 gameplay claim; assets not redistributed |
-| [The Second Quest 1.2.1](https://gamebanana.com/mods/479009), file 1859970 | Product.121 pouch table and English names: 8 additional material records and 24 device records, including bundles | Existing translated categories; visibility/grouping accepted in the merged Citron 1.2.1 setup. Install the material mod separately for its matching game version |
+See the [complete 16-locale example](examples/fictional-materials.ini) or the [translated Remote Bombs category](../config/botw-abilities.ini).
+
+## Examples and companion files
+
+| File | What it demonstrates |
+| --- | --- |
+| [Fictional materials](examples/fictional-materials.ini) | Five actors, two new categories and all 16 locales |
+| [Remote Bombs](../config/botw-abilities.ini) | Four actors in a new category with all 16 translations |
+| [FuseablesEX](../config/fuseables-ex.ini) | Two actors assigned to `special-materials` |
+| [Invisible Attachments Shop](../config/invisible-attachments.ini) | 35 actors assigned to one new category |
+| [The Second Quest](../config/second-quest.ini) | 32 material/device records, including bundles, assigned to built-in categories |
+
+The four companion INIs ship with Material Columns. They do not include the corresponding mods' assets. Unused mappings are harmless when the corresponding material mod is not installed.
 
 ## Built-in category IDs
 
-| ID | English caption |
+Copy the ID from the left column into your assignment. The English captions are shown here for reference; the game displays the selected language's caption.
+
+| Category ID | English caption |
 | --- | --- |
-| fruit | Fruit |
-| elemental-fruit | Elemental fruit |
-| utility-plants | Utility plants |
-| mushrooms | Mushrooms |
-| plants | Plants |
-| meat | Meat |
-| cooking | Cooking |
-| fish | Fish |
-| shellfish | Shellfish |
-| fairies | Fairies |
-| butterflies | Butterflies |
-| darners | Darners |
-| beetles | Beetles |
-| small-insects | Small insects |
-| frogs | Frogs |
-| lizards | Lizards |
-| ores | Ore and gems |
-| guts | Guts |
-| jellies | Jellies |
-| eyeballs | Eyeballs |
-| wings | Wings |
-| tails | Tails |
-| dragon-spikes | Dragon spikes |
-| dragon-horns | Dragon horns |
-| dragon-scales | Dragon scales |
-| dragon-claws | Dragon claws |
-| dragon-fangs | Dragon fangs |
-| octorok-parts | Octorok parts |
-| bokoblin-horns | Bokoblin horns |
-| boss-bokoblin-horns | Boss horns |
-| moblin-horns | Moblin horns |
-| horriblin-horns | Horriblin horns |
-| lizalfos-horns | Lizalfos horns |
-| lynel-saber-horns | Lynel saber horns |
-| lynel-mace-horns | Lynel mace horns |
-| gleeok-horns | Gleeok horns |
-| soldier-horns | Soldier horns |
-| captain-horns | Captain horns |
-| hinox-horns | Hinox horns |
-| like-stones | Like stones |
-| heavy-parts | Heavy parts |
-| claws-and-bones | Claws and bones |
-| other-monster-parts | Monster parts |
-| ancient-blades | Ancient blades |
-| brightblooms | Brightblooms |
-| fuel | Fuel |
-| special-materials | Special materials |
-| star-fragments | Star fragments |
-| zonaite | Zonaite |
-| zonai-charges | Zonai charges |
-| zonai-devices | Zonai devices |
-| other-materials | Other materials |
+| `fruit` | Fruit |
+| `elemental-fruit` | Elemental fruit |
+| `utility-plants` | Utility plants |
+| `mushrooms` | Mushrooms |
+| `plants` | Plants |
+| `meat` | Meat |
+| `cooking` | Cooking |
+| `fish` | Fish |
+| `shellfish` | Shellfish |
+| `fairies` | Fairies |
+| `butterflies` | Butterflies |
+| `darners` | Darners |
+| `beetles` | Beetles |
+| `small-insects` | Small insects |
+| `frogs` | Frogs |
+| `lizards` | Lizards |
+| `ores` | Ore and gems |
+| `guts` | Guts |
+| `jellies` | Jellies |
+| `eyeballs` | Eyeballs |
+| `wings` | Wings |
+| `tails` | Tails |
+| `dragon-spikes` | Dragon spikes |
+| `dragon-horns` | Dragon horns |
+| `dragon-scales` | Dragon scales |
+| `dragon-claws` | Dragon claws |
+| `dragon-fangs` | Dragon fangs |
+| `octorok-parts` | Octorok parts |
+| `bokoblin-horns` | Bokoblin horns |
+| `boss-bokoblin-horns` | Boss horns |
+| `moblin-horns` | Moblin horns |
+| `horriblin-horns` | Horriblin horns |
+| `lizalfos-horns` | Lizalfos horns |
+| `lynel-saber-horns` | Lynel saber horns |
+| `lynel-mace-horns` | Lynel mace horns |
+| `gleeok-horns` | Gleeok horns |
+| `soldier-horns` | Soldier horns |
+| `captain-horns` | Captain horns |
+| `hinox-horns` | Hinox horns |
+| `like-stones` | Like stones |
+| `heavy-parts` | Heavy parts |
+| `claws-and-bones` | Claws and bones |
+| `other-monster-parts` | Monster parts |
+| `ancient-blades` | Ancient blades |
+| `brightblooms` | Brightblooms |
+| `fuel` | Fuel |
+| `special-materials` | Special materials |
+| `star-fragments` | Star fragments |
+| `zonaite` | Zonaite |
+| `zonai-charges` | Zonai charges |
+| `zonai-devices` | Zonai devices |
+| `other-materials` | Other materials |
+
+## File rules
+
+- Use one `key = value` per line, without surrounding quotes. Put comments on their own line, starting with `;` or `#`.
+- Actor IDs are case-sensitive and allow ASCII letters, digits and underscores. Category IDs allow lowercase ASCII letters, digits, hyphens and dots. Both have a 63-character limit. Custom category IDs need a dot, such as `my-mod.crystals`; do not start or end an ID with a dot or use consecutive dots.
+- Give each INI a unique filename. If more than one file assigns the same actor, the last valid assignment wins; files are read in case-sensitive filename order.
+
+| Limit | Maximum |
+| --- | --- |
+| Files in the Categories folder | 32 INIs, each up to 64 KiB; no subfolders |
+| New categories across all INIs | 44 |
+| Distinct actor assignments across all INIs | 256 |
+
+## Troubleshooting
+
+If an item appears in the wrong column, check:
+
+- The path is `romfs/MaterialColumns/Categories/your-mod.ini`, with a lowercase `.ini` extension and UTF-8 encoding.
+- The file contains `[General]` and `Version = 1`. This is the INI format version, not the game version.
+- The actor ID and category ID are spelled correctly. A new category also needs `Name.en-US`.
+- The player owns the item, and the material mod works on the installed game version.
+- The game was restarted after the INI changed.
+
+Missing actors have no effect. Invalid assignments leave an earlier valid assignment or the normal grouping in place. An INI only assigns categories; it does not merge or port another mod's assets.
