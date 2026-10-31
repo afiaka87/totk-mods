@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
 #include "NativeInventory.hpp"
+#include "GameVersion.hpp"
 #include "SlotObservation.hpp"
 #include "BindingRequest.hpp"
 #include "ColumnPanel.hpp"
@@ -30,7 +31,7 @@ template<class Function> Function function(std::uintptr_t offset) {
 }
 #else
 template<class Function> Function function(std::uintptr_t offset) {
-    return reinterpret_cast<Function>(base + offset);
+    return reinterpret_cast<Function>(base + nativeOffset(offset));
 }
 
 #endif
@@ -85,11 +86,11 @@ bool installInventoryProbe(std::uintptr_t mainBase, bool validateOnly) {
         Logging.Log("[material-columns] inventory probe refused: main base=0");
         return false;
     }
-    constexpr totk::engine::CodeSite sites[] = {
-        {0x1a58ee0, 0xd107c3ff, 0xa91b7bfd},
-        {0x1a7f090, 0xd102c3ff, 0xa9057bfd},
-        {0xddbb04, 0x34000262, 0xf9461008}, {0x89011c, 0x3940000d, 0x3400090d},
-        {0x170f1cc, 0xa9bd7bfd, 0xa90157f6}
+    const totk::engine::CodeSite sites[] = {
+        nativeSite(totk::engine::CodeSite{0x1a58ee0, 0xd107c3ff, 0xa91b7bfd}),
+        nativeSite(totk::engine::CodeSite{0x1a7f090, 0xd102c3ff, 0xa9057bfd}),
+        nativeSite(totk::engine::CodeSite{0xddbb04, 0x34000262, 0xf9461008}), nativeSite(totk::engine::CodeSite{0x89011c, 0x3940000d, 0x3400090d}),
+        nativeSite(totk::engine::CodeSite{0x170f1cc, 0xa9bd7bfd, 0xa90157f6})
     };
     // BotW Abilities and Arrowbound also intercept setSlot; preserve their trampoline chain.
     if (!totk::engine::codeMatches(mainBase, sites, "material-columns", "INVENTORY_HOOK_REFUSED"))
@@ -122,15 +123,13 @@ bool readInventory(std::uintptr_t screen, InventoryEntry* entries,
                     static_cast<unsigned long long>(page), logicalCount, static_cast<unsigned>(capacity));
         return false;
     }
-    const auto pouchSlot = field<std::uintptr_t>(base, 0x4630020);
-    const auto pouch = pouchSlot ? field<std::uintptr_t>(pouchSlot, 0) : 0;
+    const auto pouch = nativeSingleton(base, 0x4630020);
     if (!pouch) {
         Logging.Log("[material-columns] inventory read refused: pouch manager missing");
         return false;
     }
     UsageTable usage;
-    const auto dataSlot = field<std::uintptr_t>(base, 0x462e3d8);
-    usage.manager = dataSlot ? field<std::uintptr_t>(dataSlot, 0) : 0;
+    usage.manager = nativeSingleton(base, 0x462e3d8);
     using GetStruct = bool (*)(std::uintptr_t, void*, std::uint32_t);
     const bool usageReady = usage.manager &&
         function<GetStruct>(0xddbb04)(usage.manager, usage.handle.data(), 0x5a1a0a90);

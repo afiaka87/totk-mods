@@ -8,6 +8,12 @@
 using namespace material_columns;
 
 namespace material_columns::native {
+namespace locale {
+void loadOnce() {}
+const char* language() { return "en-US"; }
+const char* label(std::uint64_t, const char* fallback) { return fallback; }
+}
+namespace categories { void loadOnce(const char*) {} }
 namespace {
 bool testOpen = true, panelVisible = false;
 int inventoryReads = 0, soundCount = 0, originalCalls = 0, actionSlot = -1;

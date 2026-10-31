@@ -4,7 +4,11 @@
 #include <cassert>
 #include <cstring>
 #include <cstdint>
+#include <vector>
+#include <fstream>
 unsigned animationLookups{};
+std::array<std::uintptr_t,2> installedOffsets{};
+unsigned installedHooks{};
 struct ResourceTestHook {
     static const void* Orig(void*, const char* layout, const char*, std::uint32_t*) {
         ++animationLookups;
@@ -12,7 +16,7 @@ struct ResourceTestHook {
         return reinterpret_cast<const void*>(1);
     }
     template<class... Args> static const void* Orig(Args...) { return nullptr; }
-    static void InstallAtOffset(std::uintptr_t) {}
+    static void InstallAtOffset(std::uintptr_t offset) { installedOffsets.at(installedHooks++)=offset; }
 };
 #define HOOK_DEFINE_TRAMPOLINE(Name) struct Name : ResourceTestHook
 #include "../src/native/LayoutResources.cpp"
@@ -35,7 +39,39 @@ Result ReadFile(FileHandle file,std::int64_t,void* out,std::uint64_t size) {
 void CloseFile(FileHandle) { ++closes; }
 }
 using namespace material_columns::native;
-int main() {
+int main(int argc, char** argv) {
+    // Exercise the real installation gate, including target address translation.
+    std::vector<std::uint32_t> image((lookupOffset+16)/4);
+    if (argc==2) {
+        std::ifstream file(argv[1],std::ios::binary|std::ios::ate);
+        assert(file);
+        const auto bytes=file.tellg();
+        assert(bytes>0 && bytes%4==0);
+        image.resize(static_cast<std::size_t>(bytes)/4);
+        file.seekg(0);
+        file.read(reinterpret_cast<char*>(image.data()),bytes);
+        assert(file);
+    } else {
+        image[0]=1; // Main module header: must never be read as a hook prologue.
+        for (unsigned i=0;i<4;++i) {
+            image[nativeOffset(lookupOffset)/4+i]=nativeWord(lookupOffset,i,lookupPrologue[i]);
+            image[nativeOffset(animationOffset)/4+i]=nativeWord(animationOffset,i,animationPrologue[i]);
+        }
+    }
+    const auto base=reinterpret_cast<std::uintptr_t>(image.data());
+    assert(!installLayoutResources(0,true));
+    assert(installLayoutResources(base,true) && !installed && !installedHooks);
+    for (const auto offset : {nativeOffset(lookupOffset),nativeOffset(animationOffset)}) {
+        for (unsigned i=0;i<4;++i) {
+            auto& word=image[offset/4+i];
+            word^=1;
+            assert(!installLayoutResources(base,false) && !installed && !installedHooks);
+            word^=1;
+        }
+    }
+    assert(installLayoutResources(base,false) && installed && installedHooks==2);
+    assert(installedOffsets[0]==nativeOffset(lookupOffset) && installedOffsets[1]==nativeOffset(animationOffset));
+    assert(installLayoutResources(base,false) && installedHooks==2);
     std::uint32_t animationSize=99;
     assert(!ColumnAnimationLookup::Callback(nullptr,"MCSlot_00","Loop",&animationSize));
     assert(animationSize==0 && animationLookups==0);

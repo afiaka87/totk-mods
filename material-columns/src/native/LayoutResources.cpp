@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
 #include "LayoutResources.hpp"
+#include "GameVersion.hpp"
 #include "../pure/ResourceRouting.hpp"
 #include "LayoutAssets.hpp"
 #include <lib.hpp>
@@ -99,12 +100,12 @@ HOOK_DEFINE_TRAMPOLINE(ColumnAnimationLookup) {
     }
 };
 
-bool checkGuard(std::uintptr_t base, std::uintptr_t offset, const std::uint32_t (&expected)[4]) {
-    const auto* actual = reinterpret_cast<const std::uint32_t*>(base + offset);
+bool checkGuard(std::uintptr_t base, std::uintptr_t targetOffset, const std::uint32_t (&expected)[4]) {
+    const auto* actual = reinterpret_cast<const std::uint32_t*>(base + targetOffset);
     for (std::size_t i = 0; i < 4; ++i) {
         if (actual[i] != expected[i]) {
             Logging.Log("[material-columns] resource hook refused at +%x: got=%08x expected=%08x",
-                        static_cast<unsigned>(offset + i * 4), actual[i], expected[i]);
+                        static_cast<unsigned>(targetOffset + i * 4), actual[i], expected[i]);
             return false;
         }
     }
@@ -118,11 +119,16 @@ bool installLayoutResources(std::uintptr_t mainBase, bool validateOnly) {
         Logging.Log("[material-columns] resource hook refused: main base=0");
         return false;
     }
-    if (!checkGuard(mainBase, lookupOffset, lookupPrologue) ||
-        !checkGuard(mainBase, animationOffset, animationPrologue)) return false;
+    std::uint32_t lookup[4], animation[4];
+    for (unsigned i=0; i<4; ++i) {
+        lookup[i] = nativeWord(lookupOffset, i, lookupPrologue[i]);
+        animation[i] = nativeWord(animationOffset, i, animationPrologue[i]);
+    }
+    if (!checkGuard(mainBase, nativeOffset(lookupOffset), lookup) ||
+        !checkGuard(mainBase, nativeOffset(animationOffset), animation)) return false;
     if (validateOnly) return true;
-    ColumnLayoutLookup::InstallAtOffset(lookupOffset);
-    ColumnAnimationLookup::InstallAtOffset(animationOffset);
+    ColumnLayoutLookup::InstallAtOffset(nativeOffset(lookupOffset));
+    ColumnAnimationLookup::InstallAtOffset(nativeOffset(animationOffset));
     installed = true;
     Logging.Log("[material-columns] RomFS layout routing installed (%u writable bytes; no private mount/cache)",
                 static_cast<unsigned>(sizeof(assets::parent) + sizeof(assets::columns) + sizeof(assets::sort) + sizeof(assets::slot)));

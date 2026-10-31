@@ -17,7 +17,7 @@ inline bool catalogLookup(ItemId id, CatalogMatch& match) {
         if (catalog::items[middle].item < id) first = middle + 1;
         else end = middle;
     }
-    if (first == std::size(catalog::items) || catalog::items[first].item != id) return false;
+    if (first >= std::size(catalog::items) || catalog::items[first].item != id) return false;
     const auto& item = catalog::items[first];
     const auto* group = catalogGroup(item.group);
     if (!group) return false;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
 #include "SortPanel.hpp"
+#include "GameVersion.hpp"
 #include "ColumnPanel.hpp"
 #include "Runtime.hpp"
 #include "totk/engine/CodeCheck.hpp"
@@ -18,7 +19,7 @@ template<class T> T field(std::uintptr_t object, std::size_t offset) {
 std::uintptr_t resolveTestFunction(std::uintptr_t offset);
 template<class F> F function(std::uintptr_t offset) { return reinterpret_cast<F>(resolveTestFunction(offset)); }
 #else
-template<class F> F function(std::uintptr_t offset) { return reinterpret_cast<F>(base + offset); }
+template<class F> F function(std::uintptr_t offset) { return reinterpret_cast<F>(base + nativeOffset(offset)); }
 #endif
 std::uintptr_t materialOwner(std::uintptr_t parts) {
     const auto owner = parts ? field<std::uintptr_t>(parts, 24) : 0;
@@ -83,9 +84,9 @@ HOOK_DEFINE_TRAMPOLINE(SetSortMessage) {
 bool installSortPanel(std::uintptr_t mainBase, bool validateOnly) {
     if (installed) return true;
     if (!mainBase) { Logging.Log("[material-columns] sort panel refused: base=0"); return false; }
-    constexpr totk::engine::CodeSite sites[]{
-        {0x1ad000c, 0xa9bd7bfd, 0xa90157f6}, {0x1ad0084, 0xa9bc7bfd, 0xf9000bf7},
-        {0xb519b0, 0xa9bd7bfd, 0xf9000bf5}
+    const totk::engine::CodeSite sites[]{
+        nativeSite(totk::engine::CodeSite{0x1ad000c, 0xa9bd7bfd, 0xa90157f6}), nativeSite(totk::engine::CodeSite{0x1ad0084, 0xa9bc7bfd, 0xf9000bf7}),
+        nativeSite(totk::engine::CodeSite{0xb519b0, 0xa9bd7bfd, 0xf9000bf5})
     };
     if (!totk::engine::codeMatches(mainBase, sites, "material-columns", "SORT_PANEL_REFUSED")) return false;
     if (validateOnly) return true;

@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
 #include "ColumnPanel.hpp"
+#include "GameVersion.hpp"
 #include "MemoryProfile.hpp"
 #include "DiagnosticLog.hpp"
 #include "Runtime.hpp"
 #include "BindingRequest.hpp"
 #include "SlotObservation.hpp"
 #include "../pure/ScrollMotion.hpp"
+#include "../pure/Localization.hpp"
 #include "totk/engine/CodeCheck.hpp"
 #include <array>
 #include <cstring>
@@ -59,7 +61,7 @@ template<class Function> Function function(std::uintptr_t offset) {
 }
 #else
 template<class Function> Function function(std::uintptr_t offset) {
-    return reinterpret_cast<Function>(base + offset);
+    return reinterpret_cast<Function>(base + nativeOffset(offset));
 }
 #endif
 Panel* find(std::uintptr_t screen) {
@@ -447,11 +449,7 @@ void setCaption(Panel& panel, std::uintptr_t page, std::size_t group) {
     if (!appearance.label || group >= panel.count) return;
     char16_t text[64]{};
     unsigned length = 0;
-    // Catalog family captions are controlled ASCII labels, not localized item names.
-    while (length + 1 < std::size(text) && appearance.label[length]) {
-        text[length] = static_cast<unsigned char>(appearance.label[length]);
-        ++length;
-    }
+    if (!localization::decode(appearance.label, std::strlen(appearance.label)+1, text, length)) return;
     // SetString invalidates draw/glyph state even for unchanged text. Recycled pages
     // need a new caption only when the actual string changes, not every calculation.
     const auto buffer = field<std::uintptr_t>(pane, 216);
@@ -882,6 +880,54 @@ HOOK_DEFINE_TRAMPOLINE(DestroyScreen) {
         return Orig(screen);
     }
 };
+struct Dispatch { std::uintptr_t slot, source; };
+constexpr Dispatch dispatches[]{
+    {0x371f1d0,0x123a220},{0x371f1c8,0x1228418},{0x370f368,0x1acc644},
+    {0x3708778,0x1a7f090},{0x390ac88,0x107f714},{0x3908758,0xf6e9c4},
+    {0x3908cd8,0x7b6668},{0x3708070,0xe744fc},{0x3702670,0x22a8130},
+    {0x3908790,0x22a8130},{0x3908ac8,0x2a66f00}
+};
+bool validateDispatches(std::uintptr_t mainBase) {
+    for (const auto& entry : dispatches) {
+        if (entry.slot < native142DataBegin || entry.slot + sizeof(std::uintptr_t) > native142DataEnd) {
+            Logging.Log("[material-columns] native dispatch outside writable data slot=%llx",
+                        static_cast<unsigned long long>(entry.slot));
+            return false;
+        }
+        const auto actual = field<std::uintptr_t>(mainBase, entry.slot);
+        if (actual == mainBase + nativeOffset(entry.source)) continue;
+        Logging.Log("[material-columns] native dispatch refused slot=%llx actual=%llx",
+                    static_cast<unsigned long long>(entry.slot), static_cast<unsigned long long>(actual));
+        return false;
+    }
+    return true;
+}
+bool installDispatches() {
+    for (const auto& entry : dispatches) {
+        std::uintptr_t callback{};
+        switch (entry.source) {
+        case 0x123a220: callback=reinterpret_cast<std::uintptr_t>(&CreateShortcutParts::Callback);break;
+        case 0x1228418: callback=reinterpret_cast<std::uintptr_t>(&InitializeShortcutParts::Callback);break;
+        case 0x1acc644: callback=reinterpret_cast<std::uintptr_t>(&UpdateShortcutParts::Callback);break;
+        case 0x1a7f090: callback=reinterpret_cast<std::uintptr_t>(&BindShortcutItem::Callback);break;
+        case 0x107f714: callback=reinterpret_cast<std::uintptr_t>(&DestroyScreen::Callback);break;
+        case 0xf6e9c4: callback=reinterpret_cast<std::uintptr_t>(&UpdateColumnController::Callback);break;
+        case 0x7b6668: callback=reinterpret_cast<std::uintptr_t>(&CalculateColumnLayoutEx::Callback);break;
+        case 0xe744fc: callback=reinterpret_cast<std::uintptr_t>(&InitializeColumnPage::Callback);break;
+        case 0x22a8130: callback=reinterpret_cast<std::uintptr_t>(&CopyColumnRowLayout::Callback);break;
+        case 0x2a66f00: callback=reinterpret_cast<std::uintptr_t>(&ShortcutCursorFocus::Callback);break;
+        }
+        // Relocated vtables live in writable .data, outside the code patcher's alias.
+        field<volatile std::uintptr_t>(base, entry.slot) = callback;
+        if (field<volatile std::uintptr_t>(base, entry.slot) != callback) {
+            Logging.Log("[material-columns] native dispatch write refused slot=%llx",
+                        static_cast<unsigned long long>(entry.slot));
+            return false;
+        }
+    }
+    Logging.Log("[material-columns] native dispatch installed and verified slots=%u", unsigned(std::size(dispatches)));
+    return true;
+}
 } // namespace
 
 bool installColumnPanel(std::uintptr_t mainBase, bool validateOnly) {
@@ -890,19 +936,20 @@ bool installColumnPanel(std::uintptr_t mainBase, bool validateOnly) {
         Logging.Log("[material-columns] panel hook refused: main base=0");
         return false;
     }
-    constexpr totk::engine::CodeSite sites[] = {
-        {0x123a220, 0xa9bb7bfd, 0xf9000bf9}, {0x1228418, 0xa9bd7bfd, 0xf9000bf5},
-        {0x1acc644, 0xd10303ff, 0xfd002be9}, {0x1a7f090, 0xd102c3ff, 0xa9057bfd},
-        {0x107f714, 0xa9bc7bfd, 0xa9015ff8},
-        {0xf6e9c4, 0xd10283ff, 0xfd0023ea}, {0x1a34c94, 0xd10503ff, 0xa9117bfd},
-        {0x7b6668, 0xd10183ff, 0xa9037bfd},
-        {0xe744fc, 0xa9ba7bfd, 0xa9016ffc}, {0x1a584ec, 0xa9be7bfd, 0xa9014ff4},
-        {0x22a8130, 0xa9bc7bfd, 0xa9015ff8},
-        {0x6ff4e0, 0xa9bb7bfd, 0xf9000bf9}, {0x6ff27c, 0x39400028, 0x34000c28}, {0xf84cf0, 0xd10183ff, 0xa9037bfd},
-        {0x1a58204, 0xa9be7bfd, 0xf9000bf3}, {0x2a65cf8, 0xb9404008, 0x7200003f},
-        {0x2a66f00, 0xa9bd7bfd, 0xf9000bf5}
+    const totk::engine::CodeSite sites[] = {
+        nativeSite(totk::engine::CodeSite{0x123a220, 0xa9bb7bfd, 0xf9000bf9}), nativeSite(totk::engine::CodeSite{0x1228418, 0xa9bd7bfd, 0xf9000bf5}),
+        nativeSite(totk::engine::CodeSite{0x1acc644, 0xd10303ff, 0xfd002be9}), nativeSite(totk::engine::CodeSite{0x1a7f090, 0xd102c3ff, 0xa9057bfd}),
+        nativeSite(totk::engine::CodeSite{0x107f714, 0xa9bc7bfd, 0xa9015ff8}),
+        nativeSite(totk::engine::CodeSite{0xf6e9c4, 0xd10283ff, 0xfd0023ea}), nativeSite(totk::engine::CodeSite{0x1a34c94, 0xd10503ff, 0xa9117bfd}),
+        nativeSite(totk::engine::CodeSite{0x7b6668, 0xd10183ff, 0xa9037bfd}),
+        nativeSite(totk::engine::CodeSite{0xe744fc, 0xa9ba7bfd, 0xa9016ffc}), nativeSite(totk::engine::CodeSite{0x1a584ec, 0xa9be7bfd, 0xa9014ff4}),
+        nativeSite(totk::engine::CodeSite{0x22a8130, 0xa9bc7bfd, 0xa9015ff8}),
+        nativeSite(totk::engine::CodeSite{0x6ff4e0, 0xa9bb7bfd, 0xf9000bf9}), nativeSite(totk::engine::CodeSite{0x6ff27c, 0x39400028, 0x34000c28}), nativeSite(totk::engine::CodeSite{0xf84cf0, 0xd10183ff, 0xa9037bfd}),
+        nativeSite(totk::engine::CodeSite{0x1a58204, 0xa9be7bfd, 0xf9000bf3}), nativeSite(totk::engine::CodeSite{0x2a65cf8, 0xb9404008, 0x7200003f}),
+        nativeSite(totk::engine::CodeSite{0x2a66f00, 0xa9bd7bfd, 0xf9000bf5})
     };
     if (!totk::engine::codeMatches(mainBase, sites, "material-columns", "PANEL_HOOK_REFUSED")) return false;
+    if (is142() && !validateDispatches(mainBase)) return false;
     if (validateOnly) return true;
     base = mainBase;
     CreateShortcutParts::InstallAtOffset(sites[0].offset);
@@ -917,6 +964,7 @@ bool installColumnPanel(std::uintptr_t mainBase, bool validateOnly) {
     SelectBorrowedSlot::InstallAtOffset(sites[9].offset);
     CopyColumnRowLayout::InstallAtOffset(sites[10].offset);
     ShortcutCursorFocus::InstallAtOffset(sites[16].offset);
+    if (is142() && !installDispatches()) return false;
     installed = true;
     return true;
 }
@@ -1020,7 +1068,16 @@ bool focusNativeItem(std::uintptr_t screen, std::uint32_t nativeIndex, bool refr
     const auto controller = stock ? field<std::uintptr_t>(stock, 80) : 0;
     const auto count = controller ? field<std::int32_t>(controller, 136) : 0;
     if (count < 1 || nativeIndex >= static_cast<std::uint32_t>(count - 1) ||
-        field<std::int32_t>(controller, 88) < 1) return false;
+        field<std::int32_t>(controller, 88) < 1) {
+        static unsigned reports=4;
+        if (reports) {
+            --reports;
+            Logging.Log("[material-columns] action focus refused index=%u count=%d pages=%d controller=%llx",
+                        nativeIndex, count, controller ? field<std::int32_t>(controller,88) : 0,
+                        static_cast<unsigned long long>(controller));
+        }
+        return false;
+    }
     const auto old = field<std::int32_t>(controller, 140);
     const auto next = static_cast<std::int32_t>(nativeIndex + 1);
     field<std::int32_t>(controller, 140) = next;

@@ -69,7 +69,7 @@ std::uintptr_t lookupPane(std::uintptr_t root, const char* name, bool recursive)
     return root;
 }
 void setText(std::uintptr_t pane, const char16_t* text, unsigned length) {
-    assert(pane == expectedRoot && length == 5 && text[0] == u'F');
+    assert(pane == expectedRoot && length > 0 && length < 64);
     std::memcpy(reinterpret_cast<void*>(field<std::uintptr_t>(pane, 216)), text, length * sizeof(char16_t));
     field<std::uint16_t>(pane, 274) = static_cast<std::uint16_t>(length);
     ++captions;
@@ -117,6 +117,7 @@ bool bindItem(void*, std::uint32_t logical, std::uint32_t& native, bool& selecte
     assert(logical >= 3 && logical <= 5); native = logical + 4; selected = logical == 3; return hasItem;
 }
 ColumnAppearance describeGroup(std::size_t group) { assert(group == 1); return {"Fruit", false, true}; }
+ColumnAppearance describeJapanese(std::size_t) { return {"\xe6\x9e\x9c\xe5\xae\x9f", false, true}; }
 }
 }
 int main() {
@@ -161,6 +162,14 @@ int main() {
     captionBuffer[0] = u'X';
     setCaption(panel, pagePtr, 1);
     assert(field<std::uint8_t>(expectedRoot, 360) == 1);
+    panel.describe = describeJapanese;
+    const auto beforeJapanese = captions;
+    setCaption(panel, pagePtr, 1);
+    assert(captions == beforeJapanese+1 && field<std::uint16_t>(expectedRoot,274)==2);
+    assert(captionBuffer[0]==0x679c && captionBuffer[1]==0x5b9f);
+    setCaption(panel, pagePtr, 1);
+    assert(captions == beforeJapanese+1);
+    panel.describe = describeGroup;
     // Caption visibility follows the actual pooled window, with only a slight neighbor fade.
     panel.outerReady=true;panel.outer[0].page=pagePtr;
     for(float x:{0.f,170.f,-170.f,255.f,340.f}) {

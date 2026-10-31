@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
 #include "MemoryProfile.hpp"
+#include "GameVersion.hpp"
 #include "totk/engine/CodeCheck.hpp"
 #include <array>
 #include <atomic>
@@ -59,7 +60,7 @@ HOOK_DEFINE_INLINE(ScaleCaptureTarget) {
         const auto pane = field<std::uintptr_t>(ctx->X[29] - 24, 0);
         const auto* entry = find(pane);
         if (!entry || !entry->enabled.load(std::memory_order_acquire)) return;
-        for (unsigned r : {28u, 23u}) {
+        for (unsigned r : {is142() ? 19u : 28u, 23u}) {
             const auto pixels = static_cast<std::uint32_t>(ctx->X[r]);
             ctx->X[r] = pixels < 3 ? 1 : (std::uint64_t(pixels) * 2) / 5;
         }
@@ -135,7 +136,7 @@ HOOK_DEFINE_TRAMPOLINE(LoadIcon) {
         const auto result = Orig(screen, path);
         if (!result || field<unsigned>(screen, 364) != 0) return result;
         const auto binder = screen + 128 + 40 * field<unsigned char>(screen, 208);
-        const auto resource = reinterpret_cast<std::uintptr_t (*)(std::uintptr_t)>(base+0xb51804)(binder);
+        const auto resource = reinterpret_cast<std::uintptr_t (*)(std::uintptr_t)>(base + nativeOffset(0xb51804))(binder);
         const auto unit = field<std::uintptr_t>(binder, 8);
         if (!resource || !unit) return result;
         const auto refs = field<unsigned>(unit,136);
@@ -156,13 +157,14 @@ HOOK_DEFINE_TRAMPOLINE(LoadIcon) {
     }
 };
 std::uint64_t freeBytes(std::uintptr_t heap) {
+    if (is142()) return 0;
     return heap ? reinterpret_cast<std::uint64_t (*)(std::uintptr_t)>(field<std::uintptr_t>(field<std::uintptr_t>(heap,0),128))(heap) : 0;
 }
 } // namespace
 HeapSample::HeapSample(std::uintptr_t value, const char* label, bool subinterval) : heap(value), phase(label), before(freeBytes(value)), detail(subinterval) {}
 HeapSample::~HeapSample() {
     static unsigned remaining=12;
-    if (!remaining) return;
+    if (is142() || !remaining) return;
     --remaining;
     const auto after=freeBytes(heap);
     Logging.Log("[material-columns] memory UI%s phase=%s heap=%llx free-before=%llu free-after=%llu interval-used=%lld",
@@ -213,20 +215,25 @@ void forget(std::uintptr_t owner) {
 }
 bool install(std::uintptr_t mainBase, bool validateOnly) {
     if (installed) return true;
-    constexpr totk::engine::CodeSite sites[] = {
-        {0x943400,0x6db923e9,0xa9017bfd},
-        {0x943f94,0xfc180fea,0x6d0123e9},
-        {0x1ab3f2c,0xd10403ff,0xa90d7bfd},
-        {0x7ef80c,0xd10143ff,0xa9027bfd},
-        {0x944030,0xa9039be7,0x9001e7a9}
+    const totk::engine::CodeSite sites[] = {
+        nativeSite(totk::engine::CodeSite{0x943400, 0x6db923e9, 0xa9017bfd}),
+        nativeSite(totk::engine::CodeSite{0x943f94, 0xfc180fea, 0x6d0123e9}),
+        nativeSite(totk::engine::CodeSite{0x1ab3f2c, 0xd10403ff, 0xa90d7bfd}),
+        nativeSite(totk::engine::CodeSite{0x7ef80c, 0xd10143ff, 0xa9027bfd}),
+        nativeSite(totk::engine::CodeSite{0x944030, 0xa9039be7, 0x9001e7a9})
     };
-    if (!totk::engine::codeMatches(mainBase,sites,"material-columns","MEMORY_HOOK_REFUSED")) return false;
+    if (is142()) {
+        const totk::engine::CodeSite scale[]{sites[4]};
+        if (!totk::engine::codeMatches(mainBase,scale,"material-columns","MEMORY_HOOK_REFUSED")) return false;
+    } else if (!totk::engine::codeMatches(mainBase,sites,"material-columns","MEMORY_HOOK_REFUSED")) return false;
     if (validateOnly) return true;
     base=mainBase;
-    DynamicCaptureDraw::InstallAtOffset(sites[0].offset);
-    CaptureWork::InstallAtOffset(sites[1].offset);
-    LoadIcon::InstallAtOffset(sites[2].offset);
-    ReleaseTexture::InstallAtOffset(sites[3].offset);
+    if (!is142()) {
+        DynamicCaptureDraw::InstallAtOffset(sites[0].offset);
+        CaptureWork::InstallAtOffset(sites[1].offset);
+        LoadIcon::InstallAtOffset(sites[2].offset);
+        ReleaseTexture::InstallAtOffset(sites[3].offset);
+    }
     ScaleCaptureTarget::InstallAtOffset(sites[4].offset);
     installed=true;
     Logging.Log("[material-columns] memory diagnostics registry=%u bytes; four shared bands include two borrowed native sides; direct work/output deduplicated; fade-envelope excludes native pool capacity; UI intervals include six pooled tile clones; UI-detail is a nested subset, not additive; UI intervals exclude parent-layout creation; icon cache-total is shared",

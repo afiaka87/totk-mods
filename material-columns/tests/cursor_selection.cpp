@@ -3,6 +3,7 @@
 #define MATERIAL_COLUMNS_PANEL_HOST_TEST
 #include <cassert>
 #include <cstdint>
+#include <vector>
 std::uintptr_t nativeNodeMovable(std::uintptr_t, unsigned);
 struct CursorTestHook {
     static std::uintptr_t Orig(std::uintptr_t node, unsigned target) { return nativeNodeMovable(node, target); }
@@ -12,6 +13,16 @@ struct CursorTestHook {
 #define HOOK_DEFINE_TRAMPOLINE(Name) struct Name : CursorTestHook
 #include "../src/native/ColumnPanel.cpp"
 using namespace material_columns::native;
+std::uintptr_t queryNode(std::uintptr_t node, unsigned target) {
+#ifdef MATERIAL_COLUMNS_TARGET_142
+    // Native Update and fallback search dispatch virtual40, not activation's virtual48.
+    const auto predicate=field<std::uintptr_t>(base,0x3908aa0+40);
+    return reinterpret_cast<std::uintptr_t (*)(std::uintptr_t,unsigned)>(predicate)(node,target);
+#else
+    return ShortcutCursorFocus::Callback(node,target);
+#endif
+}
+
 namespace {
 alignas(8) std::array<std::byte, 512> shortcut{}, otherScreen{};
 alignas(8) std::array<std::array<std::byte, 72>, 4> nodes{};
@@ -29,18 +40,18 @@ struct Cursor {
         // BoxCursorControl::Update first detaches its frame, rejects an invalid
         // current node, then On searches eligible nodes before attaching again.
         frameAttached = false;
-        if (!active || !ShortcutCursorFocus::Callback(active, target)) {
+        if (!active || !queryNode(active, target)) {
             std::uintptr_t next{};
-            for (auto& node : nodes) if (ShortcutCursorFocus::Callback(address(node), target)) {
+            for (auto& node : nodes) if (queryNode(address(node), target)) {
                 next = address(node); break;
             }
             select(next);
         }
-        if (requested && ShortcutCursorFocus::Callback(requested, target)) select(requested);
+        if (requested && queryNode(requested, target)) select(requested);
         requested = 0;
         if (active && direction) {
             const auto neighbor = field<std::uintptr_t>(active, direction < 0 ? 40 : 48);
-            if (neighbor && ShortcutCursorFocus::Callback(neighbor, target)) select(neighbor);
+            if (neighbor && queryNode(neighbor, target)) select(neighbor);
         }
         frameAttached = active != 0;
     }
@@ -59,6 +70,30 @@ std::uintptr_t resolvePanelTestFunction(std::uintptr_t) { assert(false); return 
 }
 }
 int main() {
+#ifdef MATERIAL_COLUMNS_TARGET_142
+    std::vector<std::uintptr_t> image((native142DataEnd+7)/8);
+    base=reinterpret_cast<std::uintptr_t>(image.data());
+    for (const auto& entry : dispatches) image[entry.slot/8]=base+nativeOffset(entry.source);
+    constexpr std::uintptr_t calculatorGot=0x395f510;
+    constexpr std::uintptr_t cursorGot=0x395f460, activationSlot=0x3908aa0+48;
+    image[calculatorGot/8]=base+nativeOffset(0x7b6668);
+    image[cursorGot/8]=base+nativeOffset(0x2a66f00);
+    image[activationSlot/8]=base+0x28e8ebc;
+    assert(validateDispatches(base));
+    for (const auto& entry : dispatches) {
+        image[entry.slot/8]^=1;
+        assert(!validateDispatches(base));
+        image[entry.slot/8]^=1;
+    }
+    installDispatches();
+    for (const auto& entry : dispatches)
+        assert(image[entry.slot/8] && image[entry.slot/8]!=base+nativeOffset(entry.source));
+    assert(image[0x3908cd8/8]==reinterpret_cast<std::uintptr_t>(&CalculateColumnLayoutEx::Callback));
+    assert(image[(0x3908aa0+40)/8]==reinterpret_cast<std::uintptr_t>(&ShortcutCursorFocus::Callback));
+    assert(image[cursorGot/8]==base+nativeOffset(0x2a66f00));
+    assert(image[activationSlot/8]==base+0x28e8ebc);
+    assert(image[calculatorGot/8]==base+nativeOffset(0x7b6668));
+#endif
     panels[0].owner = address(shortcut);
     for (unsigned i = 0; i < nodes.size(); ++i) {
         const auto node = address(nodes[i]);
@@ -89,12 +124,12 @@ int main() {
             cursor.requested = address(nodes[1]);
             cursor.update(-1, target);
             assert(cursor.active == address(nodes[3]) && cursor.frameAttached);
-            assert(!ShortcutCursorFocus::Callback(address(nodes[3]), target ^ 1));
+            assert(!queryNode(address(nodes[3]), target ^ 1));
         }
     }
     assert(nativeQueries > 0);
     // Screen destruction removes ownership; no persistent global cursor disable.
     panels[0] = {};
-    assert(ShortcutCursorFocus::Callback(address(nodes[0]), 1));
-    assert(!ShortcutCursorFocus::Callback(0, 1));
+    assert(queryNode(address(nodes[0]), 1));
+    assert(!queryNode(0, 1));
 }

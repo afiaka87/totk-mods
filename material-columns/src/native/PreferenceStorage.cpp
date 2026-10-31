@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
 #include "PreferenceStorage.hpp"
+#include "GameVersion.hpp"
 #include "totk/engine/CodeCheck.hpp"
 #include <nn/fs.h>
 #include <cstdio>
@@ -20,15 +21,14 @@ template<class T> T field(std::uintptr_t object, std::size_t offset) {
     return *reinterpret_cast<const T*>(object + offset);
 }
 bool profile(storage::ProfileKey& key) {
-    const auto account = field<std::uintptr_t>(base, 0x4728620); // Actual BSS instance pointer.
-    const auto dataSlot = field<std::uintptr_t>(base, 0x462e3d8);
-    const auto data = dataSlot ? field<std::uintptr_t>(dataSlot, 0) : 0;
+    const auto account = nativeSingleton(base, 0x4728620); // Actual BSS instance pointer.
+    const auto data = nativeSingleton(base, 0x462e3d8);
     if (!account || !data) return false;
     struct Uid { std::uint64_t low{}, high{}; } uid;
     using GetUser = bool (*)(std::uintptr_t, Uid*);
     using GetUInt = unsigned (*)(std::uintptr_t, std::uint32_t*, std::uint32_t);
-    if (!reinterpret_cast<GetUser>(base + 0xe0804c)(account, &uid) ||
-        !(reinterpret_cast<GetUInt>(base + 0x1068290)(data, &key.playData, 0xe3c3cc6e) & 1)) return false;
+    if (!reinterpret_cast<GetUser>(base + nativeOffset(0xe0804c))(account, &uid) ||
+        !(reinterpret_cast<GetUInt>(base + nativeOffset(0x1068290))(data, &key.playData, 0xe3c3cc6e) & 1)) return false;
     key.userLow = uid.low;
     key.userHigh = uid.high;
     return key.valid();
@@ -103,8 +103,8 @@ struct Files {
 bool initializePreferenceStorage(std::uintptr_t mainBase, bool validateOnly) {
     if (initialized) return true;
     if (!mainBase) { report("initialization/base", 0); return false; }
-    constexpr totk::engine::CodeSite sites[]{
-        {0xe0804c, 0xa9bf7bfd, 0x910003fd}, {0x1068290, 0x34000262, 0xf943d008}
+    const totk::engine::CodeSite sites[]{
+        nativeSite(totk::engine::CodeSite{0xe0804c, 0xa9bf7bfd, 0x910003fd}), nativeSite(totk::engine::CodeSite{0x1068290, 0x34000262, 0xf943d008})
     };
     if (!totk::engine::codeMatches(mainBase, sites, "material-columns", "PREFERENCE_API_REFUSED")) return false;
     if (validateOnly) return true;

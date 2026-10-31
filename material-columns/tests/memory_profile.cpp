@@ -51,13 +51,18 @@ int main() {
     exl::hook::InlineCtx context{};
     for (unsigned i=0;i<31;++i) context.X[i]=0x1000+i;
     context.X[29]=reinterpret_cast<std::uintptr_t>(frame.data())+32;
-    context.X[28]=2040; context.X[23]=72;
-    ScaleCaptureTarget::Callback(&context); assert(context.X[28]==2040 && context.X[23]==72);
+#ifdef MATERIAL_COLUMNS_TARGET_142
+    constexpr unsigned widthRegister=19;
+#else
+    constexpr unsigned widthRegister=28;
+#endif
+    context.X[widthRegister]=2040; context.X[23]=72;
+    ScaleCaptureTarget::Callback(&context); assert(context.X[widthRegister]==2040 && context.X[23]==72);
     captureEnabled(p,true);
     const auto before=context;
     ScaleCaptureTarget::Callback(&context);
-    assert(context.X[28]==816 && context.X[23]==28);
-    for (unsigned i=0;i<31;++i) if(i!=28 && i!=23) assert(context.X[i]==before.X[i]);
+    assert(context.X[widthRegister]==816 && context.X[23]==28);
+    for (unsigned i=0;i<31;++i) if(i!=widthRegister && i!=23) assert(context.X[i]==before.X[i]);
     // A direct target is one allocation, not separate work+output storage.
     put(pane,89,static_cast<unsigned char>(255));
     captures[0].workTexture=t; captures[0].scratch=32768+512; activeTextures=1; fadeHigh=0;

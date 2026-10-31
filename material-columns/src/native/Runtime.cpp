@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
 #include "Runtime.hpp"
+#include "GameVersion.hpp"
 #include "Catalog.hpp"
+#include "Categories.hpp"
+#include "Localization.hpp"
 #include "ColumnPanel.hpp"
 #include "NativeInventory.hpp"
 #include "PreferenceStorage.hpp"
@@ -38,7 +41,7 @@ template<class T> T& field(std::uintptr_t object, std::size_t offset) {
 std::uintptr_t resolveTestFunction(std::uintptr_t offset);
 template<class F> F function(std::uintptr_t offset) { return reinterpret_cast<F>(resolveTestFunction(offset)); }
 #else
-template<class F> F function(std::uintptr_t offset) { return reinterpret_cast<F>(base + offset); }
+template<class F> F function(std::uintptr_t offset) { return reinterpret_cast<F>(base + nativeOffset(offset)); }
 #endif
 
 // Observe the native call made by the Y-button branch. Do not replace the sort operation,
@@ -46,7 +49,7 @@ template<class F> F function(std::uintptr_t offset) { return reinterpret_cast<F>
 HOOK_DEFINE_TRAMPOLINE(ObserveShortcutSort) {
     static std::uintptr_t Callback(std::uintptr_t pouch, std::uintptr_t mode,
                                    int category, unsigned pattern) {
-        const bool fromShortcut = reinterpret_cast<std::uintptr_t>(__builtin_return_address(0)) == base + 0x1acceec;
+        const bool fromShortcut = reinterpret_cast<std::uintptr_t>(__builtin_return_address(0)) == base + nativeOffset(0x1acceec);
         const auto result = Orig(pouch, mode, category, pattern);
         if (watchSort && fromShortcut && mode == 1 && category == 4) observedSort = pattern;
         return result;
@@ -89,12 +92,13 @@ bool bind(void*, std::uint32_t logical, std::uint32_t& slot, bool& selected) {
 ColumnAppearance describe(std::size_t group) {
     const auto* catalog = catalogGroup(state.groupId(group));
     const auto view = state.view(group);
-    return {catalog ? catalog->label : "Other materials", view.overflow_above, view.overflow_below};
+    const auto label=locale::label(state.groupId(group), catalog ? catalog->label : "Other materials");
+    return {categories::registry.label(state.groupId(group),label), view.overflow_above, view.overflow_below};
 }
 bool rebuild(std::uintptr_t screen) {
     std::size_t count = 0;
     if (!readInventory(screen, entries.data(), entries.size(), count)) return false;
-    if (!state.rebuild(entries.data(), count, catalogLookup, fallback(false), fallback(true))) {
+    if (!state.rebuild(entries.data(), count, categories::lookup, fallback(false), fallback(true))) {
         Logging.Log("[material-columns] snapshot validation rejected count=%u pending=%u attempt=%u",
             static_cast<unsigned>(count), static_cast<unsigned>(entryPending), entryAttempts);
         for (std::size_t i = 0; i < count; ++i) for (std::size_t j = 0; j < i; ++j) {
@@ -132,6 +136,8 @@ void scheduleEntry(ItemId keepItem, bool fromBeginning = false) {
     entryItem = keepItem;
 }
 bool enter(std::uintptr_t screen, ItemId keepItem, bool retrySnapshot = false) {
+    locale::loadOnce();
+    categories::loadOnce(locale::language());
     if (!rebuild(screen)) {
         if (!retrySnapshot) fail(screen, "inventory snapshot");
         return false;
@@ -152,9 +158,8 @@ bool enter(std::uintptr_t screen, ItemId keepItem, bool retrySnapshot = false) {
     return true;
 }
 float frameStep() {
-    const auto slot = field<std::uintptr_t>(base, 0x462df08);
-    const auto clock = slot ? field<std::uintptr_t>(slot, 0) : 0;
-    return clock ? field<float>(clock, 8) : 0;
+    const auto clock = nativeSingleton(base, 0x462df08);
+    return clock ? field<float>(clock, nativeFrameOffset()) : 0;
 }
 Move movement(std::uintptr_t input, std::uintptr_t controller) {
     const auto start = field<std::int32_t>(input, 264);
@@ -171,8 +176,8 @@ Move movement(std::uintptr_t input, std::uintptr_t controller) {
 bool installRuntime(std::uintptr_t mainBase, bool validateOnly) {
     if (installed) return true;
     if (!mainBase) { Logging.Log("[material-columns] runtime refused: base=0"); return false; }
-    constexpr totk::engine::CodeSite sites[]{
-        {0x1a718a4, 0xa9bf7bfd, 0x910003fd}, {0x1acf8ac, 0xd10103ff, 0xa9027bfd}
+    const totk::engine::CodeSite sites[]{
+        nativeSite(totk::engine::CodeSite{0x1a718a4, 0xa9bf7bfd, 0x910003fd}), nativeSite(totk::engine::CodeSite{0x1acf8ac, 0xd10103ff, 0xa9027bfd})
     };
     if (!totk::engine::codeMatches(mainBase, sites, "material-columns", "RUNTIME_HOOK_REFUSED")) return false;
     if (!initializePreferenceStorage(mainBase, validateOnly)) return false;
