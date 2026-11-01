@@ -30,6 +30,31 @@ int main(int argc, char** argv) {
     for (const auto& entry : native142Entries) assert(nativeOffset(entry.source)==entry.target);
     memory[0xc73118/4]^=1;
     assert(!selectNativeVersion(base, bytes, bytes));
+    std::fill(memory.begin(),memory.end(),0);
+    for (const auto& entry : native120Entries)
+        if (entry.source==0x123a220 || entry.source==0x2a66f00)
+            std::memcpy(memory.data()+entry.target/4,entry.words,8);
+    assert(selectNativeVersion(base, bytes, bytes) && is120());
+    assert(nativeFrameOffset()==8);
+    for (const auto& entry : native120Entries) {
+        assert(nativeOffset(entry.source)==entry.target);
+        for (unsigned i=0;i<5;++i) assert(nativeWord(entry.source,i,0)==entry.words[i]);
+    }
+    assert(nativeOffset(0xabcdef)==0);
+    auto set = [&](std::uintptr_t offset, std::uintptr_t value) {
+        std::memcpy(reinterpret_cast<char*>(memory.data())+offset,&value,sizeof(value));
+    };
+    set(0x461f3e8,base+16);set(16,123);
+    set(0x461ef18,base+24);set(24,456);
+    set(0x4621028,base+32);set(32,789);
+    set(0x47195a0,321);
+    assert(nativeSingleton(base,0x462e3d8)==123);
+    assert(nativeSingleton(base,0x462df08)==456);
+    assert(nativeSingleton(base,0x4630020)==789);
+    assert(nativeSingleton(base,0x4728620)==321);
+    memory[0x123a220/4]=0xa9bb7bfd; memory[0x123a220/4+1]=0xf9000bf9;
+    memory[0x2a66f00/4]=0xa9bd7bfd; memory[0x2a66f00/4+1]=0xf9000bf5;
+    assert(!selectNativeVersion(base, bytes, bytes)); // 120/121 ambiguity also fails closed.
     for (int i=1;i<argc;++i) {
         std::fill(memory.begin(),memory.end(),0);
         std::ifstream file(argv[i],std::ios::binary|std::ios::ate);
@@ -37,6 +62,6 @@ int main(int argc, char** argv) {
         const auto size=file.tellg(); assert(size>0 && static_cast<std::size_t>(size)<=bytes);
         file.seekg(0);file.read(reinterpret_cast<char*>(memory.data()),size);assert(file);
         assert(selectNativeVersion(base,static_cast<std::size_t>(size),bytes));
-        assert(nativeVersion==(i==1 ? NativeVersion::V121 : NativeVersion::V142));
+        assert(nativeVersion==(i==1 ? NativeVersion::V121 : i==2 ? NativeVersion::V142 : NativeVersion::V120));
     }
 }

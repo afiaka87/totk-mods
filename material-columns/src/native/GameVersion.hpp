@@ -4,13 +4,15 @@
 #include <cstdint>
 #include <cstddef>
 #include "Native142.hpp"
+#include "Native120.hpp"
 namespace material_columns::native {
-enum class NativeVersion { Unknown, V121, V142 };
+enum class NativeVersion { Unknown, V120, V121, V142 };
 #ifdef MATERIAL_COLUMNS_TARGET_142
 inline NativeVersion nativeVersion = NativeVersion::V142;
 #else
 inline NativeVersion nativeVersion = NativeVersion::V121;
 #endif
+inline bool is120() { return nativeVersion == NativeVersion::V120; }
 inline bool is142() { return nativeVersion == NativeVersion::V142; }
 inline unsigned nativeFrameOffset() { return is142() ? 16 : 8; }
 inline bool selectNativeVersion(std::uintptr_t base, std::size_t textSize, std::size_t totalSize) {
@@ -27,31 +29,52 @@ inline bool selectNativeVersion(std::uintptr_t base, std::size_t textSize, std::
     for (const auto& entry : native142Entries)
         if (entry.source == 0x123a220 || entry.source == 0x2a66f00)
             v142 = v142 && matches(entry.target, entry.words[0], entry.words[1]);
-    if (v121 == v142) return false;
-    nativeVersion = v142 ? NativeVersion::V142 : NativeVersion::V121;
+    bool v120 = totalSize >= 0x47195a8;
+    for (const auto& entry : native120Entries)
+        if (entry.source == 0x123a220 || entry.source == 0x2a66f00)
+            v120 = v120 && matches(entry.target, entry.words[0], entry.words[1]);
+    if (unsigned(v120) + unsigned(v121) + unsigned(v142) != 1) return false;
+    nativeVersion = v120 ? NativeVersion::V120 : v142 ? NativeVersion::V142 : NativeVersion::V121;
     return true;
+}
+inline const NativeEntry* nativeEntriesBegin() {
+    return is120() ? native120Entries : is142() ? native142Entries : nullptr;
+}
+inline std::size_t nativeEntriesCount() {
+    return is120() ? sizeof(native120Entries)/sizeof(NativeEntry) :
+           is142() ? sizeof(native142Entries)/sizeof(NativeEntry) : 0;
+}
+inline const NativeEntry* nativeEntry(std::uintptr_t offset) {
+    for (std::size_t i = 0; i < nativeEntriesCount(); ++i)
+        if (nativeEntriesBegin()[i].source == offset) return nativeEntriesBegin() + i;
+    return nullptr;
 }
 inline std::uintptr_t nativeOffset(std::uintptr_t offset) {
     if (nativeVersion == NativeVersion::V121) return offset;
-    if (is142()) for (const auto& entry : native142Entries) if (entry.source == offset) return entry.target;
+    if (const auto* entry = nativeEntry(offset)) return entry->target;
     return 0;
 }
 template<class Site> inline Site nativeSite(Site site) {
     if (nativeVersion == NativeVersion::V121) return site;
-    if (is142()) for (const auto& entry : native142Entries) if (entry.source == site.offset)
-        return {entry.target, entry.words[0], entry.words[1]};
+    if (const auto* entry = nativeEntry(site.offset))
+        return {entry->target, entry->words[0], entry->words[1]};
     return {};
 }
 inline std::uint32_t nativeWord(std::uintptr_t offset, unsigned index, std::uint32_t original) {
     if (nativeVersion == NativeVersion::V121) return original;
-    if (is142() && index < 5) for (const auto& entry : native142Entries)
-        if (entry.source == offset) return entry.words[index];
+    if (index < 5) if (const auto* entry = nativeEntry(offset)) return entry->words[index];
     return 0;
 }
 inline std::uintptr_t nativeSingleton(std::uintptr_t base, std::uintptr_t source) {
     if (!base || nativeVersion == NativeVersion::Unknown) return 0;
     auto read = [](std::uintptr_t address) { return *reinterpret_cast<const std::uintptr_t*>(address); };
-    if (is142()) {
+    if (is120()) {
+        if (source == 0x4728620) return read(base + 0x47195a0);
+        if (source == 0x462e3d8) source = 0x461f3e8;
+        else if (source == 0x462df08) source = 0x461ef18;
+        else if (source == 0x4630020) source = 0x4621028;
+        else return 0;
+    } else if (is142()) {
         if (source == 0x462e3d8) return read(base + 0x3ac46b0);
         if (source == 0x462df08) return read(base + 0x3ac8840);
         if (source == 0x4728620) return read(base + 0x3acb318);

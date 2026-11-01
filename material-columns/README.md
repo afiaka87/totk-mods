@@ -1,12 +1,12 @@
-# Material Columns v0.1.4
+# Material Columns v0.1.5
 
-A fifth mode for the materials quick-access menu in Tears of the Kingdom 1.2.1 and 1.4.2.
+A fifth mode for the materials quick-access menu in Tears of the Kingdom 1.2.0, 1.2.1 and 1.4.2.
 Hold D-pad Up and press Y until Material Columns appears. Move the right stick left or right
 to choose a family, and up or down to choose an item within it. The four original sorts remain.
 
 Families are ordered by their combined native usage counts, most used first. Ties use the existing type order; items within families keep their order.
 
-[INI support for mod authors](docs/CATEGORY-CONFIG.md) assigns actor names to friendly category IDs or defines translated categories without rebuilding. RomFS companion files cover Remote Bombs, FuseablesEX, Invisible Attachments Shop and The Second Quest. Added-material visibility and category behavior were accepted on Citron 1.2.1 with the latter three mods merged. Remote Bombs mappings have offline coverage. The same configuration format supports both game versions; third-party material mods must separately support the installed version.
+[INI support for mod authors](docs/CATEGORY-CONFIG.md) assigns actor names to friendly category IDs or defines translated categories without rebuilding. RomFS companion files cover Remote Bombs, FuseablesEX, Invisible Attachments Shop and The Second Quest. Added-material visibility and category behavior were accepted on Citron 1.2.1 with the latter three mods merged. Remote Bombs mappings have offline coverage. The same configuration format supports all three game versions; third-party material mods must separately support the installed version.
 
 The selected family shows its upper and lower items at full opacity. Its immediate neighbors
 show faded previews; farther families show only their middle item. Labels follow that focus.
@@ -15,7 +15,7 @@ is remembered across menu openings, saves and restarts. Native drop, throw and a
 
 ## Installation
 
-Supports TotK **1.2.1** (build **9B4E43650501A4D4**) and **1.4.2** (build **5CB42B1CF25469FB**).
+Supports TotK **1.2.0** (build **6F32C68DD3BC7D77**), **1.2.1** (build **9B4E43650501A4D4**) and **1.4.2** (build **5CB42B1CF25469FB**).
 The same binary detects the game version at startup. Other versions are unsupported; unrecognized builds leave the mod inactive.
 Close the game before installing.
 
@@ -30,18 +30,18 @@ Close the game before installing.
 Preferences are stored under `sdmc:/material-columns/`. This release writes no diagnostic logs.
 The mod does not edit game saves. Category labels automatically follow the system language in 16 regional locales; other quick-menu replacements are unverified.
 The cursor, navigation, category order and background fixes were accepted on a real Switch.
-The combined binary has offline validation against both game images and loader imports, plus host tests.
-Localization was accepted on Citron and Switch; custom-material visibility and grouping were accepted on Citron 1.2.1. The final silent release has offline validation; third-party material mods were not tested on 1.4.2.
+The combined binary has offline validation against all three game images and loader imports, plus host tests.
+Localization was accepted on Citron and Switch; custom-material visibility and grouping were accepted on Citron 1.2.1. The final silent release has offline validation; third-party material mods were not tested on 1.2.0 or 1.4.2.
 The complete memory cost on 1.4.2 has not been measured.
 
-v0.1.4 adds automatic column-name localization and INI category support. Choose the package for your device; both contain the same binary for 1.2.1 and 1.4.2.
+v0.1.5 adds TotK 1.2.0 support, tested on Switch. Localization and INI category support from v0.1.4 remain available. Choose the package for your device; both contain the same binary for 1.2.0, 1.2.1 and 1.4.2.
 
 ## Source and tests
 
 This is first-party source, not a complete Switch build environment. No game dumps, generated
 catalogs/layout data, SDK headers, exlaunch template headers or binaries belong in this source tree.
 Native compilation requires devkitA64, exlaunch, compatible engine declarations, C++20,
-`TOTK_VERSION=121` (SDK bindings), `MATERIAL_COLUMNS_RELEASE`, `MATERIAL_COLUMNS_VERSION="0.1.4"`, and generated `LayoutAssets.hpp` and
+`TOTK_VERSION=121` (SDK bindings), `MATERIAL_COLUMNS_RELEASE`, `MATERIAL_COLUMNS_VERSION="0.1.5"`, and generated `LayoutAssets.hpp` and
 `MaterialCatalog.hpp` from an owned game. Include `src/` and `runtime-support/include/`.
 The module uses slot6, a 64 KiB fake heap, 16 KiB JIT space, 4 KiB inline pool, 512-byte
 framework log-buffer setting (unused by the silent release logger) and a 24 MiB process-wide NPDM reservation. The latter is shared process

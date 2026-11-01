@@ -18,7 +18,8 @@ extern "C" void exl_main(void*, void*) {
         Logging.Log("[material-columns] unsupported or ambiguous game build; nothing installed");
         return;
     }
-    if (is142()) for (const auto& entry : native142Entries) {
+    for (std::size_t i = 0; i < nativeEntriesCount(); ++i) {
+        const auto& entry = nativeEntriesBegin()[i];
         const totk::engine::CodeSite site{entry.target, entry.words[0], entry.words[1]};
         if (!totk::engine::codeMatches(base, {&site, 1}, "material-columns", "NATIVE_PROFILE_REFUSED")) return;
     }
@@ -35,6 +36,6 @@ extern "C" void exl_main(void*, void*) {
         Logging.Log("[material-columns] " MATERIAL_COLUMNS_VERSION " installation failed after preflight");
         return;
     }
-    Logging.Log("[material-columns] " MATERIAL_COLUMNS_VERSION " installed for TotK %s", is142() ? "1.4.2" : "1.2.1");
+    Logging.Log("[material-columns] " MATERIAL_COLUMNS_VERSION " installed for TotK %s", is120() ? "1.2.0" : is142() ? "1.4.2" : "1.2.1");
 }
 extern "C" NORETURN void exl_exception_entry() { EXL_ABORT("unreachable"); }

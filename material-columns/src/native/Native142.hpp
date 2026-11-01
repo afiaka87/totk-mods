@@ -3,8 +3,8 @@
 #pragma once
 namespace material_columns::native {
 inline constexpr std::uintptr_t native142DataBegin = 0x3557000, native142DataEnd = 0x3a13d60;
-struct Native142Entry { std::uintptr_t source, target; std::uint32_t words[5]; };
-inline constexpr Native142Entry native142Entries[]{
+struct NativeEntry { std::uintptr_t source, target; std::uint32_t words[5]; };
+inline constexpr NativeEntry native142Entries[]{
     {0xd84d30,0x7ecbdc,{0x91008009,0x91002028,0xeb09011f,0x54000100,0xa940a42a}},
     {0x700480,0x241754,{0xaa0003e8,0xf8408c29,0xf8420d0a,0xf900002a,0xf9000528}},
     {0x11f6dcc,0x8fe514,{0xf9401008,0x13000029,0xf9400d08,0x39016509,0xd65f03c0}},
