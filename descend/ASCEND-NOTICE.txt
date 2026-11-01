@@ -1,0 +1,12 @@
+Standalone Ascend is an independent mod project. It is not an official
+release by Nintendo or the authors of Infinite Ascend, TKMM, or Eden.
+
+Credit: Clay Mullis / afiaka87 / br4vetrav3ler for the open-source Infinite
+Ascend research and range-hook locations used as the starting point.
+https://github.com/afiaka87/totk-mods/tree/main/infinite-ascend
+Commit: 914699ca7a03d00458a1aaf535bb4a9aa4da8624
+The upstream MIT copyright notice is preserved in LICENSE.
+
+The added assembly and build tooling are also provided under the MIT terms
+in LICENSE. Nintendo's game and third-party tools retain their own licenses
+and ownership.
