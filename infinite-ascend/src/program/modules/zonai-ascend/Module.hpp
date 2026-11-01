@@ -17,7 +17,8 @@ constexpr std::uint32_t validationSpanBits() {
 constexpr float currentReach() { return pure::kReleaseReach; }
 constexpr float markerSpan() { return pure::deriveReach(pure::kReleaseReach).markerSpan; }
 
-bool resolveQueryValid(void* manager, bool nativePassed);
+bool resolveQueryValid(void* manager, void* query, bool nativePassed);
+const void* markerPosition(void* handle, const void* original);
 
 void beginMarkerPostCalc(void* manager, void* updateContext);
 void endMarkerPostCalc(void* manager);

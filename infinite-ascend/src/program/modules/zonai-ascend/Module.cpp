@@ -1,6 +1,8 @@
 #include "Module.hpp"
+#include "RemoteTargeting.hpp"
 
 #include <atomic>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -19,6 +21,7 @@ std::ptrdiff_t g_actorPositionOffset = 0;
 struct MarkerState {
     std::atomic<std::uintptr_t> owner{0};
     float playerPosition[3]{};
+    void* actor = nullptr;
     bool playerValid = false;
 };
 constinit MarkerState g_marker;
@@ -26,7 +29,7 @@ constexpr std::ptrdiff_t kQueryReasonOffset = 0x7C;
 
 float readFloat(const void* base, std::ptrdiff_t offset) {
     float value = 0.0f;
-    __builtin_memcpy(&value,
+    std::memcpy(&value,
                      static_cast<const std::uint8_t*>(base) + offset,
                      sizeof(value));
     return value;
@@ -39,7 +42,7 @@ bool plausibleCoordinate(float value) {
 
 bool readPlayerPosition(const void* updateContext, float (&position)[3]) {
     void* actor = nullptr;
-    __builtin_memcpy(&actor, static_cast<const std::uint8_t*>(updateContext) + 8,
+    std::memcpy(&actor, static_cast<const std::uint8_t*>(updateContext) + 8,
                      sizeof(actor));
     if (!actor) return false;
     const float x = readFloat(actor, g_actorPositionOffset);
@@ -74,19 +77,20 @@ void init(std::uintptr_t mainBase, bool leniencyHookHealthy,
     }
 }
 
-bool resolveQueryValid(void* manager, bool nativePassed) {
+bool resolveQueryValid(void* manager, void* query, bool nativePassed) {
     if (nativePassed) return true;
     if (!g_leniencyHookHealthy || !manager) return false;
 
     std::uint16_t reason = 0;
-    __builtin_memcpy(&reason,
+    std::memcpy(&reason,
                      static_cast<std::uint8_t*>(manager) + kQueryReasonOffset,
                      sizeof(reason));
-    if (!pure::canRelaxQueryFailure(reason)) return false;
+    const bool lenient = pure::canRelaxQueryFailure(reason);
+    if (!lenient && !remote::tryCeiling(manager, query, reason)) return false;
 
     const std::uint16_t cleared = static_cast<std::uint16_t>(
-        pure::clearLenientReasons(reason));
-    __builtin_memcpy(static_cast<std::uint8_t*>(manager) + kQueryReasonOffset,
+        lenient ? pure::clearLenientReasons(reason) : (reason & ~0x04B8u));
+    std::memcpy(static_cast<std::uint8_t*>(manager) + kQueryReasonOffset,
                      &cleared, sizeof(cleared));
     return true;
 }
@@ -99,6 +103,8 @@ void beginMarkerPostCalc(void* manager, void* updateContext) {
         return;
 
     if (!readPlayerPosition(updateContext, g_marker.playerPosition)) return;
+    std::memcpy(&g_marker.actor,
+        static_cast<const std::uint8_t*>(updateContext)+8, sizeof(g_marker.actor));
     g_marker.playerValid = true;
     g_marker.owner.store(
         reinterpret_cast<std::uintptr_t>(manager),
@@ -110,6 +116,13 @@ void endMarkerPostCalc(void* manager) {
     g_marker.owner.compare_exchange_strong(
         expected, 0, std::memory_order_acq_rel);
     g_marker.playerValid = false;
+    g_marker.actor = nullptr;
+}
+
+const void* markerPosition(void* handle, const void* original) {
+    const auto owner = g_marker.owner.load(std::memory_order_acquire);
+    if (!owner || !g_marker.playerValid || !ownsMarker(owner, handle)) return original;
+    return remote::markerPosition(reinterpret_cast<void*>(owner), g_marker.actor, original);
 }
 
 void applyMarkerScale(void* handle, const void* position) {
@@ -132,7 +145,7 @@ void applyMarkerScale(void* handle, const void* position) {
         !plausibleCoordinate(dz))
         return;
 
-    const float distance = __builtin_sqrtf(dx * dx + dy * dy + dz * dz);
+    const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
     const float scale = pure::markerScale(distance);
     const float uniformScale[3]{scale, scale, scale};
     g_setPosAndScale(handle, position, uniformScale);

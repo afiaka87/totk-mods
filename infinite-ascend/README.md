@@ -1,84 +1,105 @@
-# Infinite Ascend v1.1.2
+# Infinite Ascend v1.2.0
 
-## Changes in v1.1.2
+Extends Ascend's reach from about 20 m to 10,000 m, relaxes two local surface-shape
+checks, and scales the red/green target marker so it stays readable at long range.
+Use Ascend normally; no extra buttons, menus or HUD elements are added.
 
-Uses the shared 8 MiB loader reservation so installing this package does not overwrite the combined-mod memory fix.
+## Changes in v1.2.0
 
-The six-mod combination of Infinite Ascend, Fleet Sync, Self Recall (Switch), Zonai Hookshot with Arrowbound, BotW Abilities and Zonai Survey passed a physical Switch 1.2.1 session. Other game versions and combinations have not had a new test of the 8 MiB setting.
+On **TotK 1.2.1**, Ascend can find more distant sky-island targets using the game's
+terrain map when their collision has not loaded. Link checks for physical support
+when he arrives. B cancels during the open-air approach instead of waiting until
+he reaches the island. Tall ascents are faster, using the full rise from the
+starting point to the destination:
 
-Extends the Ascend ability's reach from about 20 m to 10,000 m, so Link can rise
-through mountains, canyon roofs, and sky islands overhead. Target checks stay
-native: the game still validates the surface, the space above it, and the route;
-the mod only extends how far the upward search reaches, slightly relaxes two
-local surface-shape checks (steep/rough ceilings that vanilla rejects), and
-scales the target marker so it stays readable at long range. No buttons, menus,
-or HUD elements are added , Ascend works exactly as it always did, just farther.
+| Full vertical rise | Upward speed |
+| --- | --- |
+| At or below 150 m | 1x |
+| Above 150 m | 1.5x |
+| Above 300 m | 2x |
+| Above 500 m | 3x |
+| Above 1,000 m | 6x |
+| Above 1,500 m | 7x |
+| Above 2,000 m | 7.5x |
 
-## Requirements
+The highest qualifying tier applies. Short ascents, entry/exit animations and
+return speed stay native. Ascend keeps the game's fixed camera throughout.
 
-- The Legend of Zelda: Tears of the Kingdom **1.0.0, 1.1.0, 1.1.2, 1.2.0,
-  1.2.1, or 1.4.0–1.4.3**. The same download serves all nine versions.
-  The executable checks twelve
-  original instructions for a unique supported version before installing
-  any hook; if those guarded words do not match, it leaves all hooks off.
-- No other files, mods, or save changes required. Contains no game assets.
+The other eight supported versions retain v1.1.2's reach, surface checks and marker
+behavior. They do not receive the new targeting, early cancellation or speed tiers.
+
+## Requirements and testing
+
+- Supports TotK **1.0.0, 1.1.0, 1.1.2, 1.2.0, 1.2.1, 1.4.0, 1.4.1, 1.4.2 and 1.4.3**.
+  One download serves all nine versions. Original instructions identify each
+  version before hooks install; the 1.2.1 extension has additional guards.
+- Contains no game assets and requires no save changes.
+- The base feature has prior emulator acceptance on all nine versions. The new
+  1.2.1 behavior was tested in Citron and on Switch, including tall ascent, B-cancel
+  and ordinary short ascent. The release cleanup removes travel diagnostics;
+  host and compiled ARM checks pass. These exact cleaned bytes have no separate boot.
+- Great Sky Island is an accepted route. Not every sky island or terrain edge case
+  has been tested. Irregular ceilings can occasionally accept a spot vanilla rejects.
 
 ## Install (emulator)
 
-1. Right-click the game in your emulator and open the mod/load directory
-   (`load/0100F2C0115B6000/`).
-2. Extract the zip there, producing `infinite-ascend/exefs/{main.npdm, subsdk4}`.
-3. Enable **infinite-ascend** in the game's properties / add-ons list.
+1. Close the game and open its mod/load directory (`load/0100F2C0115B6000/`).
+2. Extract `infinite-ascend-v1.2.0-emulator-subsdk4.zip` there. The result is
+   `infinite-ascend/exefs/{main.npdm, subsdk4}`.
+3. Enable **infinite-ascend** in the game's add-ons list.
 
-Developed and tested on an emulator. Other emulators that support
-executable mods in the load directory use the same layout.
+## Install (Switch)
 
-## Install (Switch hardware , untested by the author)
-
-Copy the two files in `exefs/` to
-`atmosphere/contents/0100F2C0115B6000/exefs/`. This is the standard layout for
-exlaunch-based mods, but this mod has not been tested on hardware.
+Close TotK. Extract `infinite-ascend-v1.2.0-switch-subsdk4.zip` under
+`atmosphere/contents/`, producing `0100F2C0115B6000/exefs/{main.npdm, subsdk4}`.
+Back up existing files before replacing them. Both downloads contain the same payload.
 
 ## Compatibility
 
-- Do not enable another mod that supplies `subsdk4`. Other executable slots are separate; this does not guarantee hook or memory compatibility.
-- Known accepted quirk: on very irregular ceilings the relaxed surface check may
-  occasionally accept a spot vanilla would refuse.
+- Do not enable another mod that supplies `subsdk4`. Separate slots alone do not
+  guarantee compatible hooks or memory settings.
+- `main.npdm` is shared with other executable mods. This package keeps the 8 MiB
+  loader reservation used by v1.1.2 and the accepted Switch setup.
+- Infinite Ascend and Descend have passed combined gameplay testing on 1.2.1.
+- When upgrading from a slot 9 release, remove only Infinite Ascend's old
+  `exefs/subsdk9`; preserve a slot 9 file belonging to another mod.
 
-## Payload
+## Source and tests
 
-- `exefs/subsdk4` , SHA-256 `EE0ED01250F9CDB02DD420791DC4662C4D9645BC90BC281EFF3C310E17A649E6`.
-- `exefs/main.npdm` , SHA-256 `CA38B1AC9B3F152CBFDA3AEA89C6BC14B80DA525787CD6B3F6CCFCC45F13DCBE`.
+The public folder contains first-party source and tests, not a complete module
+build environment. It omits the exlaunch framework, SDK headers, toolchain and build
+glue. First-party source is MIT licensed; the compiled module includes exlaunch's
+GPL-2.0 runtime. See the repository's LICENSE and NOTICE.
 
-## Changes in v1.0.1
+The module uses devkitA64, exlaunch and the TotK SDK headers. Compile all `.cpp` files
+under `src/program/`, with `src`, `src/program`, `src/pure`, the exlaunch source/lib
+directories and SDK include roots on the include path. The consumer templates use
+module name `zonai-ascend`, `EXL_USE_FAKEHEAP`, no `EXL_DEBUG`, HeapSize `0x10000`,
+JitSize `0x4000`, InlinePoolSize `0x1000`, LogBufferSize `512`, an empty relocation
+table, `TOTK_VERSION=121`, and title ID `0100F2C0115B6000`. This does not restrict
+runtime selection to 1.2.1; the source contains the nine guarded profiles.
 
-Removes an unused symbol table and its lookup code left over from a retired
-diagnostic overlay (about 4 KB smaller). No gameplay change.
+The floating-register bridge depends on exlaunch's assembly context layout and its
+corrected `S[]` accessor (upstream issue 28 / PR 31). The current bridge reads general
+registers after the 0x200-byte floating block. Reconcile that layout before using a
+different framework revision; stock headers alone are not a verified replacement.
 
-## Slot-only update in v1.0.2
+Run host tests with CMake, Ninja and a C++23 compiler:
 
-Moves the executable from subsdk9 to **subsdk4**. Gameplay is unchanged.
-Remove this mod's old `exefs/subsdk9` when upgrading. On Switch, preserve any
-slot 9 file belonging to another mod. This change separates executable filenames;
-it does not claim new compatibility testing.
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/run_host_tests.ps1
+```
 
-## Changes in v1.1.0
+The Windows runner finds MSVC. Standalone tests fetch pinned doctest v2.4.11.
+`zonai_ascend_verify_main <main image> <game version>` checks a privately dumped
+executable; no game image is included. `verify_tall_speed_native.py` checks a built
+ARM ELF and your 1.2.1 image using Unicorn, pyelftools and Capstone. Its docstring
+contains the command. `verify_runtime_imports.ps1 -Elf <file> -Nm <devkitA64 nm>`
+checks the linked module's imports.
 
-Adds guarded profiles for 1.0.0, 1.1.0, 1.1.2, 1.2.0, and 1.4.0–1.4.3.
-Reach, leniency, controls, and marker behavior are unchanged. The 24 MiB
-package was also tested successfully on 1.2.1 in Eden.
+## Earlier releases
 
-Downloads are `infinite-ascend-v1.1.2-emulator-subsdk4.zip` and
-`infinite-ascend-v1.1.2-switch-subsdk4.zip`. The Switch archive wraps the
-same payload in `0100F2C0115B6000/`
-for extraction under `atmosphere/contents/`.
-
-## Changes in v1.1.1
-
-Refactors marker snapshot ownership and fixed reach queries. Reach, controls, validation,
-marker behavior and the nine game profiles are unchanged. The module still maps 204 KiB;
-that version retained 24 MiB. The current release uses 8 MiB as described above.
-
-The refactor passes nine host tests, 764,970 native behavior comparisons and the ARM build.
-Native call order, atomic publication and floating-point operations were checked against
-the accepted build. The refactor subsequently passed user-reported gameplay checks; the current combined Switch 1.2.1 acceptance is recorded above.
+v1.1.2 adopted the shared 8 MiB loader reservation. v1.1.1 simplified marker state
+and reach queries. v1.1.0 added the other eight guarded game profiles. v1.0.2 moved
+the module from slot 9 to slot 4. v1.0.1 removed an unused diagnostic symbol table.
+These changes remain in v1.2.0.

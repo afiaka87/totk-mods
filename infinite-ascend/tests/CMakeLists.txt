@@ -20,10 +20,16 @@ add_executable(zonai_ascend_pure_tests
     test_main.cpp
     test_reach_config.cpp
     test_game_profiles.cpp
+    test_remote_target.cpp
+    test_tall_speed.cpp
+    ../src/program/modules/zonai-ascend/RemoteTargeting.cpp
+    ../src/program/modules/zonai-ascend/TallSpeed.cpp
+    ../src/program/modules/zonai-ascend/Module.cpp
 )
 target_include_directories(zonai_ascend_pure_tests PRIVATE
     "${DOCTEST_INCLUDE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/pure"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/program/modules/zonai-ascend"
 )
 target_compile_features(zonai_ascend_pure_tests PRIVATE cxx_std_23)
 if(MSVC)
