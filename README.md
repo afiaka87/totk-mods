@@ -13,6 +13,7 @@ Exlaunch authors are owed attribution here.
 | Project | Folder | Version | Slot | What it does |
 |---|---|---|---|---|
 | Phantom Foothold | `phantom-foothold/` | v1.2.2 | subsdk2 | Climb every surface with collision, ceilings included; no game files replaced. |
+| Ultimate Ascend | `ultimate-ascend/` | v0.16.0 | pchtxt / IPS32 | Downward and extended upward travel; nine game versions; experimental shrine restriction. |
 | Infinite Ascend | `infinite-ascend/` | v1.1.2 | subsdk4 | Ascend reach extended from ~20 m to 10,000 m; native checks kept. |
 | Zonai Hookshot (formerly Glideshot) | `zonai-hookshot/` | v0.12.4 | subsdk5 | A hookshot: chain to any climbable wall, zip along it, land in the native climb. Contains Arrowbound as well. |
 | Fleet Sync | `fleet-sync/` | v0.2.4 | subsdk6 | Fly up to four identical receiver vehicles from one Steering Stick. |
