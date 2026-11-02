@@ -1,5 +1,0 @@
-Descend
-Copyright (c) Clay Mullis
-First-party source: MIT license (see the source repository LICENSE).
-Host tests use doctest v2.4.11 under its MIT license; fetched separately.
-No game executable, assets or SDK are included.

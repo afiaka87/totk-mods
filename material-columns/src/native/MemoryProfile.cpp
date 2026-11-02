@@ -60,7 +60,7 @@ HOOK_DEFINE_INLINE(ScaleCaptureTarget) {
         const auto pane = field<std::uintptr_t>(ctx->X[29] - 24, 0);
         const auto* entry = find(pane);
         if (!entry || !entry->enabled.load(std::memory_order_acquire)) return;
-        for (unsigned r : {is142() ? 19u : 28u, 23u}) {
+        for (unsigned r : {is14() ? 19u : 28u, 23u}) {
             const auto pixels = static_cast<std::uint32_t>(ctx->X[r]);
             ctx->X[r] = pixels < 3 ? 1 : (std::uint64_t(pixels) * 2) / 5;
         }
@@ -157,14 +157,14 @@ HOOK_DEFINE_TRAMPOLINE(LoadIcon) {
     }
 };
 std::uint64_t freeBytes(std::uintptr_t heap) {
-    if (is142()) return 0;
+    if (is14()) return 0;
     return heap ? reinterpret_cast<std::uint64_t (*)(std::uintptr_t)>(field<std::uintptr_t>(field<std::uintptr_t>(heap,0),128))(heap) : 0;
 }
 } // namespace
 HeapSample::HeapSample(std::uintptr_t value, const char* label, bool subinterval) : heap(value), phase(label), before(freeBytes(value)), detail(subinterval) {}
 HeapSample::~HeapSample() {
     static unsigned remaining=12;
-    if (is142() || !remaining) return;
+    if (is14() || !remaining) return;
     --remaining;
     const auto after=freeBytes(heap);
     Logging.Log("[material-columns] memory UI%s phase=%s heap=%llx free-before=%llu free-after=%llu interval-used=%lld",
@@ -222,13 +222,13 @@ bool install(std::uintptr_t mainBase, bool validateOnly) {
         nativeSite(totk::engine::CodeSite{0x7ef80c, 0xd10143ff, 0xa9027bfd}),
         nativeSite(totk::engine::CodeSite{0x944030, 0xa9039be7, 0x9001e7a9})
     };
-    if (is142()) {
+    if (is14()) {
         const totk::engine::CodeSite scale[]{sites[4]};
         if (!totk::engine::codeMatches(mainBase,scale,"material-columns","MEMORY_HOOK_REFUSED")) return false;
     } else if (!totk::engine::codeMatches(mainBase,sites,"material-columns","MEMORY_HOOK_REFUSED")) return false;
     if (validateOnly) return true;
     base=mainBase;
-    if (!is142()) {
+    if (!is14()) {
         DynamicCaptureDraw::InstallAtOffset(sites[0].offset);
         CaptureWork::InstallAtOffset(sites[1].offset);
         LoadIcon::InstallAtOffset(sites[2].offset);

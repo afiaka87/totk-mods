@@ -36,6 +36,6 @@ extern "C" void exl_main(void*, void*) {
         Logging.Log("[material-columns] " MATERIAL_COLUMNS_VERSION " installation failed after preflight");
         return;
     }
-    Logging.Log("[material-columns] " MATERIAL_COLUMNS_VERSION " installed for TotK %s", is120() ? "1.2.0" : is142() ? "1.4.2" : "1.2.1");
+    Logging.Log("[material-columns] " MATERIAL_COLUMNS_VERSION " installed for TotK %s", is143() ? "1.4.3" : is120() ? "1.2.0" : is142() ? "1.4.2" : "1.2.1");
 }
 extern "C" NORETURN void exl_exception_entry() { EXL_ABORT("unreachable"); }

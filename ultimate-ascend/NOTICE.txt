@@ -1,0 +1,7 @@
+Ultimate Ascend
+Copyright (c) Clay Mullis
+First-party source: MIT license (see LICENSE.txt).
+Includes adapted Ascend Through Depth Ceiling free v1.0.5 assembly by LordCameron.
+Its original MIT license and notices are in ASCEND-LICENSE.txt and ASCEND-NOTICE.txt.
+Host tests use doctest v2.4.11 under its MIT license; fetched separately.
+No game executable, assets or SDK are included.

@@ -4,6 +4,8 @@
 #include <cassert>
 #include <cstdint>
 #include <vector>
+#include <fstream>
+#define MATERIAL_COLUMNS_VERIFY_CODE_WORDS
 std::uintptr_t nativeNodeMovable(std::uintptr_t, unsigned);
 struct CursorTestHook {
     static std::uintptr_t Orig(std::uintptr_t node, unsigned target) { return nativeNodeMovable(node, target); }
@@ -14,9 +16,9 @@ struct CursorTestHook {
 #include "../src/native/ColumnPanel.cpp"
 using namespace material_columns::native;
 std::uintptr_t queryNode(std::uintptr_t node, unsigned target) {
-#ifdef MATERIAL_COLUMNS_TARGET_142
+#if defined(MATERIAL_COLUMNS_TARGET_142) || defined(MATERIAL_COLUMNS_TARGET_143)
     // Native Update and fallback search dispatch virtual40, not activation's virtual48.
-    const auto predicate=field<std::uintptr_t>(base,0x3908aa0+40);
+    const auto predicate=field<std::uintptr_t>(base,(is143() ? 0x391aac8 : 0x3908ac8));
     return reinterpret_cast<std::uintptr_t (*)(std::uintptr_t,unsigned)>(predicate)(node,target);
 #else
     return ShortcutCursorFocus::Callback(node,target);
@@ -69,30 +71,46 @@ namespace {
 std::uintptr_t resolvePanelTestFunction(std::uintptr_t) { assert(false); return 0; }
 }
 }
-int main() {
-#ifdef MATERIAL_COLUMNS_TARGET_142
-    std::vector<std::uintptr_t> image((native142DataEnd+7)/8);
+int main(int argc, char** argv) {
+    (void)argc; (void)argv;
+#if defined(MATERIAL_COLUMNS_TARGET_142) || defined(MATERIAL_COLUMNS_TARGET_143)
+    std::vector<std::uintptr_t> image((nativeDataEnd()+7)/8);
     base=reinterpret_cast<std::uintptr_t>(image.data());
-    for (const auto& entry : dispatches) image[entry.slot/8]=base+nativeOffset(entry.source);
-    constexpr std::uintptr_t calculatorGot=0x395f510;
-    constexpr std::uintptr_t cursorGot=0x395f460, activationSlot=0x3908aa0+48;
-    image[calculatorGot/8]=base+nativeOffset(0x7b6668);
+    for (const auto& entry : dispatches) image[entry.slot()/8]=base+nativeOffset(entry.source);
+    if (argc == 2) {
+        std::ifstream file(argv[1], std::ios::binary);
+        assert(file);
+        file.read(reinterpret_cast<char*>(image.data()), image.size()*8);
+        assert(file.gcount() >= static_cast<std::streamsize>(nativeDataEnd()));
+        for (const auto& entry : dispatches) image[entry.slot()/8] += base;
+        assert(installColumnPanel(base, true) && !installed);
+        for (const auto& entry : dispatches) {
+            auto* word=reinterpret_cast<std::uint32_t*>(base+nativeOffset(entry.source));
+            *word ^= 1;
+            assert(!installColumnPanel(base, true));
+            *word ^= 1;
+        }
+    }
+    const std::uintptr_t calculatorGot=is143() ? 0 : 0x395f510;
+    const std::uintptr_t cursorGot=is143() ? 0x3971458 : 0x395f460;
+    const std::uintptr_t activationSlot=is143() ? 0x391aad0 : 0x3908ad0;
+    if (calculatorGot) image[calculatorGot/8]=base+nativeOffset(0x7b6668);
     image[cursorGot/8]=base+nativeOffset(0x2a66f00);
-    image[activationSlot/8]=base+0x28e8ebc;
+    image[activationSlot/8]=base+(is143() ? 0x28f9564 : 0x28e8ebc);
     assert(validateDispatches(base));
     for (const auto& entry : dispatches) {
-        image[entry.slot/8]^=1;
+        image[entry.slot()/8]^=1;
         assert(!validateDispatches(base));
-        image[entry.slot/8]^=1;
+        image[entry.slot()/8]^=1;
     }
     installDispatches();
     for (const auto& entry : dispatches)
-        assert(image[entry.slot/8] && image[entry.slot/8]!=base+nativeOffset(entry.source));
-    assert(image[0x3908cd8/8]==reinterpret_cast<std::uintptr_t>(&CalculateColumnLayoutEx::Callback));
-    assert(image[(0x3908aa0+40)/8]==reinterpret_cast<std::uintptr_t>(&ShortcutCursorFocus::Callback));
+        assert(image[entry.slot()/8] && image[entry.slot()/8]!=base+nativeOffset(entry.source));
+    assert(image[(is143() ? 0x391acd8 : 0x3908cd8)/8]==reinterpret_cast<std::uintptr_t>(&CalculateColumnLayoutEx::Callback));
+    assert(image[((is143() ? 0x391aac8 : 0x3908ac8))/8]==reinterpret_cast<std::uintptr_t>(&ShortcutCursorFocus::Callback));
     assert(image[cursorGot/8]==base+nativeOffset(0x2a66f00));
-    assert(image[activationSlot/8]==base+0x28e8ebc);
-    assert(image[calculatorGot/8]==base+nativeOffset(0x7b6668));
+    assert(image[activationSlot/8]==base+(is143() ? 0x28f9564 : 0x28e8ebc));
+    if (calculatorGot) assert(image[calculatorGot/8]==base+nativeOffset(0x7b6668));
 #endif
     panels[0].owner = address(shortcut);
     for (unsigned i = 0; i < nodes.size(); ++i) {

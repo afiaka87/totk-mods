@@ -4,7 +4,7 @@
 
 If you want to make your own compatibility file, add `romfs/MaterialColumns/Categories/your-mod.ini` to your mod. You can choose a category for each material, or add a category of your own. For a different language, add the translation into your category's section. English is required as a fallback.
 
-Include the INI with your download; Material Columns v0.1.4 or later is required too. For game versions 1.2.0, 1.2.1 and 1.4.2 (1.2.0 requires Material Columns v0.1.5 or later). Your material mod must work on the player's version of the game. You still need that mod to add the actors and inventory data. No rebuild of Material Columns is needed.
+Include the INI with your download; Material Columns v0.1.4 or later is required too. For game versions 1.2.0, 1.2.1, 1.4.2 and 1.4.3 (1.2.0 requires Material Columns v0.1.5 or later; 1.4.3 requires v0.1.6 or later). Your material mod must work on the player's version of the game. You still need that mod to add the actors and inventory data. No rebuild of Material Columns is needed.
 
 ## Contents
 

@@ -5,16 +5,23 @@
 #include <cstddef>
 #include "Native142.hpp"
 #include "Native120.hpp"
+#include "Native143.hpp"
 namespace material_columns::native {
-enum class NativeVersion { Unknown, V120, V121, V142 };
-#ifdef MATERIAL_COLUMNS_TARGET_142
+enum class NativeVersion { Unknown, V120, V121, V142, V143 };
+#if defined(MATERIAL_COLUMNS_TARGET_143)
+inline NativeVersion nativeVersion = NativeVersion::V143;
+#elif defined(MATERIAL_COLUMNS_TARGET_142)
 inline NativeVersion nativeVersion = NativeVersion::V142;
 #else
 inline NativeVersion nativeVersion = NativeVersion::V121;
 #endif
 inline bool is120() { return nativeVersion == NativeVersion::V120; }
 inline bool is142() { return nativeVersion == NativeVersion::V142; }
-inline unsigned nativeFrameOffset() { return is142() ? 16 : 8; }
+inline bool is143() { return nativeVersion == NativeVersion::V143; }
+inline bool is14() { return is142() || is143(); }
+inline unsigned nativeFrameOffset() { return is14() ? 16 : 8; }
+inline std::uintptr_t nativeDataBegin() { return is143() ? native143DataBegin : native142DataBegin; }
+inline std::uintptr_t nativeDataEnd() { return is143() ? native143DataEnd : native142DataEnd; }
 inline bool selectNativeVersion(std::uintptr_t base, std::size_t textSize, std::size_t totalSize) {
     nativeVersion = NativeVersion::Unknown;
     if (!base || textSize < 0x2a68c40 || totalSize < textSize) return false;
@@ -33,15 +40,19 @@ inline bool selectNativeVersion(std::uintptr_t base, std::size_t textSize, std::
     for (const auto& entry : native120Entries)
         if (entry.source == 0x123a220 || entry.source == 0x2a66f00)
             v120 = v120 && matches(entry.target, entry.words[0], entry.words[1]);
-    if (unsigned(v120) + unsigned(v121) + unsigned(v142) != 1) return false;
-    nativeVersion = v120 ? NativeVersion::V120 : v142 ? NativeVersion::V142 : NativeVersion::V121;
+    bool v143 = totalSize >= 0x3add328;
+    for (const auto& entry : native143Entries)
+        if (entry.source == 0x123a220 || entry.source == 0x2a66f00)
+            v143 = v143 && matches(entry.target, entry.words[0], entry.words[1]);
+    if (unsigned(v120) + unsigned(v121) + unsigned(v142) + unsigned(v143) != 1) return false;
+    nativeVersion = v143 ? NativeVersion::V143 : v120 ? NativeVersion::V120 : v142 ? NativeVersion::V142 : NativeVersion::V121;
     return true;
 }
 inline const NativeEntry* nativeEntriesBegin() {
-    return is120() ? native120Entries : is142() ? native142Entries : nullptr;
+    return is143() ? native143Entries : is120() ? native120Entries : is142() ? native142Entries : nullptr;
 }
 inline std::size_t nativeEntriesCount() {
-    return is120() ? sizeof(native120Entries)/sizeof(NativeEntry) :
+    return is143() ? sizeof(native143Entries)/sizeof(NativeEntry) : is120() ? sizeof(native120Entries)/sizeof(NativeEntry) :
            is142() ? sizeof(native142Entries)/sizeof(NativeEntry) : 0;
 }
 inline const NativeEntry* nativeEntry(std::uintptr_t offset) {
@@ -74,12 +85,12 @@ inline std::uintptr_t nativeSingleton(std::uintptr_t base, std::uintptr_t source
         else if (source == 0x462df08) source = 0x461ef18;
         else if (source == 0x4630020) source = 0x4621028;
         else return 0;
-    } else if (is142()) {
-        if (source == 0x462e3d8) return read(base + 0x3ac46b0);
-        if (source == 0x462df08) return read(base + 0x3ac8840);
-        if (source == 0x4728620) return read(base + 0x3acb318);
+    } else if (is14()) {
+        if (source == 0x462e3d8) return read(base + (is143() ? 0x3ad66b0 : 0x3ac46b0));
+        if (source == 0x462df08) return read(base + (is143() ? 0x3ada848 : 0x3ac8840));
+        if (source == 0x4728620) return read(base + (is143() ? 0x3add320 : 0x3acb318));
         if (source != 0x4630020) return 0;
-        source = 0x394e1e8;
+        source = is143() ? 0x39601e8 : 0x394e1e8;
     } else if (source == 0x4728620) return read(base + source);
     const auto slot = read(base + source);
     return slot ? read(slot) : 0;

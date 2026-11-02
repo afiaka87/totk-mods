@@ -880,24 +880,27 @@ HOOK_DEFINE_TRAMPOLINE(DestroyScreen) {
         return Orig(screen);
     }
 };
-struct Dispatch { std::uintptr_t slot, source; };
+struct Dispatch {
+    std::uintptr_t slot142, slot143, source;
+    std::uintptr_t slot() const { return is143() ? slot143 : slot142; }
+};
 constexpr Dispatch dispatches[]{
-    {0x371f1d0,0x123a220},{0x371f1c8,0x1228418},{0x370f368,0x1acc644},
-    {0x3708778,0x1a7f090},{0x390ac88,0x107f714},{0x3908758,0xf6e9c4},
-    {0x3908cd8,0x7b6668},{0x3708070,0xe744fc},{0x3702670,0x22a8130},
-    {0x3908790,0x22a8130},{0x3908ac8,0x2a66f00}
+    {0x371f1d0,0x37311d0,0x123a220},{0x371f1c8,0x37311c8,0x1228418},{0x370f368,0x3721368,0x1acc644},
+    {0x3708778,0x371a778,0x1a7f090},{0x390ac88,0x391cc88,0x107f714},{0x3908758,0x391a758,0xf6e9c4},
+    {0x3908cd8,0x391acd8,0x7b6668},{0x3708070,0x371a070,0xe744fc},{0x3702670,0x3714670,0x22a8130},
+    {0x3908790,0x391a790,0x22a8130},{0x3908ac8,0x391aac8,0x2a66f00}
 };
 bool validateDispatches(std::uintptr_t mainBase) {
     for (const auto& entry : dispatches) {
-        if (entry.slot < native142DataBegin || entry.slot + sizeof(std::uintptr_t) > native142DataEnd) {
+        if (entry.slot() < nativeDataBegin() || entry.slot() + sizeof(std::uintptr_t) > nativeDataEnd()) {
             Logging.Log("[material-columns] native dispatch outside writable data slot=%llx",
-                        static_cast<unsigned long long>(entry.slot));
+                        static_cast<unsigned long long>(entry.slot()));
             return false;
         }
-        const auto actual = field<std::uintptr_t>(mainBase, entry.slot);
+        const auto actual = field<std::uintptr_t>(mainBase, entry.slot());
         if (actual == mainBase + nativeOffset(entry.source)) continue;
         Logging.Log("[material-columns] native dispatch refused slot=%llx actual=%llx",
-                    static_cast<unsigned long long>(entry.slot), static_cast<unsigned long long>(actual));
+                    static_cast<unsigned long long>(entry.slot()), static_cast<unsigned long long>(actual));
         return false;
     }
     return true;
@@ -918,10 +921,10 @@ bool installDispatches() {
         case 0x2a66f00: callback=reinterpret_cast<std::uintptr_t>(&ShortcutCursorFocus::Callback);break;
         }
         // Relocated vtables live in writable .data, outside the code patcher's alias.
-        field<volatile std::uintptr_t>(base, entry.slot) = callback;
-        if (field<volatile std::uintptr_t>(base, entry.slot) != callback) {
+        field<volatile std::uintptr_t>(base, entry.slot()) = callback;
+        if (field<volatile std::uintptr_t>(base, entry.slot()) != callback) {
             Logging.Log("[material-columns] native dispatch write refused slot=%llx",
-                        static_cast<unsigned long long>(entry.slot));
+                        static_cast<unsigned long long>(entry.slot()));
             return false;
         }
     }
@@ -949,7 +952,7 @@ bool installColumnPanel(std::uintptr_t mainBase, bool validateOnly) {
         nativeSite(totk::engine::CodeSite{0x2a66f00, 0xa9bd7bfd, 0xf9000bf5})
     };
     if (!totk::engine::codeMatches(mainBase, sites, "material-columns", "PANEL_HOOK_REFUSED")) return false;
-    if (is142() && !validateDispatches(mainBase)) return false;
+    if (is14() && !validateDispatches(mainBase)) return false;
     if (validateOnly) return true;
     base = mainBase;
     CreateShortcutParts::InstallAtOffset(sites[0].offset);
@@ -964,7 +967,7 @@ bool installColumnPanel(std::uintptr_t mainBase, bool validateOnly) {
     SelectBorrowedSlot::InstallAtOffset(sites[9].offset);
     CopyColumnRowLayout::InstallAtOffset(sites[10].offset);
     ShortcutCursorFocus::InstallAtOffset(sites[16].offset);
-    if (is142() && !installDispatches()) return false;
+    if (is14() && !installDispatches()) return false;
     installed = true;
     return true;
 }

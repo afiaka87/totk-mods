@@ -51,7 +51,7 @@ int main() {
     exl::hook::InlineCtx context{};
     for (unsigned i=0;i<31;++i) context.X[i]=0x1000+i;
     context.X[29]=reinterpret_cast<std::uintptr_t>(frame.data())+32;
-#ifdef MATERIAL_COLUMNS_TARGET_142
+#if defined(MATERIAL_COLUMNS_TARGET_142) || defined(MATERIAL_COLUMNS_TARGET_143)
     constexpr unsigned widthRegister=19;
 #else
     constexpr unsigned widthRegister=28;
