@@ -9,9 +9,12 @@ import hashlib
 import json
 import math
 import struct
-import subprocess
+import sys
 import zlib
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / 'scripts'))
+from totk_mod_tools import toolbox_step  # noqa: E402
 
 CLIPS = ('Nml_Wait_To_Squat_Wait', 'Squat_Wait_FootL', 'Squat_Wait_FootR')
 VERSION = 2
@@ -181,10 +184,13 @@ def bake(botw: dict, totk: dict) -> tuple[bytes, dict]:
 
 
 def export(toolbox: Path, source: Path, output: Path) -> dict:
-    subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-                    str(Path(__file__).with_name('export_champion_pose.ps1')),
-                    '-ToolboxDir', str(toolbox), '-InputBfres', str(source), '-OutputJson', str(output)],
-                   check=True, stdout=subprocess.DEVNULL)
+    process = toolbox_step.run(f'champion-pose-{output.stem}',
+                               ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                                str(Path(__file__).with_name('export_champion_pose.ps1')),
+                                '-ToolboxDir', str(toolbox), '-InputBfres', str(source), '-OutputJson', str(output)],
+                               [source], [output])
+    if process.returncode:
+        raise ValueError('pose export failed: ' + process.stderr[-800:])
     return json.loads(output.read_text(encoding='utf-8-sig'))
 
 

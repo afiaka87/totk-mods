@@ -15,6 +15,11 @@
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+#if defined(BOTW_ABILITIES_STREAM_TEXTURES)
+// RenderPools.ld keeps these blocks in place for the GPU, so the suite holds no second copy.
+extern "C" unsigned char __cryonis_code_start__[], __cryonis_code_end__[];
+extern "C" unsigned char __cryonis_mesh_start__[], __cryonis_mesh_end__[];
+#endif
 namespace cryonis::render {
 namespace {
 using render_policy::Camera;
@@ -58,10 +63,27 @@ struct Blob {
 constexpr Blob kBlobs[]{BLOB(watervert),   BLOB(waterfrag),   BLOB(icevert), BLOB(icefrag),
                         BLOB(effectsvert), BLOB(effectsfrag), BLOB(hudvert), BLOB(hudfrag)};
 #undef BLOB
-alignas(4096) unsigned char g_codeMemory[128 * 1024]{};
+#if defined(BOTW_ABILITIES_STREAM_TEXTURES)
+unsigned char *codeBlock() { return __cryonis_code_start__; }
+std::size_t codeBlockBytes() { return std::size_t(__cryonis_code_end__ - __cryonis_code_start__); }
+unsigned char *meshBlock() { return __cryonis_mesh_start__; }
+std::size_t meshBlockBytes() { return std::size_t(__cryonis_mesh_end__ - __cryonis_mesh_start__); }
+#else
+// Eight shaders (40,512 bytes), alignment gaps and the 16 KiB device padding; bounds-checked below.
+alignas(4096) unsigned char g_codeMemory[64 * 1024]{};
 alignas(4096) unsigned char g_meshMemory[53248]{};
+unsigned char *codeBlock() { return g_codeMemory; }
+constexpr std::size_t codeBlockBytes() { return sizeof(g_codeMemory); }
+unsigned char *meshBlock() { return g_meshMemory; }
+constexpr std::size_t meshBlockBytes() { return sizeof(g_meshMemory); }
+#endif
 // The Cryonis textures are the original compressed blocks and need 542,720 bytes.
+#if defined(BOTW_ABILITIES_STREAM_TEXTURES)
+__attribute__((section(".bss.pool.1.cryonis_textures")))
+alignas(65536) unsigned char g_textureMemory[133 * 4096]{};
+#else
 alignas(65536) unsigned char g_textureMemory[9 * 65536]{};
+#endif
 NVNmemoryPool g_codePool{}, g_meshPool{}, g_texturePool{};
 NVNprogram g_waterProgram{}, g_iceProgram{}, g_effectsProgram{}, g_hudProgram{};
 NVNtexture g_textures[3]{};
@@ -153,41 +175,61 @@ bool initializePrograms() {
     };
     std::size_t offsets[8]{}, used = 0;
     for (unsigned i = 0; i < 8; ++i) {
+#if defined(BOTW_ABILITIES_STREAM_TEXTURES)
+        offsets[i] = std::size_t(kBlobs[i].code - codeBlock());
+        if (offsets[i] > codeBlockBytes() || codeBlockBytes() - offsets[i] < kBlobs[i].size) {
+            refuse(4);
+            return false;
+        }
+        if (offsets[i] + kBlobs[i].size > used)
+            used = offsets[i] + kBlobs[i].size;
+#else
         used = (used + 255) & ~std::size_t(255);
         offsets[i] = used;
-        if (used + kBlobs[i].size > sizeof(g_codeMemory)) {
+        if (used + kBlobs[i].size > codeBlockBytes()) {
             refuse(4);
             return false;
         }
         std::memcpy(g_codeMemory + used, kBlobs[i].code, kBlobs[i].size);
         used += kBlobs[i].size;
+#endif
     }
     int padding = -1;
     integer(g_device, NVN_DEVICE_INFO_SHADER_CODE_MEMORY_POOL_PADDING_SIZE, &padding);
-    if (padding < 0 || used + std::size_t(padding) > sizeof(g_codeMemory)) {
+    if (padding < 0 || used + std::size_t(padding) > codeBlockBytes()) {
         refuse(4);
         return false;
     }
-    if (!makePool(g_codePool, g_codeMemory, sizeof(g_codeMemory),
+    if (!makePool(g_codePool, codeBlock(), codeBlockBytes(),
                   NVN_MEMORY_POOL_FLAGS_SHADER_CODE) ||
-        !makePool(g_meshPool, g_meshMemory, sizeof(g_meshMemory), 0) ||
+        !makePool(g_meshPool, meshBlock(), meshBlockBytes(), 0) ||
         !makePool(g_texturePool, g_textureMemory, sizeof(g_textureMemory), 0)) {
         refuse(5);
         return false;
     }
-    flush(&g_codePool, 0, sizeof(g_codeMemory));
+    flush(&g_codePool, 0, codeBlockBytes());
     const auto codeAddress = address(&g_codePool);
     g_meshAddress = address(&g_meshPool);
     if (!codeAddress || !g_meshAddress) {
         refuse(6);
         return false;
     }
+#if defined(BOTW_ABILITIES_STREAM_TEXTURES)
+    const auto *indexBytes = reinterpret_cast<const unsigned char *>(assets::indices);
+    const auto indexOffset = std::size_t(indexBytes - meshBlock());
+    if (reinterpret_cast<const unsigned char *>(assets::mesh) != meshBlock() ||
+        indexOffset > meshBlockBytes() || meshBlockBytes() - indexOffset < sizeof(assets::indices)) {
+        refuse(14);
+        return false;
+    }
+#else
     std::memcpy(g_meshMemory, assets::mesh, sizeof(assets::mesh));
     constexpr std::size_t indexOffset = (sizeof(assets::mesh) + 255) & ~std::size_t(255);
     static_assert(indexOffset + sizeof(assets::indices) <= sizeof(g_meshMemory));
     std::memcpy(g_meshMemory + indexOffset, assets::indices, sizeof(assets::indices));
+#endif
     g_indexAddress = g_meshAddress + indexOffset;
-    flush(&g_meshPool, 0, sizeof(g_meshMemory));
+    flush(&g_meshPool, 0, meshBlockBytes());
     NVNprogram *programs[]{&g_waterProgram, &g_iceProgram, &g_effectsProgram, &g_hudProgram};
     for (unsigned pass = 0; pass < 4; ++pass) {
         auto program = programs[pass];

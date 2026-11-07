@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) Clay Mullis
-
 // Draws the Stasis effects after the opaque scene, from the game's effect draw pass.
 #include "StasisRender.hpp"
 #include "StasisProjection.hpp"
@@ -15,6 +14,10 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#if defined(BOTW_ABILITIES_STREAM_TEXTURES)
+// RenderPools.ld keeps this block in place for the GPU, so the suite holds no second copy.
+extern "C" unsigned char __stasis_code_start__[], __stasis_code_end__[];
+#endif
 namespace stasis::render {
 namespace {
 // GraphicsContext stores depth flags, a target mask and six blend bytes per target.
@@ -62,7 +65,14 @@ constexpr std::size_t codeEnd() {
 constexpr auto kCodeEnd = codeEnd();
 constexpr std::size_t kCodePoolBytes = (kCodeEnd + 16384 + 4095) & ~std::size_t(4095);
 static_assert(kCodePoolBytes <= 262144, "shader code pool cap");
+#if defined(BOTW_ABILITIES_STREAM_TEXTURES)
+unsigned char *codeBlock() { return __stasis_code_start__; }
+std::size_t codeBlockBytes() { return std::size_t(__stasis_code_end__ - __stasis_code_start__); }
+#else
 alignas(4096) unsigned char g_codeMemory[kCodePoolBytes]{};
+unsigned char *codeBlock() { return g_codeMemory; }
+constexpr std::size_t codeBlockBytes() { return sizeof(g_codeMemory); }
+#endif
 alignas(8) NVNmemoryPool g_codePool{};
 constexpr unsigned kShaderCount = sizeof(kShaders) / sizeof(kShaders[0]);
 std::size_t g_codeOffsets[kShaderCount]{};
@@ -187,29 +197,38 @@ bool initializeGpuStorage() {
 
     int padding = -1;
     getInteger(g_device, NVN_DEVICE_INFO_SHADER_CODE_MEMORY_POOL_PADDING_SIZE, &padding);
-    if (padding < 0 || kCodeEnd + padding > sizeof(g_codeMemory)) {
+    if (padding < 0 || kCodeEnd + padding > codeBlockBytes()) {
         refuse(4, static_cast<unsigned>(padding));
         return false;
     }
     std::size_t offset = 0;
     for (unsigned i = 0; i < kShaderCount; ++i) {
+#if defined(BOTW_ABILITIES_STREAM_TEXTURES)
+        offset = std::size_t(kShaders[i].code - codeBlock());
+        if (offset > codeBlockBytes() || codeBlockBytes() - offset < kShaders[i].bytes) {
+            refuse(4, static_cast<unsigned>(offset));
+            return false;
+        }
+        g_codeOffsets[i] = offset;
+#else
         offset = (offset + 255) & ~std::size_t(255);
         g_codeOffsets[i] = offset;
         std::memcpy(g_codeMemory + offset, kShaders[i].code, kShaders[i].bytes);
         offset += kShaders[i].bytes;
+#endif
     }
 
     alignas(8) NVNmemoryPoolBuilder builder{};
     builderDefaults(&builder);
     builderDevice(&builder, g_device);
-    builderStorage(&builder, g_codeMemory, sizeof(g_codeMemory));
+    builderStorage(&builder, codeBlock(), codeBlockBytes());
     builderFlags(&builder, NVN_MEMORY_POOL_FLAGS_CPU_CACHED | NVN_MEMORY_POOL_FLAGS_GPU_CACHED |
                                NVN_MEMORY_POOL_FLAGS_SHADER_CODE);
     if (!poolInitialize(&g_codePool, &builder)) {
         refuse(5);
         return false;
     }
-    poolFlush(&g_codePool, 0, sizeof(g_codeMemory));
+    poolFlush(&g_codePool, 0, codeBlockBytes());
     g_codeAddress = poolAddress(&g_codePool);
     if (!g_codeAddress) {
         refuse(6);
@@ -614,7 +633,7 @@ void install() {
     if (!totk::render::installPfxHook(engine::moduleBase, DrawPfxHook::Callback,
                                       DrawPfxHook::previous, "stasis"))
         return;
-    Logging.Log("[stasis] shader installed pool=%u fragment=%u nativeBloom=%u", unsigned(sizeof(g_codeMemory)),
+    Logging.Log("[stasis] shader installed pool=%u fragment=%u nativeBloom=%u", unsigned(codeBlockBytes()),
                 unsigned(sizeof(shaders::fragCode)), unsigned(kNativeBloom));
 }
 } // namespace stasis::render

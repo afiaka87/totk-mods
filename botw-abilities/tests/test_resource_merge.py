@@ -67,6 +67,33 @@ class ResourceMergeTests(unittest.TestCase):
         self.assertEqual(metadata['SaveDataOffsetPos'], [58, 0])
         self.assertEqual(metadata['SaveDataSize'], [68, 0])
 
+    def test_grown_materials_pouch_extends_its_save_file_in_place(self):
+        base = {'Data': {'Struct': [{'Hash': 5, 'Size': 255, 'SaveFileIndex': -1,
+                                     'DefaultValue': [{'Hash': 1, 'Value': 2}]}],
+                         'String64Array': [{'Hash': 6, 'DefaultValue': ['', ''], 'OriginalSize': 1, 'SaveFileIndex': 0}],
+                         'IntArray': [{'Hash': 7, 'DefaultValue': [-1, -1], 'OriginalSize': 1, 'SaveFileIndex': 0},
+                                      {'Hash': 8, 'DefaultValue': [0], 'OriginalSize': 1, 'SaveFileIndex': -1}]},
+                'MetaData': {'AllDataSaveOffset': 100, 'AllDataSaveSize': 200, 'SaveDataOffsetPos': [50],
+                             'SaveDataSize': [60], 'SaveDirectory': ['progress.sav']}}
+        data = copy.deepcopy(base['Data'])
+        data['Struct'][0]['Size'] = 510
+        data['String64Array'][0]['DefaultValue'] += ['', '']
+        data['IntArray'][0]['DefaultValue'] += [-1]
+        data['IntArray'][1]['DefaultValue'] += [0]
+        data['IntArray'][1]['OriginalSize'] = 2
+        metadata = merge.saved_metadata(base, data)
+        self.assertEqual(metadata['AllDataSaveSize'], 200 + 2 * 64 + 4)
+        self.assertEqual(metadata['SaveDataSize'], [60 + 2 * 64 + 4])
+        self.assertEqual(metadata['AllDataSaveOffset'], 100)
+        self.assertEqual(metadata['SaveDataOffsetPos'], [50])
+        for kind, index, key, value in (('Struct', 0, 'Size', 100), ('String64Array', 0, 'DefaultValue', ['', 'x']),
+                                        ('IntArray', 0, 'DefaultValue', [-1, 0, -1]),
+                                        ('IntArray', 0, 'OriginalSize', 3), ('String64Array', 0, 'SaveFileIndex', -1)):
+            bad = copy.deepcopy(base['Data'])
+            bad[kind][index][key] = value
+            with self.assertRaisesRegex(ValueError, 'native save flag changed'):
+                merge.saved_metadata(base, bad)
+
     def test_native_save_mutation_and_unknown_allocation_refused(self):
         base = {'Data': {'Bool': [{'Hash': 1, 'DefaultValue': False}]}, 'MetaData': {}}
         with self.assertRaisesRegex(ValueError, 'native save flag changed'):

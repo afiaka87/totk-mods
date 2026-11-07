@@ -17,7 +17,7 @@ if (-not $env:TOTK_HOST_TESTS_REENTERED -and (Test-Path -LiteralPath $scripts)) 
 
 $vendorTools = [IO.Path]::GetFullPath((Join-Path $testsDir '../../../../vendor/totk-dkp/tools'))
 if (Test-Path -LiteralPath $vendorTools) {
-    $env:PATH = "$vendorTools;$(Join-Path $vendorTools 'cmake-3.30.5-windows-x86_64/bin');$env:PATH"
+    $env:PATH = (@($vendorTools) + @((Get-Item "$vendorTools/cmake-3.30.5-*/bin", "$vendorTools/cmake-3.30.5-*/CMake.app/Contents/bin" -ErrorAction SilentlyContinue).FullName) + $env:PATH) -join [IO.Path]::PathSeparator
 }
 foreach ($tool in 'cmake', 'ctest') {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw "$tool not found on PATH" }

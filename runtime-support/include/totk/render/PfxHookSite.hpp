@@ -18,7 +18,11 @@ struct PfxEntry {
     std::uintptr_t previous{};
 };
 
-// Accept exlaunch B or LDR X17/BR X17/literal patches, with the alignment NOP when required.
+// The patches emitted by vendored exlaunch nx64/hook_impl.cpp::HookFuncImpl:
+// an in-range B, or an absolute jump whose literal must be eight-byte aligned.
+// At an eight-byte aligned entry that is LDR X17 / BR X17 / literal; at an
+// entry that is 4 mod 8 exlaunch first writes a NOP, moving the literal to
+// words 3-4. Only the form matching the entry's alignment is accepted.
 inline constexpr PfxEntry decodeDetour(std::uintptr_t site, const std::uint32_t* words) {
     std::uintptr_t previous{};
     PfxEntryKind kind{};

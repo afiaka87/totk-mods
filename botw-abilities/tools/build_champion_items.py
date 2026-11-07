@@ -9,7 +9,6 @@ import copy
 import hashlib
 import json
 import struct
-import subprocess
 import sys
 from pathlib import Path
 
@@ -20,6 +19,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path[:0] = [str(ROOT / 'scripts'), str(ROOT / 'mods/code/totk-remote-bomb/tools')]
+from totk_mod_tools import toolbox_step  # noqa: E402
 from totk_mod_tools.textures import gpu, swizzle
 from totk_mod_tools.textures.bntx import Bank
 from totk_mod_tools.zstd_helper import TotkZstd
@@ -172,9 +172,10 @@ def build(args):
     tasks_path = work / 'rename-tasks.json'
     tasks_path.write_text(json.dumps(tasks, indent=2), encoding='utf-8')
     helper = Path(__file__).with_name('rename_champion_icons.ps1')
-    process = subprocess.run(['powershell.exe', '-NoProfile', '-File', str(helper.resolve()),
-                              '-Toolbox', str(args.toolbox.resolve()), '-Tasks', str(tasks_path.resolve())],
-                             capture_output=True, text=True)
+    process = toolbox_step.run('champion-icon-names',
+                               ['powershell.exe', '-NoProfile', '-File', str(helper.resolve()),
+                                '-Toolbox', str(args.toolbox.resolve()), '-Tasks', str(tasks_path.resolve())],
+                               [], [Path(task['output']) for task in tasks])
     (work / 'rename.log').write_text(process.stdout + process.stderr, encoding='utf-8')
     if process.returncode:
         raise ValueError('icon container rename failed; see icons/rename.log')

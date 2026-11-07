@@ -8,6 +8,7 @@
 #include "champions/Audio.hpp"
 #include "champions/Runtime.hpp"
 #include "effects/PrivateEffects.hpp"
+#include "wolf/Runtime.hpp"
 
 // Shared hooks stack in installation order, so Stasis sees controller input first.
 extern "C" void exl_main(void *, void *) {
@@ -17,10 +18,21 @@ extern "C" void exl_main(void *, void *) {
     const bool stasis = stasis::install(base);
     const bool remoteBomb = remote_bomb::install(base);
     const bool cryonis = cryonis::install(base);
+#ifdef BOTW_ABILITIES_WOLF_DIAGNOSTIC
+    const bool wolfReady = botw_abilities::wolf::install(base);
+    const auto wolf = wolfReady ? botw_abilities::wolf::chooseFromWheel : nullptr;
+    const auto wolfCaption = wolfReady ? botw_abilities::wolf::wheelCaption : nullptr;
+    const auto wolfAvailable = wolfReady ? botw_abilities::wolf::canSummon : nullptr;
+#else
+    constexpr botw_abilities::wheel::Choose wolf = nullptr;
+    constexpr botw_abilities::wheel::Caption wolfCaption = nullptr;
+    constexpr botw_abilities::wheel::Available wolfAvailable = nullptr;
+#endif
     const bool page = botw_abilities::wheel::install(base, stasis ? stasis::chooseFromWheel : nullptr,
                                                      cryonis ? cryonis::chooseFromWheel : nullptr,
                                                      remoteBomb ? remote_bomb::chooseSphereFromWheel : nullptr,
-                                                     remoteBomb ? remote_bomb::chooseCubeFromWheel : nullptr);
+                                                     remoteBomb ? remote_bomb::chooseCubeFromWheel : nullptr, wolf,
+                                                     wolfCaption, wolfAvailable);
     const bool championAudio = botw_abilities::champions::audio::install(base);
     const bool champions = championAudio && botw_abilities::champions::install(base);
     Logging.Log("[botw-abilities] suite stasis=%u remote-bomb=%u cryonis=%u wheel-page=%u",

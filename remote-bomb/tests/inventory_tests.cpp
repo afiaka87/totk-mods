@@ -40,6 +40,11 @@ void stock() {
     require(empty.status == inv::Status::Missing && empty.slot == 2 && empty.quantity == 0,
             "stock probe reports a zero-quantity slot as missing");
     require(inv::locateStock(2, cube, read).slot == -1, "absent stock has no slot");
+    require(inv::countEmptySlots(5, read) == 1, "empty-name slots are the room the native add can use");
+    require(inv::countEmptySlots(1, read) == 0, "a pouch with every name taken reports no room");
+    require(inv::countEmptySlots(513, read) == -1, "invalid native capacity cannot be counted");
+    require(inv::countEmptySlots(5, [](unsigned, inv::Record &) { return false; }) == -1,
+            "an unreadable slot leaves the room unknown");
     const auto failed = inv::locateStock(5, sphere, [](unsigned i, inv::Record &record) {
         record = {"Item_Fruit_A", 1};
         return i < 3;

@@ -22,6 +22,10 @@
 #include <cstring>
 #include <type_traits>
 
+#if defined(BOTW_ABILITIES_STREAM_TEXTURES)
+// RenderPools.ld keeps this block in place for the GPU, so the suite holds no second copy.
+extern "C" unsigned char __bomb_code_start__[], __bomb_code_end__[];
+#endif
 namespace remote_bomb::render {
 namespace {
 using render_policy::Camera;
@@ -71,10 +75,18 @@ constexpr float kOutlineHeight = .004f;
 float centres[2][3]{};
 NVNtexture textures[kTextureCount]{};
 int textureIds[kTextureCount]{}, samplerId = -1;
+#if defined(BOTW_ABILITIES_STREAM_TEXTURES)
+unsigned char *codeBlock() { return __bomb_code_start__; }
+std::size_t codeBlockBytes() { return std::size_t(__bomb_code_end__ - __bomb_code_start__); }
+#else
 alignas(4096) unsigned char codeMemory[codePoolBytes()]{};
+unsigned char *codeBlock() { return codeMemory; }
+constexpr std::size_t codeBlockBytes() { return sizeof(codeMemory); }
+#endif
 alignas(4096) unsigned char meshMemory[131072]{};
-// HUD-only storage retains alignment headroom; every native allocation is bounds-checked.
-alignas(65536) unsigned char textureMemory[(kHudOnly ? 12 : 22) * 65536]{};
+// The HUD-only set logs texture_bytes=724992, exactly this many pages. Allocations stay bounds-checked.
+__attribute__((section(".bss.pool.4.bomb_textures")))
+alignas(65536) unsigned char textureMemory[kHudOnly ? 177 * 4096 : 22 * 65536]{};
 NVNbufferAddress meshAddress{}, indexAddress[2]{};
 bool initialized{}, attempted{};
 unsigned refusals{};
@@ -153,16 +165,26 @@ bool initializePools() {
     };
     unsigned offsets[std::size(shaderStages)]{}, codeBytes{};
     for (unsigned i = 0; i < std::size(shaderStages); ++i) {
+#if defined(BOTW_ABILITIES_STREAM_TEXTURES)
+        const auto offset = std::size_t(shaderStages[i].code - codeBlock());
+        if (offset > codeBlockBytes() || codeBlockBytes() - offset < shaderStages[i].size)
+            return refuse(4);
+        offsets[i] = unsigned(offset);
+        codeBytes = std::max(codeBytes, offsets[i] + shaderStages[i].size);
+#else
         offsets[i] = (codeBytes+255) & ~255u;
         codeBytes = offsets[i] + shaderStages[i].size;
+#endif
     }
     int padding = -1;
     integer(device, NVN_DEVICE_INFO_SHADER_CODE_MEMORY_POOL_PADDING_SIZE, &padding);
-    if (padding < 0 || codeBytes + unsigned(padding) > sizeof(codeMemory))
+    if (padding < 0 || codeBytes + unsigned(padding) > codeBlockBytes())
         return refuse(4);
+#if !defined(BOTW_ABILITIES_STREAM_TEXTURES)
     for (unsigned i = 0; i < std::size(shaderStages); ++i)
         std::memcpy(codeMemory + offsets[i], shaderStages[i].code, shaderStages[i].size);
-    if (!pool(codePool, codeMemory, sizeof(codeMemory), NVN_MEMORY_POOL_FLAGS_SHADER_CODE) ||
+#endif
+    if (!pool(codePool, codeBlock(), codeBlockBytes(), NVN_MEMORY_POOL_FLAGS_SHADER_CODE) ||
         (!kHudOnly && !pool(meshPool, meshMemory, sizeof(meshMemory), 0)) ||
         !pool(texturePool, textureMemory, sizeof(textureMemory), 0))
         return refuse(5);
@@ -181,7 +203,7 @@ bool initializePools() {
         const auto centre = render_policy::centre(mesh.rows, mesh.indices, mesh.indexCount);
         std::memcpy(centres[form], centre.data(), sizeof(centres[form]));
     }
-    flush(&codePool, 0, sizeof(codeMemory));
+    flush(&codePool, 0, codeBlockBytes());
     if constexpr (!kHudOnly) flush(&meshPool, 0, sizeof(meshMemory));
 #if defined(BOTW_ABILITIES_NATIVE_SPHERE) && defined(BOTW_ABILITIES_NATIVE_CUBE)
     NVNprogram *programs[]{&hudProgram};

@@ -70,8 +70,46 @@ def merge_byml(clean, members):
     return encode_byml(merge_values(base, values), clean)
 
 
+# Saved bytes per appended element of a native array whose default may grow (the Materials pouch).
+GROWN_ARRAYS = {'String64Array': 64, 'IntArray': 4}
+
+
+def without(row, keys):
+    return {k: v for k, v in row.items() if k not in keys}
+
+
+def grown_elements(original, row, path):
+    """Elements appended to a native array default; the prefix and fill value stay, OriginalSize may track it."""
+    before, after = original['DefaultValue'], row['DefaultValue']
+    if (without(row, ('DefaultValue', 'OriginalSize')) != without(original, ('DefaultValue', 'OriginalSize'))
+            or len(after) <= len(before) or after[:len(before)] != before
+            or any(value != before[-1] for value in after[len(before):])):
+        raise ValueError(f'{path}: native save flag changed')
+    if row['OriginalSize'] != original['OriginalSize'] and not (
+            int(original['OriginalSize']) == len(before) and int(row['OriginalSize']) == len(after)):
+        raise ValueError(f'{path}: native save flag changed')
+    return len(after) - len(before)
+
+
+def grow(metadata, key, amount, index=None):
+    if index is None:
+        metadata[key] = type(metadata[key])(int(metadata[key]) + amount)
+    else:
+        old = metadata[key][index]
+        metadata[key][index] = type(old)(int(old) + amount)
+
+
+def save_index(metadata, row, path):
+    index = int(row['SaveFileIndex'])
+    if index < -1 or index >= len(metadata['SaveDirectory']):
+        raise ValueError(f'{path}: invalid save file index')
+    if index >= 0 and not metadata['SaveDirectory'][index]:
+        raise ValueError(f'{path}: unused save directory')
+    return index
+
+
 def saved_metadata(clean, data):
-    """Extend native save allocations for new scalar flags and additive struct registries."""
+    """Extend native save allocations for new scalar flags, additive struct registries and grown arrays."""
     metadata = copy.deepcopy(clean['MetaData'])
     for kind, entries in data.items():
         base = indexed(clean['Data'].get(kind, []), 'Hash', kind)
@@ -80,32 +118,37 @@ def saved_metadata(clean, data):
             raise ValueError(f'{kind}: native save flags removed')
         for identity, original in base.items():
             row = current[identity]
+            path = f'{kind}/{identity}'
             if row == original:
                 continue
-            if kind != 'Struct' or {k: v for k, v in row.items() if k != 'DefaultValue'} != {
-                    k: v for k, v in original.items() if k != 'DefaultValue'}:
-                raise ValueError(f'{kind}/{identity}: native save flag changed')
-            before = indexed(original['DefaultValue'], 'Hash', f'Struct/{identity}')
-            after = indexed(row['DefaultValue'], 'Hash', f'Struct/{identity}')
+            if kind in GROWN_ARRAYS:
+                # A grown array adds elements to its save file in place; no table entry is added.
+                added = grown_elements(original, row, path) * GROWN_ARRAYS[kind]
+                index = save_index(metadata, row, path)
+                if index >= 0:
+                    grow(metadata, 'AllDataSaveSize', added)
+                    grow(metadata, 'SaveDataSize', added, index)
+                continue
+            # A struct may gain registry entries or usable slots (Size); nothing else may change.
+            if kind != 'Struct' or without(row, ('DefaultValue', 'Size')) != without(original, ('DefaultValue', 'Size')) \
+                    or int(row.get('Size', 0)) < int(original.get('Size', 0)):
+                raise ValueError(f'{path}: native save flag changed')
+            before = indexed(original['DefaultValue'], 'Hash', path)
+            after = indexed(row['DefaultValue'], 'Hash', path)
             if any(after.get(key) != value for key, value in before.items()):
-                raise ValueError(f'Struct/{identity}: native registry entry changed')
+                raise ValueError(f'{path}: native registry entry changed')
         for identity in current.keys() - base.keys():
             if kind == 'Struct':
                 continue
             if kind not in ('Bool', 'Int', 'UInt', 'Float', 'Enum'):
                 raise ValueError(f'{kind}: new save type requires a verified allocation recipe')
-            row = current[identity]
-            index = row['SaveFileIndex']
-            if index < -1 or index >= len(metadata['SaveDirectory']):
-                raise ValueError(f'{kind}/{identity}: invalid save file index')
-            for key in ('AllDataSaveOffset', 'AllDataSaveSize'):
-                metadata[key] = type(metadata[key])(int(metadata[key]) + 8)
+            path = f'{kind}/{identity}'
+            index = save_index(metadata, current[identity], path)
+            grow(metadata, 'AllDataSaveOffset', 8)
+            grow(metadata, 'AllDataSaveSize', 8)
             if index >= 0:
-                if not metadata['SaveDirectory'][index]:
-                    raise ValueError(f'{kind}/{identity}: unused save directory')
-                for key in ('SaveDataOffsetPos', 'SaveDataSize'):
-                    old = metadata[key][index]
-                    metadata[key][index] = type(old)(int(old) + 8)
+                grow(metadata, 'SaveDataOffsetPos', 8, index)
+                grow(metadata, 'SaveDataSize', 8, index)
     return metadata
 
 

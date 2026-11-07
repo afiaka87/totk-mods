@@ -87,6 +87,22 @@ static Status grant(std::uintptr_t base, Shape shape, Upgrade upgrade, bool work
     const auto existing = stock(base, manager, pouch, name.text);
     if (existing != Status::Missing && (onlyMissing || existing != Status::Present))
         return existing;
+    // The native add (CE0EEC) writes the name into the first empty slot of the native capacity and returns 0 when
+    // every slot is taken. A full pouch is reported once instead of retrying every second (wolf-compact-08).
+    if (existing == Status::Missing) {
+        Reader reader(base, pouch);
+        const int empty = reader.ready() ? countEmptySlots(reader.count, [&](unsigned i, Record &out) {
+            alignas(8) std::uint64_t record[2]{};
+            return reader.name(i, out.name, record, true) == NameStage::None;
+        }) : -1;
+        if (empty == 0) {
+            static unsigned attempts{};
+            if (report(attempts))
+                Logging.Log("[remote-bomb] INVENTORY_FULL actor=%s capacity=%u attempt=%u", name.text, reader.count,
+                            attempts);
+            return Status::Full;
+        }
+    }
     if (!writeRoom(manager))
         return Status::Deferred;
     const auto empty = eng::readMemory<void *>(base + 0x462E0F0);

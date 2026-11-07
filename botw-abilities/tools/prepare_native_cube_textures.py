@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import shutil
 import struct
+import os
 import subprocess
 import sys
 
@@ -17,7 +18,20 @@ import zstandard as zstd
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0,str(ROOT/'scripts'))
+from totk_mod_tools import toolbox_step
 from totk_mod_tools.textures.swizzle import swizzle, deswizzle
+
+
+def encode(encoder,png,astc):
+    """Rosetta has no AVX2, so macOS replays the output Windows saved for the same image."""
+    name=f'native-cube-astc/{png.stem}'
+    if sys.platform=='darwin':
+        toolbox_step.replay(name,[png],[astc])
+        return
+    # The encoder is a Windows program; other systems run it under Wine.
+    process=subprocess.run([*([] if os.name=='nt' else ['wine']),str(encoder),'-cl',str(png),str(astc),'4x4','-thorough','-silent','-j','2'],check=True)
+    if os.name=='nt':
+        toolbox_step.save(name,[png],[astc],process)
 
 
 def build(args):
@@ -44,7 +58,7 @@ def build(args):
             resized=image if mip==0 else image.resize((mw,mh),Image.Resampling.LANCZOS)
             png=scratch/f'{suffix}-{mip}.png'; astc=png.with_suffix('.astc')
             resized.save(png)
-            subprocess.run([str(args.encoder),'-cl',str(png),str(astc),'4x4','-thorough','-silent','-j','2'],check=True)
+            encode(args.encoder,png,astc)
             encoded=astc.read_bytes()
             if encoded[:7]!=bytes.fromhex('13aba15c040401'):
                 raise ValueError('Unexpected ASTC container')

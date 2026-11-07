@@ -22,6 +22,7 @@ constexpr std::uintptr_t kEffectManagerOffset = 0xF0, kBankDictionaryOffset = 0x
 constexpr char kPath[] = "content:/BotwAbilities/Effects/Private.belnk";
 static_assert(kPrivateEffectBytes < 64 * 1024);
 // Native relocation writes pointers into these bytes and retains them for the process lifetime.
+__attribute__((section(".bss.pool.3.effect_bytes")))
 alignas(16) std::array<std::uint8_t, kPrivateEffectBytes> g_bytes;
 std::atomic_flag g_attempted{};
 std::uintptr_t g_base{};

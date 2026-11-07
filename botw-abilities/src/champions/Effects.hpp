@@ -10,6 +10,8 @@ namespace botw_abilities::champions::effects {
 bool install(std::uintptr_t base);
 void reset();
 bool pulse(Effect effect, float seconds, float delay = 0);
+// A pulse pinned to one spot instead of following the player (the wolf's flashes fire where he stands).
+bool pulseAt(Effect effect, float seconds, const totk::core::WorldTransform& placement);
 void hold(Effect effect, bool active);
 bool launchUpdraft(const totk::core::WorldTransform& placement);
 bool launchStrike(const totk::core::WorldTransform& placement);

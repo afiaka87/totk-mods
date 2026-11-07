@@ -38,11 +38,13 @@ template <class Fn> Fn call(std::uintptr_t offset) {
     return reinterpret_cast<Fn>(g_base + offset);
 }
 
-std::uintptr_t speaker() {
+// The first instance of a loaded sound user. UI_GlobalSound has one; an actor's own user has one per
+// actor, each playing at its actor. Kept out of line: both callers would otherwise carry the walk.
+[[gnu::noinline]] std::uintptr_t instanceOf(const char* wanted, int maxUsers, int* instanceCount = nullptr) {
     const auto system = readMemory<std::uintptr_t>(g_base + kSoundSystem);
     if (!isPlausibleAddress(system)) return 0;
     const int count = readMemory<int>(system + 32), link = readMemory<int>(system + 36);
-    if (count < 0 || count > 256 || link < 0 || link > 1024) return 0;
+    if (count < 0 || count > maxUsers || link < 0 || link > 1024) return 0;
     const auto anchor = system + 16;
     auto node = readMemory<std::uintptr_t>(system + 24);
     for (int i = 0; i < count && node != anchor && isPlausibleAddress(node); ++i) {
@@ -50,9 +52,10 @@ std::uintptr_t speaker() {
         const auto user = node - static_cast<unsigned>(link);
         const auto name = readMemory<std::uintptr_t>(user + 16);
         if (totk::engine::isPlausibleStringAddress(name) &&
-            std::strcmp(reinterpret_cast<const char*>(name), "UI_GlobalSound") == 0) {
+            std::strcmp(reinterpret_cast<const char*>(name), wanted) == 0) {
             const int instances = readMemory<int>(user + 48), offset = readMemory<int>(user + 52);
             const auto head = readMemory<std::uintptr_t>(user + 32);
+            if (instanceCount) *instanceCount = instances;
             if (instances < 1 || instances > 1024 || offset < 0 || offset > 1024 ||
                 head < static_cast<unsigned>(offset)) return 0;
             const auto instance = head - static_cast<unsigned>(offset);
@@ -66,8 +69,31 @@ std::uintptr_t speaker() {
     return 0;
 }
 
+std::uintptr_t speaker() { return instanceOf("UI_GlobalSound", 256); }
+
+struct Started {
+    bool found{}, emitted{};
+    std::uintptr_t table{};
+    Handle handle{};
+};
+
+// Looks the call up in the instance's own user and starts it there.
+Started startCall(std::uintptr_t instance, const char* name) {
+    const auto owner = readMemory<std::uintptr_t>(instance + 0x58);
+    const auto resource = readMemory<std::uintptr_t>(owner + 0x18);
+    Locator locator{};
+    Started started;
+    started.found = call<bool (*)(std::uintptr_t, Locator*, const char*)>(kFindAsset)(resource, &locator, name);
+    started.table = reinterpret_cast<std::uintptr_t>(locator.table);
+    started.emitted = started.found && donorTableAddress(started.table);
+    if (started.emitted)
+        call<std::uintptr_t (*)(std::uintptr_t, const Locator*, Handle*, void*)>(kEmit)(instance, &locator,
+                                                                                       &started.handle, nullptr);
+    return started;
+}
+
 std::array<RefusalCounter, kAssets.size()> g_refusals{};
-RefusalCounter g_startRefusals;
+RefusalCounter g_startRefusals, g_userRefusals;
 
 Handle emit(std::size_t cue) {
     const auto instance = speaker();
@@ -76,20 +102,11 @@ Handle emit(std::size_t cue) {
             Logging.Log("[champions] AUDIO_REFUSED cue=%zu reason=speaker count=%u", cue, g_refusals[cue].count);
         return {};
     }
-    const auto owner = readMemory<std::uintptr_t>(instance + 0x58);
-    const auto resource = readMemory<std::uintptr_t>(owner + 0x18);
-    Locator locator{};
-    const bool found = call<bool (*)(std::uintptr_t, Locator*, const char*)>(kFindAsset)(resource, &locator, kAssets[cue]);
-    const auto address = reinterpret_cast<std::uintptr_t>(locator.table);
-    if (!found || !donorTableAddress(address)) {
-        if (g_refusals[cue].report())
-            Logging.Log("[champions] AUDIO_REFUSED cue=%zu reason=private-call found=%u table=%p count=%u", cue,
-                        unsigned(found), reinterpret_cast<void*>(address), g_refusals[cue].count);
-        return {};
-    }
-    Handle handle;
-    call<std::uintptr_t (*)(std::uintptr_t, const Locator*, Handle*, void*)>(kEmit)(instance, &locator, &handle, nullptr);
-    return handle;
+    const auto started = startCall(instance, kAssets[cue]);
+    if (!started.emitted && g_refusals[cue].report())
+        Logging.Log("[champions] AUDIO_REFUSED cue=%zu reason=private-call found=%u table=%p count=%u", cue,
+                    unsigned(started.found), reinterpret_cast<void*>(started.table), g_refusals[cue].count);
+    return started.handle;
 }
 
 void fade(Handle handle) {
@@ -120,6 +137,18 @@ bool install(std::uintptr_t base) {
 }
 
 bool play(Cue cue) { return start(cue, false); }
+
+bool playOn(const char* user, const char* name) {
+    // A busy scene loads far more sound users than the UI walk expects.
+    int instances = 0;
+    const auto instance = g_ready ? instanceOf(user, 4096, &instances) : 0;
+    const auto started = instance ? startCall(instance, name) : Started{};
+    if ((!started.emitted || instances != 1) && g_userRefusals.report())
+        Logging.Log("[champions] AUDIO_USER user=%s call=%s ready=%u instances=%d found=%u emitted=%u count=%u", user,
+                    name, unsigned(g_ready), instances, unsigned(started.found), unsigned(started.emitted),
+                    g_userRefusals.count);
+    return started.emitted && started.handle;
+}
 
 bool sustain(Cue cue, bool active) {
     return active ? start(cue, true) : stop(cue);

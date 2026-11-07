@@ -3,6 +3,7 @@
 """Validate private actor output against the original data and clean native tables."""
 from __future__ import annotations
 import argparse
+import copy
 import importlib.util
 import json
 import hashlib
@@ -277,17 +278,37 @@ class ResourceTests(unittest.TestCase):
         relative = 'GameData/GameDataList.Product.110.byml.zs'
         stock = byml.Byml(self.z.decompress(args.romfs/relative)).parse()
         actual = byml.Byml(self.z.decompress(args.candidate/'romfs'/relative)).parse()
-        self.assertEqual(actual['MetaData'], stock['MetaData'])
+        # Only the Materials pouch (510 slots, The Second Quest's schema) changes the stock rows and save sizes.
+        enlarged = copy.deepcopy(stock)
+        materials = build_inventory.enlarge_materials(enlarged)
+        self.assertEqual(materials, {'capacity': 510, 'previous': 255, 'saved_bytes': 38760})
+        self.assertEqual(self.receipt['inventory']['materials'], materials)
+        self.assertEqual(actual['MetaData'], enlarged['MetaData'])
+        for key, value in stock['MetaData'].items():
+            if key == 'SaveDataSize':
+                self.assertEqual([a - b for a, b in zip(actual['MetaData'][key], value)], [38760, 0, 0, 0, 0, 0, 0])
+            elif key == 'AllDataSaveSize':
+                self.assertEqual(actual['MetaData'][key] - value, 38760)
+            else:
+                self.assertEqual(actual['MetaData'][key], value)
         maps = (0xADE0EF78,0x34BF6C2D)
         for kind,rows in stock['Data'].items():
             old = {r['Hash']:r for r in rows}; new = {r['Hash']:r for r in actual['Data'][kind]}
+            grown = {r['Hash']:r for r in enlarged['Data'][kind]}
             for h,row in old.items():
                 if kind=='Struct' and h in maps:
                     before={r['Hash']:r for r in row['DefaultValue']}
                     after={r['Hash']:r for r in new[h]['DefaultValue']}
                     for key,value in before.items(): self.assertEqual(after[key],value)
                     self.assertEqual(len(after)-len(before),4)
-                else: self.assertEqual(new[h],row)
+                else: self.assertEqual(new[h],grown[h])
+        pouch = {r['Hash']:r for r in actual['Data']['Struct']}[build_inventory.MATERIALS]
+        self.assertEqual(pouch['Size'], 510)
+        self.assertEqual(pouch['DefaultValue'], {r['Hash']:r for r in stock['Data']['Struct']}[build_inventory.MATERIALS]['DefaultValue'])
+        lengths = {h: len({r['Hash']:r for r in actual['Data'][kind]}[h]['DefaultValue'])
+                   for kind, hashes in build_inventory.MATERIAL_ARRAYS.items() for h in hashes}
+        self.assertEqual(lengths, {0xd96ebf12: 1020, 0xde2d8500: 1020, 0xe50dcb79: 1020, 0xb532a540: 1020, 0x3bd1dfea: 510})
+        self.assertEqual({r['Hash']:r for r in actual['Data']['IntArray']}[0x3bd1dfea]['OriginalSize'], 510)
         flags={r['Hash']:r for r in actual['Data']['Bool']}
         for row in self.receipt['inventory']['discovery']:
             self.assertFalse(flags[row['flag']]['DefaultValue'])

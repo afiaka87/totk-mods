@@ -5,7 +5,8 @@
 #include <cstdint>
 
 namespace remote_bomb::inventory {
-enum class Status { Unavailable, Deferred, Missing, Present, Granted, Rejected };
+// Full: every Materials slot holds a name, so the native add has nowhere to write (CE0EEC returns 0).
+enum class Status { Unavailable, Deferred, Missing, Present, Granted, Rejected, Full };
 struct Stock {
     Status status{};
     int slot = -1, quantity{};

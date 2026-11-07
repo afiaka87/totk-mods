@@ -66,7 +66,8 @@ struct Workspace {
     std::uint64_t tick = UINT64_MAX, scene = 0, time = 0;
     std::uint32_t channel = 0, playerId = 0;
 };
-std::array<Workspace, 6> g_workspaces;
+// Observed peak is three concurrent poses; a fourth keeps one in reserve.
+std::array<Workspace, 4> g_workspaces;
 std::atomic<unsigned> g_leased{}, g_peakLeased{};
 struct Lease {
     Workspace* work = nullptr;

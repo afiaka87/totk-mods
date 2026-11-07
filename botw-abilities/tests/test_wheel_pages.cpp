@@ -1,8 +1,35 @@
 #include "doctest.h"
 #include "WheelPages.hpp"
+#include "../src/wolf/Revival.hpp"
 #include <ostream>
 #include <string_view>
 using namespace botw_abilities::wheel;
+
+TEST_CASE("Wolf revival lasts seven gameplay minutes and expires on the boundary") {
+    using namespace botw_abilities::wolf;
+    CHECK(revivalRemaining(100, 0, false) == 0);
+    CHECK(revivalRemaining(100, 100, true) == 12600);
+    CHECK(revivalRemaining(400, 100, true) == 12300);
+    CHECK(revivalRemaining(12699, 100, true) == 1);
+    CHECK(revivalRemaining(12700, 100, true) == 0);
+    CHECK(revivalRemaining(13000, 100, true) == 0);
+}
+
+TEST_CASE("Resting Wolf retains his icon but cannot be chosen; other abilities and native page are unchanged") {
+    const unsigned offers = offer(Choice::Wolf) | offer(Choice::Stasis);
+    const unsigned resting = offer(Choice::Wolf);
+    const Wedge native{"native", true, true};
+    CHECK(std::string_view(plan(1, 2, native, offers, resting).path) == "UI/Tex/Icon/BotwWolfLink.bntx");
+    CHECK_FALSE(plan(1, 2, native, offers, resting).valid);
+    CHECK(exitPage(1, 2, false, offers, resting).choice == Choice::None);
+    CHECK(exitPage(1, 2, false, offers, resting).cancel);
+    CHECK(plan(1, 4, native, offers, resting).valid);
+    CHECK(exitPage(1, 4, false, offers, resting).choice == Choice::Stasis);
+    CHECK(plan(0, 2, native, offers, resting).valid);
+    CHECK(plan(0, 2, native, offers, resting).check);
+    CHECK(plan(1, 2, native, offers, 0).valid);
+    CHECK(exitPage(1, 2, false, offers, 0).choice == Choice::Wolf);
+}
 
 namespace {
 constexpr std::uint64_t L = 1ull << 6, R = kButtonR;
@@ -87,6 +114,17 @@ TEST_CASE("Both remote bomb wedges choose their own shape and respect cancellati
     CHECK(exitPage(1,1,false,offer(Choice::Sphere)).choice == Choice::None);
     CHECK(std::string_view(plan(1,0,{},offers).path)=="UI/Tex/Icon/BotwBomb.bntx");
     CHECK(std::string_view(plan(1,1,{},offers).path)=="UI/Tex/Icon/BotwBombCube.bntx");
+}
+
+TEST_CASE("Wolf uses the right wedge only when installed and never selects a vanilla ability") {
+    const auto offers = kBoth | offer(Choice::Wolf);
+    CHECK(plan(1, 2, {}, offers).valid);
+    CHECK(exitPage(1, 2, false, offers).choice == Choice::Wolf);
+    CHECK(exitPage(1, 2, false, offers).cancel);
+    CHECK(exitPage(1, 2, true, offers).choice == Choice::None);
+    CHECK(exitPage(0, 2, false, offers).choice == Choice::None);
+    CHECK_FALSE(plan(1, 2, {}, kBoth).valid);
+    CHECK(exitPage(1, 2, false, kBoth).choice == Choice::None);
 }
 
 TEST_CASE("Releasing L on the abilities page picks the wedge and always closes as cancelled") {

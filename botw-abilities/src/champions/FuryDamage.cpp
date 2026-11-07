@@ -15,6 +15,13 @@ constexpr CodeSite kSites[]{
     {0x9E4838,0xA9BD7BFD,0xF9000BF5}, {0xA07954,0xA9BE7BFD,0xA9014FF4},
     {0x9F4768,0xD10103FF,0xA9017BFD},
 };
+// InternalDamageCalculator::calculate's own packet types: 9 is condition (element) damage, 13 the
+// custom internal damage that only equipment and special-part extensions compute, and 4 the normal
+// physical damage. registerDamage (sub_9E4838) applies nothing unless both the type and the mask are
+// non-zero, so a physical hit must carry type 4 with the game's own physical mask 0x40000; the mask
+// is what the earlier bite build left at zero, so its damage registered but never reduced health
+// (wolf-compact-11, Ryubing). Physical damage is not voided by armor the way elemental damage is.
+constexpr std::uint32_t kPhysicalType = 4, kPhysicalMask = 0x40000;
 std::uintptr_t g_base{}, g_scene{};
 std::uint64_t g_generation{};
 FuryHits<64> g_hits;
@@ -70,14 +77,20 @@ void applyDamage(void* calculator, const void* context) {
     const auto hit = take(actor,false,ready);
     if (!hit) return;
     FuryDamagePacket packet{.damage = hit->damage};
-    if (const auto extension = read<void*>(calculator,32)) {
+    if (hit->physical) {
+        // A bite is normal physical damage, paired with the game's physical mask so registerDamage
+        // accumulates it into the target's health. Skipping the element extension keeps the humanoid
+        // enemies' condition modifier (0x16F5210), which voids elemental damage behind armor, out of it.
+        packet.type = kPhysicalType;
+        packet.mask = kPhysicalMask;
+    } else if (const auto extension = read<void*>(calculator,32)) {
         const auto vtable = read<const void*>(extension,0);
         using Modify = void(*)(void*,FuryDamagePacket*);
         read<Modify>(vtable,160)(extension,&packet);
     }
     call<void(*)(void*,const void*,const FuryDamagePacket*)>(0x9E4838)(calculator,context,&packet);
-    Logging.Log("[champions] FURY_DAMAGE actor=%p id=%u requested=%u submitted=%d",
-        actor,identity(actor).id,unsigned(hit->damage),packet.damage);
+    Logging.Log("[champions] FURY_DAMAGE actor=%p id=%u requested=%u submitted=%d type=%u",
+        actor,identity(actor).id,unsigned(hit->damage),packet.damage,packet.type);
 }
 
 HOOK_DEFINE_TRAMPOLINE(UpdateChemical) {

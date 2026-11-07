@@ -30,7 +30,7 @@ inline bool chainedAbsoluteTail(std::uintptr_t site, std::uint32_t first) {
     const auto previousTarget = readMemory<std::uintptr_t>(site + (hasAlignmentNop ? 12 : 8));
     const auto immediate = std::int64_t(first & 0x03ffffffu);
     const auto displacement = (immediate >= 0x02000000 ? immediate - 0x04000000 : immediate) * 4;
-    const auto currentTarget = site + displacement;
+    const std::uintptr_t currentTarget = site + displacement;
     for (const auto target : {previousTarget, currentTarget}) {
         if (!target || (target & 3) || (target >= site && target < site + 20)) return false;
         MemoryInfo info{};

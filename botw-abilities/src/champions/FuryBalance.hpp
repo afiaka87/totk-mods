@@ -10,6 +10,8 @@ namespace botw_abilities::champions {
 struct FuryBalance {
     std::uint16_t damage{};
     std::uint16_t reactionFrames{};
+    // Plain damage with no element: skips the target's condition-damage modifier (Wolf Link's bite).
+    bool physical{};
     constexpr bool operator==(const FuryBalance&) const = default;
 };
 struct FuryEnemy {

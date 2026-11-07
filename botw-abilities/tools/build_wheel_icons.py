@@ -68,6 +68,33 @@ def rename(bank: bytearray, name: str) -> None:
     bank[NAME_AT:NAME_END] = entry.ljust(NAME_END - NAME_AT, b"\0")
 
 
+def icon_bank(template: bytes, blocks: bytes, name: str) -> bytearray:
+    """Copy the template bank with a new texture and name, checking every byte written."""
+    from totk_mod_tools.textures import swizzle
+    from totk_mod_tools.textures.bntx import Bank
+
+    info = Bank(template).textures[0]
+    ew, eh = info.elements
+    size = swizzle.swizzled_size(ew, eh, BLOCK_BYTES, info.block_height)
+    surface = template[info.data_offset : info.data_offset + size]
+    if bytes(swizzle.swizzle(Bank(template).linear(info), ew, eh, BLOCK_BYTES, info.block_height)) != surface:
+        raise ValueError("the template does not round-trip through the swizzle")
+    if len(blocks) != ew * eh * BLOCK_BYTES:
+        raise ValueError(f"{name}: encoder wrote {len(blocks)} bytes")
+    bank = bytearray(template)
+    bank[info.data_offset : info.data_offset + size] = swizzle.swizzle(
+        blocks, ew, eh, BLOCK_BYTES, info.block_height)
+    rename(bank, name)
+    out = Bank(bytes(bank)).textures[0]
+    if (out.name, out.width, out.height, out.format_id, out.mip_count) != (
+        name, SIZE, SIZE, ASTC_SRGB, 1
+    ):
+        raise ValueError(f"{name}: wrote {out}")
+    if Bank(bytes(bank)).linear(out) != blocks or TEMPLATE_NAME.encode() in bank:
+        raise ValueError(f"{name}: the written bank does not hold the new texture alone")
+    return bank
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, required=True)
@@ -79,7 +106,6 @@ def main() -> int:
     sys.path.insert(0, str(args.repo / "scripts"))
     import astc_encoder as astc
     import oead
-    from totk_mod_tools.textures import swizzle
     from totk_mod_tools.textures.bntx import Bank
     from totk_mod_tools.zstd_helper import TotkZstd
 
@@ -90,31 +116,13 @@ def main() -> int:
         TEMPLATE_NAME, SIZE, SIZE, ASTC_SRGB, 1
     ):
         raise ValueError(f"unexpected template texture {info}")
-    ew, eh = info.elements
-    size = swizzle.swizzled_size(ew, eh, BLOCK_BYTES, info.block_height)
-    surface = template[info.data_offset : info.data_offset + size]
-    if bytes(swizzle.swizzle(Bank(template).linear(info), ew, eh, BLOCK_BYTES, info.block_height)) != surface:
-        raise ValueError("the template does not round-trip through the swizzle")
-
     receipt = {"template": TEMPLATE, "template_sha256": sha256(template), "icons": {}}
     for name, actor in ICONS.items():
         rgba = botw_icon(args.botw_romfs, actor, oead, Bank)
         blocks, decoded = encode(rgba, astc)
-        if len(blocks) != ew * eh * BLOCK_BYTES:
-            raise ValueError(f"{name}: encoder wrote {len(blocks)} bytes")
         error = max(abs(a - b) for a, b in zip(rgba, decoded, strict=True))
         mean = sum(abs(a - b) for a, b in zip(rgba, decoded, strict=True)) / len(rgba)
-        bank = bytearray(template)
-        bank[info.data_offset : info.data_offset + size] = swizzle.swizzle(
-            blocks, ew, eh, BLOCK_BYTES, info.block_height)
-        rename(bank, name)
-        out = Bank(bytes(bank)).textures[0]
-        if (out.name, out.width, out.height, out.format_id, out.mip_count) != (
-            name, SIZE, SIZE, ASTC_SRGB, 1
-        ):
-            raise ValueError(f"{name}: wrote {out}")
-        if Bank(bytes(bank)).linear(out) != blocks or TEMPLATE_NAME.encode() in bank:
-            raise ValueError(f"{name}: the written bank does not hold the new texture alone")
+        bank = icon_bank(template, blocks, name)
         target = args.output / f"UI/Tex/Icon/{name}.bntx.zs"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(z.compress(bytes(bank), target.name))

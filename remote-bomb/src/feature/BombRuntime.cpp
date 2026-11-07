@@ -361,7 +361,8 @@ void execute(Command command, bool workerAdvanced) {
         const auto status = inventory::ensure(state.base, command.shape, state.gameplay.upgrade,
                                                workerAdvanced);
         const bool accepted = status == inventory::Status::Granted || status == inventory::Status::Present;
-        state.inventoryRetryFrames[form] = accepted ? 0.f : 30.f;
+        // A full Materials pouch cannot change until the player uses or drops something, so it is rechecked every 30 s.
+        state.inventoryRetryFrames[form] = accepted ? 0.f : status == inventory::Status::Full ? 900.f : 30.f;
         apply({accepted ? Event::Provisioned : Event::CreationFailed, command.shape, command.ticket});
     } else if (command.effect == Effect::Detonate) {
         state.detonationFrames[form] = 0.f;

@@ -52,11 +52,16 @@ def effect_specs():
         'DarukImpact': ('Npc_SageLight_Yunbo_Impact_String_Soul', 'Daruk', 'Sage_Soul_Goron'),
         'UrbosaRange': ('Npc_Rouge_LightningAttack_Area', 'Urbosa', 'Sage_Soul_Gerudo'),
         'UrbosaBolt': ('Chm_Lightning_Sage_Soul_Gerudo', 'Urbosa', 'static'),
+        # The wolf keeps the sages' own look: tint 1 leaves the native colors untouched.
+        'WolfArrive': ('Npc_Sage_FollowSphere_Sage_Appear', 'Wolf', 'static'),
+        'WolfLeave': ('Npc_Sage_FollowSphere_Sage_Disappear', 'Wolf', 'static'),
     })
     return effects
 
 
 def tint_for(key, hero):
+    if hero == 'Wolf':
+        return (1.0, 1.0, 1.0)
     if key.startswith(('DarukAura','DarukImpact')):
         return (0.08,0.7,1.0)
     if key.startswith('DarukShell'):

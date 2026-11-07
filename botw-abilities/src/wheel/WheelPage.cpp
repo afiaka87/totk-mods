@@ -16,7 +16,9 @@ using eng::writeMemory;
 using namespace game;
 
 std::uintptr_t g_base{};
-Choose g_stasis{}, g_cryonis{}, g_sphere{}, g_cube{};
+Choose g_stasis{}, g_cryonis{}, g_sphere{}, g_cube{}, g_wolf{};
+Caption g_wolfCaption{};
+Available g_wolfAvailable{};
 unsigned g_offers{};
 std::atomic<bool> g_paging{};
 std::atomic<unsigned> g_turns{};
@@ -26,7 +28,7 @@ PageInput g_input;
 // One wheel opening, owned by the UI thread.
 struct Session {
     std::uintptr_t screen{};
-    unsigned page{}, consumed{};
+    unsigned page{}, consumed{}, disabled{};
     std::int32_t captionCursor{-1};
     bool exiting{};
     Wedge native[kWedges]{};
@@ -85,7 +87,7 @@ void showIcon(std::uintptr_t wedge, const char *path) {
 void applyPage() {
     for (std::size_t i = 0; i < kWedges; ++i) {
         const auto wedge = wedgeAt(i);
-        const auto shown = plan(g.page, i, g.native[i], g_offers);
+        const auto shown = plan(g.page, i, g.native[i], g_offers, g.disabled);
         showIcon(wedge, shown.path);
         call<SetFlag>(offset::kSetValid)(wedge, shown.valid);
         call<SetFlag>(offset::kSetCheck)(wedge, shown.check);
@@ -151,26 +153,46 @@ void updated(std::uintptr_t screen) {
     const auto pending = turns - g.consumed;
     g.consumed = turns;
     const auto cursor = readMemory<std::int32_t>(screen + field::kCursor);
-    if (cursor < 0 || cursor >= std::int32_t(kWedges)) {
-        if (pending)
-            Logging.Log("[botw-abilities] WHEEL_PAGE_IGNORED reason=cursor cursor=%d", cursor);
-        return;
-    }
+    const bool aimed = cursor >= 0 && cursor < std::int32_t(kWedges);
     const auto next = turnPage(g.page, pending);
+    const unsigned disabled = g_wolfAvailable && !g_wolfAvailable() ? offer(Choice::Wolf) : 0;
+    if (disabled != g.disabled) {
+        g.disabled = disabled;
+        g.captionCursor = -1;
+        if (g.page != 0 && next == g.page) {
+            const auto shown = plan(g.page, 2, g.native[2], g_offers, g.disabled);
+            call<SetFlag>(offset::kSetValid)(wedgeAt(2), shown.valid);
+        }
+    }
     if (next != g.page) {
         if (g.page == 0)
             snapshotNative();
         g.page = next;
         applyPage();
         g.captionCursor = -1;
-        if (g.page == 0)
-            nativeCaption(cursor);
+        if (g.page == 0) {
+            if (aimed)
+                nativeCaption(cursor);
+        } else {
+            // The native cursor idles on the equipped ability, so its gold hover carried onto the
+            // abilities page unaimed (Clay, wolf-compact-14). The page opens with nothing aimed;
+            // the native update unselects every wedge until the stick picks one.
+            writeMemory<std::int32_t>(screen + field::kCursor, -1);
+            setCaption(plainText(u""));
+        }
         Logging.Log("[botw-abilities] WHEEL_PAGE page=%u cursor=%d", g.page, cursor);
+        return;
     }
+    if (!aimed)
+        return;
     // The native update re-captions on every cursor move; the abilities page overwrites it.
     if (g.page != 0 && cursor != g.captionCursor) {
         const auto &entry = kAbilityPage[cursor];
-        setCaption(plainText(offered(entry, g_offers) ? entry.caption : u""));
+        const bool shown = offered(entry, g_offers);
+        const char16_t *caption = shown ? entry.caption : u"";
+        if (shown && entry.choice == Choice::Wolf && g_wolfCaption)
+            if (const auto note = g_wolfCaption()) caption = note;
+        setCaption(plainText(caption));
         g.captionCursor = cursor;
     }
 }
@@ -182,7 +204,8 @@ bool exiting(std::uintptr_t screen, bool cancelled) {
     g_paging.store(false, std::memory_order_release);
     g.exiting = true;
     const auto cursor = readMemory<std::int32_t>(screen + field::kCursor);
-    const auto exit = exitPage(g.page, cursor, cancelled, g_offers);
+    const unsigned disabled = g_wolfAvailable && !g_wolfAvailable() ? offer(Choice::Wolf) : 0;
+    const auto exit = exitPage(g.page, cursor, cancelled, g_offers, disabled);
     bool chosen = false;
     if (exit.choice == Choice::Stasis)
         chosen = g_stasis(screen);
@@ -192,6 +215,8 @@ bool exiting(std::uintptr_t screen, bool cancelled) {
         chosen = g_sphere(screen);
     else if (exit.choice == Choice::Cube)
         chosen = g_cube(screen);
+    else if (exit.choice == Choice::Wolf)
+        chosen = g_wolf(screen);
     Logging.Log("[botw-abilities] WHEEL_EXIT page=%u cursor=%d cancelled=%u choice=%u chosen=%u",
                 g.page, cursor, unsigned(cancelled), unsigned(exit.choice), unsigned(chosen));
     return exit.cancel;
@@ -240,7 +265,8 @@ HOOK_DEFINE_TRAMPOLINE(WheelPageCloseHook) {
 };
 } // namespace
 
-bool install(std::uintptr_t base, Choose stasis, Choose cryonis, Choose sphere, Choose cube) {
+bool install(std::uintptr_t base, Choose stasis, Choose cryonis, Choose sphere, Choose cube, Choose wolf,
+             Caption wolfCaption, Available wolfAvailable) {
     if (!eng::codeMatches(base, kSites, "botw-abilities", "WHEEL_PAGE_REFUSED"))
         return false;
     g_base = base;
@@ -248,8 +274,12 @@ bool install(std::uintptr_t base, Choose stasis, Choose cryonis, Choose sphere, 
     g_cryonis = cryonis;
     g_sphere = sphere;
     g_cube = cube;
+    g_wolf = wolf;
+    g_wolfCaption = wolfCaption;
+    g_wolfAvailable = wolfAvailable;
     g_offers = (stasis ? offer(Choice::Stasis) : 0u) | (cryonis ? offer(Choice::Cryonis) : 0u) |
-               (sphere ? offer(Choice::Sphere) : 0u) | (cube ? offer(Choice::Cube) : 0u);
+               (sphere ? offer(Choice::Sphere) : 0u) | (cube ? offer(Choice::Cube) : 0u) |
+               (wolf ? offer(Choice::Wolf) : 0u);
     WheelPageNpadHook::InstallAtOffset(offset::kNpadCalc);
     WheelPageOpenHook::InstallAtOffset(offset::kWheelOpen);
     WheelPageUpdateHook::InstallAtOffset(offset::kWheelUpdate);

@@ -5,6 +5,7 @@
 #include "AppearanceObservation.hpp"
 #include "ChampionAppearances.hpp"
 #include "Effects.hpp"
+#include "support/SafeRead.hpp"
 #include "totk/engine/CodeCheck.hpp"
 #include <atomic>
 #include <lib.hpp>
@@ -13,6 +14,7 @@ namespace botw_abilities::champions::appearances {
 namespace {
 using namespace totk::engine;
 namespace observe = appearance_observation;
+using botw_abilities::support::safeRead;
 
 std::uintptr_t g_base{};
 std::atomic<unsigned> g_epoch{};
@@ -23,23 +25,6 @@ struct Slot {
 };
 std::array<Slot, 4> g_slots;
 std::array<ActorHandle, 4> g_actors;
-
-// Validate every mapped region before borrowing native animation memory on hardware.
-bool safeRead(std::uintptr_t address, void* output, std::size_t size) {
-    constexpr auto limit = std::uintptr_t{1} << 39;
-    if (address < 0x1000 || address >= limit || size > limit - address) return false;
-    for (auto cursor = address; cursor < address + size;) {
-        MemoryInfo region{};
-        std::uint32_t page{};
-        if (svcQueryMemory(&region, &page, cursor) || !(region.perm & 1) || !region.size ||
-            cursor < region.addr || cursor - region.addr >= region.size) return false;
-        const auto end = region.addr + region.size;
-        if (end <= cursor) return false;
-        cursor = end;
-    }
-    std::memcpy(output, reinterpret_cast<const void*>(address), size);
-    return true;
-}
 
 void remove(ActorHandle actor) {
     reinterpret_cast<void(*)(std::uintptr_t)>(g_base + 0x83AA68)(actor.address);

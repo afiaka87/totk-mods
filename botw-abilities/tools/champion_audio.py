@@ -70,9 +70,9 @@ class Sound:
     wave: bytes
 
 
-def sound_record(bank, name, wave, loop):
+def sound_record(bank, name, wave, loop, donor_name=None):
     channels = struct.unpack_from('<H', wave, 14)[0]
-    donor_name = {1: 'Sys_HeartRecovery_00', 2: 'Sys_Pouch_ZonauGearCapsule_TakeOutReduce'}[channels]
+    donor_name = donor_name or {1: 'Sys_HeartRecovery_00', 2: 'Sys_Pouch_ZonauGearCapsule_TakeOutReduce'}[channels]
     donor = next(e for e in bank.entries if e.name == donor_name)
     if (donor.flags != 2 or donor.metadata[6:8] != b'\0\x05'
             or donor.metadata[0x31] != channels

@@ -10,14 +10,19 @@ TEST_CASE("equipment lookup respects the actor's allocated component table") {
     alignas(8) std::array<std::uintptr_t, 147> table{};
     alignas(8) std::array<std::uintptr_t, 4> component{};
     const auto address = reinterpret_cast<std::uintptr_t>(actor.data());
-    const auto tableAddress = reinterpret_cast<std::uintptr_t>(table.data());
-    const auto componentAddress = reinterpret_cast<std::uintptr_t>(component.data());
+    // Host stacks can sit above the game's address range, so the table and component get fake addresses.
+    const std::uintptr_t tableAddress = 0x7000'0000, componentAddress = 0x7100'0000;
     std::memcpy(actor.data() + 552, &tableAddress, 8);
     table[146] = componentAddress;
     component[3] = address;
     unsigned tableReads = 0;
     auto read = [&]<class T>(std::uintptr_t p) {
-        if (p >= tableAddress && p < tableAddress + sizeof(table)) ++tableReads;
+        if (p >= tableAddress && p < tableAddress + sizeof(table)) {
+            ++tableReads;
+            return totk::engine::readMemory<T>(reinterpret_cast<std::uintptr_t>(table.data()) + p - tableAddress);
+        }
+        if (p >= componentAddress && p < componentAddress + sizeof(component))
+            return totk::engine::readMemory<T>(reinterpret_cast<std::uintptr_t>(component.data()) + p - componentAddress);
         return totk::engine::readMemory<T>(p);
     };
     auto setCount = [&](int count) { std::memcpy(actor.data() + 544, &count, 4); };

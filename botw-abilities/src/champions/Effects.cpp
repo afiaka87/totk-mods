@@ -255,6 +255,15 @@ bool pulse(Effect effect, float seconds, float delay) {
     return g_slots[index].pulse.start(seconds, delay);
 }
 
+bool pulseAt(Effect effect, float seconds, const totk::core::WorldTransform& placement) {
+    const auto index = static_cast<std::size_t>(effect);
+    if (index >= kWindFirst || !isFinite(placement)) return false;
+    if (!g_slots[index].pulse.start(seconds)) return false;
+    g_fixed[index] = placement;
+    g_hasFixed[index] = true;
+    return true;
+}
+
 void hold(Effect effect, bool active) {
     const auto index = static_cast<std::size_t>(effect);
     if (index < kWindFirst) {

@@ -49,6 +49,20 @@ template <class Read>
 Status inspectStock(unsigned count, const char *wanted, Read read) {
     return locateStock(count, wanted, read).status;
 }
+// Slots whose name is empty, which is what the native add scans for; -1 when a slot cannot be read.
+template <class Read>
+int countEmptySlots(unsigned count, Read read) {
+    if (count > kMaximumItems)
+        return -1;
+    int empty = 0;
+    for (unsigned i = 0; i < count; ++i) {
+        Record record;
+        if (!read(i, record))
+            return -1;
+        empty += record.name[0] == '\0';
+    }
+    return empty;
+}
 template <class Value, class Rank>
 bool prioritize(Value *values, unsigned count, Rank rank) {
     bool changed = false;

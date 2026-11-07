@@ -1,8 +1,29 @@
-# BotW Abilities v0.2.11
+# BotW Abilities v0.3.0
 
 Upgrading: replace the previous add-on folder so its obsolete shared ELink file is
 removed. On Switch, remove the old ELink override only if it belongs to this mod;
 keep any ELink file supplied by another mod or mod manager.
+
+## Changes in v0.3.0
+
+Adds Wolf Link as a companion on the second ability-wheel page. Hold L, tap R,
+and select his icon to summon or dismiss him. He follows Link, has Stay/Come
+commands and whistle recall, eats food and can attack nearby enemies. He has
+twenty hearts. After he falls in combat, wait seven minutes of gameplay before
+summoning him again; his wheel icon is grey while he rests and shows a notice.
+Menus pause the timer, and restarting the game clears the process-local rest.
+
+The cooldown, grey icon and resummon after seven minutes passed the Citron test.
+Combat and following still have rough edges: bites can miss or lack visible hit
+reactions, and catch-up can stall around difficult terrain or water. This update
+keeps those behaviors as tested. Wolf Link is intended as a companion, not a
+complete reproduction of BotW's combat AI. The Wolf build has not had a Switch
+hardware test; the existing abilities retain their earlier test coverage.
+
+No refactor was performed for this release. It uses the accepted test binary and
+unchanged game assets. The module maps 3,428,352 bytes; native actor and asset
+memory is additional, with the last estimate about 0.67 MiB above the pre-Wolf
+baseline while summoned. The earlier memory target remains unmet.
 
 ## Changes in v0.2.11
 
@@ -219,11 +240,11 @@ cues, and Gale uses BotW's crouch pose.
 
 Requires Tears of the Kingdom **1.2.1**, build `9B4E43650501A4D4`.
 
-**Emulator:** extract `botw-abilities-v0.2.11-emulator-subsdk7.zip` and copy its `BotW Abilities`
+**Emulator:** extract `botw-abilities-v0.3.0-emulator-subsdk7.zip` and copy its `BotW Abilities`
 folder into the game's mod folder (right-click the game, **Open Mod Data Location**). Enable
 **BotW Abilities** in the game's add-on list.
 
-**Switch (Atmosphere):** extract `botw-abilities-v0.2.11-switch-subsdk7.zip` and copy its
+**Switch (Atmosphere):** extract `botw-abilities-v0.3.0-switch-subsdk7.zip` and copy its
 `0100F2C0115B6000` folder into `atmosphere/contents/` on the SD card.
 
 **Upgrading from v0.1.0:** remove the old BotW Abilities add-on before installing this update.
@@ -275,6 +296,17 @@ Both archives contain the same game payload: `exefs/subsdk7`, `exefs/main.npdm`,
   have full BotW-parity coverage. The six-mod Switch 1.2.1 combination above passed; other combinations remain unverified.
 - Each ability checks the game code it uses and stays inactive on unsupported versions.
 
+## Wolf Link source
+
+The `src/wolf` and `src/support` folders contain the companion and compact text
+formatter. Wolf model, animation, sound and effect conversion requires local
+game dumps and private generated build inputs; those are not public source.
+The published source does not include a ready-to-run asset conversion workspace.
+The Wolf build uses size optimization for Wolf code, audio and the wheel handler,
+plus the authored render-pool linker layout. Existing build-dependency limits below
+still apply. The source copy includes the companion host tests and required shared
+runtime headers. No new runtime code changes were made after the accepted boot.
+
 ## Building from source
 
 The source for the three abilities is in the `stasis`, `remote-bomb`, `cryonis` and
@@ -296,9 +328,9 @@ no guarantee that it builds or works as-is; you set up the toolchain and framewo
   and `../runtime-support/include` on the include path.
 - Use exlaunch's own `source/program/{setting,loggers,version,offsets}.hpp`. In `setting.hpp` set
   `EXL_MODULE_NAME "botw-abilities"`, keep `EXL_USE_FAKEHEAP`, remove `EXL_DEBUG`, and use
-  `HeapSize 0x40000`, `JitSize 0x8000`, `InlinePoolSize 0x2000`, `LogBufferSize 1024`. Every hook
+  `HeapSize 0x2000`, `JitSize 0x6000`, `InlinePoolSize 0x1000`, `LogBufferSize 1024`. Every hook
   is installed at a fixed offset, so the reloc table in `offsets.hpp` can stay empty.
-- Compile definitions: `TOTK_VERSION=121`, `BOTW_ABILITIES_COMPACT_UI=1` and
+- Compile definitions: `TOTK_VERSION=121`, `BOTW_ABILITIES_WOLF_DIAGNOSTIC=1`, `BOTW_ABILITIES_COMPACT_UI=1` and
   `BOTW_ABILITIES_STREAM_TEXTURES=1`; enable `BOTW_ABILITIES_NATIVE_SPHERE=1` and
   `BOTW_ABILITIES_NATIVE_CUBE=1` on the suite and Remote Bomb sources, plus
   `STASIS_NATIVE_BLOOM=1` on Stasis; for the Remote Bomb sources also
@@ -312,8 +344,7 @@ no guarantee that it builds or works as-is; you set up the toolchain and framewo
   an ASTC encoder and external model compression helpers (`-ToolingHelpers`). These inputs
   and helper dependencies are not included in the source repository. The Champion capture
 importer and its private asset receipt are also omitted; generated Champion resource
-headers and converted game assets must be supplied by a separate local asset pipeline. Test-only SD logging
-  and periodic memory sampling are absent.
+headers and converted game assets must be supplied by a separate local asset pipeline. Wolf Link runtime diagnostics remain in this build.
   `tools/compose_resources.py` merges the three abilities' game data into one RomFS against your
   own TotK 1.2.1 dump, `tools/build_wheel_icons.py` makes the four wheel-page icons from your own
   BotW 1.6.0 dump, and `tools/build_release_restbl.py` builds the resource-size table for it. The
