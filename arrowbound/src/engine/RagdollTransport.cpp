@@ -293,7 +293,9 @@ HOOK_DEFINE_TRAMPOLINE(VelocityClampHook) {
         return native;
     }
 };
-// On 1.4.x, replace the queued velocity at +0x44 under the body lock after the native write.
+// 1.4.x inlines the clamp into the two velocity-request writers. After the native write,
+// replace the queued request velocity (request +0x44) under the body lock, matching what the
+// 1.2.1 clamp hook hands its caller. The clamp's bool result is unused by that caller.
 void overrideRequest(std::uintptr_t body, const pure::Vec3& incoming) {
     if (!candidate(body)) return;
     Lock lock;
