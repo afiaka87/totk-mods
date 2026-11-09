@@ -14,7 +14,9 @@ struct Services {
 using UiCallback = std::uint64_t (*)(void*, void*);
 using HookInstaller = bool (*)(void*, std::uintptr_t, UiCallback, UiCallback&);
 
-// Source-level process singleton. No TextWriter, debug-font loader, heap steal or texture ID use. configure/install once before drawing. publish/clear: one producer thread only. drawUi: one native UI consumer thread. A diagnostic may produce on that same thread.
+// Source-level process singleton. No TextWriter, debug-font loader, heap steal or texture ID use.
+// configure/install once before drawing. publish/clear: one producer thread only.
+// drawUi: one native UI consumer thread. A diagnostic may produce on that same thread.
 bool configure(std::uintptr_t mainBase, Atlas atlas, Services services) noexcept;
 bool installUiHook(HookInstaller installer, void* context) noexcept;
 bool publish(const Frame&) noexcept;

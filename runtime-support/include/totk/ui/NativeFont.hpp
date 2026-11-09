@@ -15,9 +15,7 @@ enum class Face : std::uint8_t { RodinRegular, RodinBold, Raglan };
 constexpr unsigned kFaces = 3, kCells = 96, kCellPixels = 48;
 constexpr unsigned kCellsPerBank = 16, kBanksPerFace = 6, kBanks = 18;
 constexpr unsigned kBankBytes = 36864, kAtlasBytes = kBanks * kBankBytes;
-#if defined(TOTK_NATIVE_FONT_COMPACT_SHADOW_UI)
-constexpr unsigned kLines = 4, kTextBytes = 64, kBatch = 64, kQuads = 256;
-#elif defined(BOTW_ABILITIES_COMPACT_UI)
+#if defined(BOTW_ABILITIES_COMPACT_UI)
 constexpr unsigned kLines = 2, kTextBytes = 64, kBatch = 64, kQuads = 128;
 #else
 constexpr unsigned kLines = 16, kTextBytes = 192, kBatch = 128, kQuads = 1152;

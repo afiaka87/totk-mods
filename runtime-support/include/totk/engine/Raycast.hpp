@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (C) Clay Mullis
-
 // Generation-aware gameplay/physics-thread raycast mailbox.
 
 #pragma once
@@ -99,7 +98,9 @@ public:
         return core::Result<RaycastTicket, RaycastBeginError>::success(ticket_);
     }
 
-    // Called from the game's RayCastWorker hook after the native cast. A nearby game-owned query supplies the initialized 0x200-byte query object. No actor pointer crosses this boundary.
+    // Called from the game's RayCastWorker hook after the native cast. A nearby
+    // game-owned query supplies the initialized 0x200-byte query object. No actor
+    // pointer crosses this boundary.
     void observe(RaycastFunction original, const void* liveFrom,
                  const void* liveObject) {
         if (!original || !liveFrom || !liveObject) return;
@@ -167,7 +168,9 @@ public:
         return RaycastPoll{RaycastPollStatus::Ready, expectedTicket, hit};
     }
 
-    // Cancellation never steals a query object from the physics worker. When Working, the worker sees the ticket marker after the native call and publishes Idle instead of Ready.
+    // Cancellation never steals a query object from the physics worker. When
+    // Working, the worker sees the ticket marker after the native call and
+    // publishes Idle instead of Ready.
     void cancel() {
         const auto ticketValue = ticket_.value;
         cancelledTicket_.store(ticketValue, std::memory_order_release);

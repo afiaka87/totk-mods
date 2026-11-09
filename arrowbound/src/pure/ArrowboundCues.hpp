@@ -5,7 +5,9 @@
 #pragma once
 
 namespace arrowbound::pure {
-// Use interface fallbacks when ExpressionSound is unavailable; AmiiboMarker_OK loops indefinitely.
+// Travel start and arrival prefer Ultrahand's own activation and cancel sounds, which live in the
+// ExpressionSound user. That user is not always registered, so each has a heard interface-speaker
+// fallback. AmiiboMarker_OK is banned: it loops until the game closes.
 inline constexpr const char* kCueAbilityUser = "ExpressionSound";
 inline constexpr const char* kCueTravel = "UltraHand_Start";
 inline constexpr const char* kCueTravelFallback = "mc_PlusMenuOpen";
