@@ -1,0 +1,24 @@
+Zonai Fieldworks' original source is MIT licensed, copyright HanSoloBlaster, afiaka87.
+
+The compiled module includes exlaunch, licensed under GPL-2.0.
+Upstream source: https://github.com/shadowninja108/exlaunch
+Mod source: https://github.com/afiaka87/totk-mods/tree/main/zonai-fieldworks
+
+The module is compiled from Fieldworks' own source and from the source of its eight members
+(Phantom Foothold, Zonai Hookshot with Arrowbound, Fleet Sync, Material Columns, BotW Abilities,
+Bivouac, Self Recall and Zonai Survey). Each member's notice in its own folder applies to its part.
+
+The romfs files in the release archive are the members' release files, combined:
+- Edited copies of Tears of the Kingdom 1.2.1 data files (UI layout archive, save-data schema,
+  English text archive, RSDB tables, effect and sound link tables, interface sound bank, actor
+  packs, models, inventory icons and the resource-size table).
+- Content converted from the owner's Breath of the Wild 1.5.0 and 1.6.0 dumps for BotW Abilities:
+  Wolf Link's model, skeleton, animations and sounds, the Champions' sounds, voice cues, item
+  names, descriptions and icons, and the wheel-page icons.
+- Zonai Survey's compact locale packs with item names, collectible icons and subset font artwork.
+- Material Columns' four small quick-menu layout derivatives and its first-party label and
+  category files.
+- Eight wheel icons made for Fieldworks.
+
+Game-derived and third-party assets retain their original rights and are not MIT licensed. They
+only work with a legally owned copy of the game. Native builds use devkitPro/devkitA64.
