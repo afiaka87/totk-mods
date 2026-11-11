@@ -1,4 +1,10 @@
-# Zonai Fieldworks v0.8.0
+# Zonai Fieldworks v0.8.1
+
+## Changes in v0.8.1
+
+The eight icons on the Fieldworks wheel page are smaller: 75% of their v0.8.0 size, and 66% for
+Zonai Hookshot. Nothing else changed. The module is the same file as in v0.8.0, so its log line
+still says v0.8.0.
 
 Eight of my Tears of the Kingdom mods in one package, for emulators. Each of them normally needs its
 own executable slot, so running all eight leaves almost no room for other code mods. Fieldworks

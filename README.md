@@ -21,7 +21,7 @@ Exlaunch authors are owed attribution here.
 | BotW Abilities | `botw-abilities/` | v0.3.0 | subsdk7 | BotW's Stasis, Remote Bomb and Cryonis in one module, chosen from the ability wheel (second page: hold L, tap R), plus the four Champions' Blessings. |
 | Self Recall | `self-recall/` | v1.1.3 | subsdk8 | Recall Link through his own movement and animation history. |
 | Zonai Survey | `zonai-survey/` | v0.4.1 | subsdk9 | Scan the landscape for collectibles with visible names and icons. |
-| Zonai Fieldworks | `zonai-fieldworks/` | v0.8.0 | subsdk6 | Eight of the mods above in one emulator package (Phantom Foothold, Zonai Hookshot, Fleet Sync, Material Columns, BotW Abilities, Bivouac, Self Recall, Zonai Survey), each switched on or off from an ability-wheel page. TotK 1.2.1. |
+| Zonai Fieldworks | `zonai-fieldworks/` | v0.8.1 | subsdk6 | Eight of the mods above in one emulator package (Phantom Foothold, Zonai Hookshot, Fleet Sync, Material Columns, BotW Abilities, Bivouac, Self Recall, Zonai Survey), each switched on or off from an ability-wheel page. TotK 1.2.1. |
 | Drive-by (formerly Free Rein) | `drive-by/` | v0.12.2 | none (patch files only) | Use the bow, sword and shield while holding a Zonai Steering Stick, and keep driving. |
 | Runtime support | `runtime-support/` | | | Shared source used by several mods above (font and texture drawing, input, actor and hook helpers). Not a mod on its own. |
 

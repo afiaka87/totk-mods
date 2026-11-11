@@ -155,6 +155,12 @@ def merge_shared(path: str, clean: bytes, members: dict[str, bytes]):
     raise ValueError(f"{path} is replaced by {sorted(members)} and has no merge")
 
 
+# The glyph fills this share of the area BotW Abilities' wheel art fills.
+GLYPH_SCALE = 0.75
+# Members whose glyph reads larger than the rest at the common scale.
+GLYPH_SCALES = {"zonai-hookshot": 0.66}
+
+
 def glyph_rgba(path: Path) -> bytes:
     """Fit a glyph into the wheel icon the way BotW Abilities fits its art, keeping the glyph's colours."""
     import numpy as np
@@ -170,14 +176,15 @@ def glyph_rgba(path: Path) -> bytes:
     square = np.zeros((side, side, 4), np.float32)
     y, x = (side - cropped.shape[0]) // 2, (side - cropped.shape[1]) // 2
     square[y : y + cropped.shape[0], x : x + cropped.shape[1]] = cropped
-    inner = SIZE - 2 * MARGIN
+    inner = round((SIZE - 2 * MARGIN) * GLYPH_SCALES.get(path.stem, GLYPH_SCALE))
+    margin = (SIZE - inner) // 2
     small = np.stack([np.asarray(Image.fromarray(square[..., channel], "F").resize((inner, inner), Image.LANCZOS))
                       for channel in range(4)], axis=-1)
     small = np.clip(small, 0, 1)
     alpha = small[..., 3:4]
     small[..., :3] = np.where(alpha > 1e-4, np.clip(small[..., :3] / np.maximum(alpha, 1e-4), 0, 1), 0)
     output = np.zeros((SIZE, SIZE, 4), np.float32)
-    output[MARGIN : MARGIN + inner, MARGIN : MARGIN + inner] = small
+    output[margin : margin + inner, margin : margin + inner] = small
     return (output * 255 + 0.5).astype(np.uint8).tobytes()
 
 
