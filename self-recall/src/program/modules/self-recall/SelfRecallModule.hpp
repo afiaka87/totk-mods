@@ -76,6 +76,13 @@ void clearRoute(const char* reason);
 
 #include "totk/engine/Npad.hpp"
 
+// Zonai Fieldworks' switch, on the controller thread (design 06, section 3a). Off ends a rewind and refuses
+// new ones; on clears the recorded route so a route from before the switch is never replayed.
+namespace self_recall::switching {
+void switchOn();
+void switchOff();
+}
+
 namespace self_recall::playback {
 
 void start(RecallRuntime& runtime);

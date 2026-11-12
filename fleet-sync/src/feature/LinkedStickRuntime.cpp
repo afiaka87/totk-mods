@@ -70,6 +70,9 @@ void LinkedStickRuntime::unpublishPair() {
         receiver.actor.store(0, std::memory_order_relaxed);
     }
     publication_.controllerSeat.store(0, std::memory_order_relaxed);
+    publication_.controllerIntegratorIndex.store(
+        kInvalidIntegratorIndex, std::memory_order_relaxed);
+    publication_.controllerIntegrator.store(0, std::memory_order_relaxed);
     publication_.observedControllerRidable.store(
         0, std::memory_order_relaxed);
     publication_.controllerRidable.store(0, std::memory_order_relaxed);
@@ -240,6 +243,12 @@ bool LinkedStickRuntime::publishPair() {
         controllerRidable, std::memory_order_relaxed);
     publication_.controllerSeat.store(controllerSeat,
                                       std::memory_order_relaxed);
+    const auto controllerAssembly = assemblyIdentity(controller_.address);
+    publication_.controllerIntegrator.store(controllerAssembly.integrator,
+                                            std::memory_order_relaxed);
+    publication_.controllerIntegratorIndex.store(controllerAssembly.index,
+                                                 std::memory_order_relaxed);
+    controllerDeparted_.store(0, std::memory_order_relaxed);
     for (std::size_t index = 0; index < receiverCount_; ++index) {
         auto& published = publication_.receivers[index];
         const auto& endpoint = resolved[index];
@@ -425,6 +434,12 @@ void LinkedStickRuntime::processInput(void* npadDevice) {
 }
 
 void LinkedStickRuntime::tick(void* npadDevice) {
+    // The unload/delete check already withdrew the hooks' view of the pair; finish clearing it here.
+    if (const auto departed = controllerDeparted_.exchange(0, std::memory_order_acq_rel)) {
+        if (controller_.address || receiverCount_)
+            clearPair(departed == 2 ? "controller vehicle removed; pair cleared"
+                                    : "controller vehicle unloaded; pair cleared");
+    }
     refreshWorld();
     refreshPublishedReceiverState();
     processInput(npadDevice);

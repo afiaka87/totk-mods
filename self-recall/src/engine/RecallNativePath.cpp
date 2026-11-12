@@ -1,5 +1,6 @@
 #include "totk/engine/ReadGuard.hpp"
 #include "RecallGraphicsEngine.hpp"
+#include "totk/suite/Member.hpp"
 
 #include <array>
 #include <atomic>
@@ -432,7 +433,7 @@ bool sitesValid(std::uintptr_t mainBase, std::size_t textSize) {
                         static_cast<unsigned>(site.offset));
             return false;
         }
-        const auto found = read<std::uint32_t>(reinterpret_cast<void*>(mainBase), site.offset);
+        const auto found = totk::suite::checkedCode(mainBase + site.offset);
         if (found != site.word) {
             Logging.Log("[self-recall] NATIVE_PATH_SITE_REJECT site=0x%X expected=%08X found=%08X",
                         static_cast<unsigned>(site.offset), site.word, found);
@@ -454,6 +455,10 @@ void install(std::uintptr_t mainBase) {
     AuxiliaryPathsHook::InstallAtOffset(g_profile->auxiliary.offset);
     MaskHook::InstallAtOffset(g_profile->mask.offset);
     CompositeHook::InstallAtOffset(g_profile->composite.offset);
-    RendererDestroyHook::InstallAtOffset(g_profile->destroy.offset);
+    {
+        // Zonai Fieldworks: releases what the always-on scene setup allocated.
+        TOTK_SUITE_ALWAYS_ON();
+        RendererDestroyHook::InstallAtOffset(g_profile->destroy.offset);
+    }
 }
 }

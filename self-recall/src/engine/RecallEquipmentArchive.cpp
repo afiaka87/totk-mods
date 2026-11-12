@@ -66,8 +66,8 @@ bool sitesValid(std::uintptr_t mainBase, std::size_t textSize) {
     const bool newer = profiles::newerRenderer();
     const auto matches = [=](std::ptrdiff_t offset, std::array<std::uint32_t, 3> expected) {
         if (offset < 0 || static_cast<std::size_t>(offset) + 12 > textSize) return false;
-        const auto* words = reinterpret_cast<const std::uint32_t*>(mainBase + offset);
-        return words[0] == expected[0] && words[1] == expected[1] && words[2] == expected[2];
+        const auto word = [=](int i) { return totk::suite::checkedCode(mainBase + offset + 4 * i); };
+        return word(0) == expected[0] && word(1) == expected[1] && word(2) == expected[2];
     };
     const std::array<std::uint32_t, 3> newerEntry{0xA9BC7BFD, 0xA9015FF8, 0xA90257F6};
     const std::array<std::uint32_t, 3> oldHeap{0xD101C3FF, 0xA9017BFD, 0x910043FD};

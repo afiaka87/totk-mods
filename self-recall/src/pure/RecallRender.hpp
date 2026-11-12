@@ -643,7 +643,7 @@ class WristMatrixProvider {
         self->copied_ = true;
     }
     inline static const Vtable kVtable{valid, copy};
-    const Vtable* vtable_ = &kVtable;
+    [[maybe_unused]] const Vtable* vtable_ = &kVtable;  // read by the game, not by this class
     const WristEffectOwners* owners_;
     std::uint64_t serial_;
     float matrix_[12]{};

@@ -42,6 +42,8 @@ struct View {
     const std::uint32_t* boneVisibility = nullptr;
     const std::uint32_t* materialVisibility = nullptr;
     std::int32_t wristIndex = -1;
+    // Live only: the completed draw queue holds this unit (admitted or not). Set by inspectCompletedQueue.
+    bool queued = false;
 };
 
 struct GearBinding {
@@ -131,8 +133,10 @@ namespace self_recall::model {
 
 enum class CompletedQueueStatus { Ready, MissingBody, MissingQueue, Limit };
 // 1.4.x moved the multi-group list; its +0x58/+0x60 hold other data, which faulted on Switch.
+// nodeFlags (diagnostics only): per view, 0x100 | the node's +0x1E flag byte when the view is queued, else 0.
 inline CompletedQueueStatus inspectCompletedQueue(const void* queue, std::span<View> views,
-                                                   unsigned bodyModels, bool groupQueue = true) {
+                                                   unsigned bodyModels, bool groupQueue = true,
+                                                   std::uint16_t* nodeFlags = nullptr) {
     if (!queue || !bodyModels || bodyModels > views.size()) return CompletedQueueStatus::MissingQueue;
     const auto read = []<class T>(const void* p, std::size_t offset) {
         if (!totk::engine::read_guard::admit(p, offset, sizeof(T))) return T{};
@@ -146,7 +150,8 @@ inline CompletedQueueStatus inspectCompletedQueue(const void* queue, std::span<V
     const auto* singles = read.operator()<const void* const*>(queue, 0x28);
     const auto* groups = groupQueue ? read.operator()<const void* const*>(queue, 0x60) : nullptr;
     if ((!singles && singlesCount) || (!groups && groupsCount)) return CompletedQueueStatus::MissingQueue;
-    for (auto& view : views) view.pose.queueAdmission = 0;
+    for (auto& view : views) { view.pose.queueAdmission = 0; view.queued = false; }
+    if (nodeFlags) for (std::size_t j = 0; j < views.size(); ++j) nodeFlags[j] = 0;
     bool bodyPresent = false;
     std::uint32_t visited = 0;
     const auto walk = [&](const void* node) {
@@ -155,7 +160,10 @@ inline CompletedQueueStatus inspectCompletedQueue(const void* queue, std::span<V
             const auto unit = read.operator()<std::uintptr_t>(node, 0);
             for (unsigned j = 0; j < views.size(); ++j) {
                 if (views[j].identity.unit != unit) continue;
-                if (read.operator()<std::uint8_t>(node, 0x1E) & 0x40u)
+                const auto flags = read.operator()<std::uint8_t>(node, 0x1E);
+                views[j].queued = true;
+                if (nodeFlags) nodeFlags[j] = static_cast<std::uint16_t>(nodeFlags[j] | 0x100u | flags);
+                if (flags & 0x40u)
                     views[j].pose.queueAdmission = 1;
                 if (j < bodyModels) bodyPresent = true;
             }
@@ -1133,6 +1141,8 @@ void admitModels(void* scene, std::uint64_t epoch, std::span<const model::View> 
                  std::span<const void* const> roots);
 void verifyComplete(std::uint64_t epoch, const pure::RecordedPoseFrame& recorded,
                     std::span<const model::View> current);
+// Model index + 1 that verifyComplete refused at the final admission check for this epoch, else 0; clears it.
+unsigned takeAdmissionRefusal(std::uint64_t epoch);
 void collectorFailed(unsigned reason, unsigned detail);
 void begin();
 bool ready(std::uint32_t generation);

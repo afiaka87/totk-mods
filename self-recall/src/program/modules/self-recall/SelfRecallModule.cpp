@@ -17,6 +17,8 @@ using self_recall::Unsafe;
 namespace pure = self_recall::pure;
 
 constexpr float kTeleportResetMeters = 30.0f;
+// Zonai Fieldworks clears this when the player switches Self Recall off; the standalone module is always on.
+bool g_switchedOn = true;
 
 void updateOutfitSpeed(bool playerReady) {
     pure::GameTimeSnapshot clock;
@@ -141,7 +143,7 @@ void moduleTick(void* device) {
     namespace input = self_recall::input;
     const totk::engine::NpadFrame frame = input::read(device);
     const std::uint64_t buttons = frame.snapshot().buttons;
-    const bool activationHeld = pure::activationHeld(buttons);
+    const bool activationHeld = g_switchedOn && pure::activationHeld(buttons);
     const bool triggered = pure::holdStep(rt.playback.triggerHold, activationHeld,
                                           input::kHoldTicks);
     if (rt.playback.startPending || triggered) {
@@ -256,6 +258,27 @@ const wwpg::Module kModule{
 namespace wwpg::modules {
 const Module& selfRecall() { return kModule; }
 }
+
+namespace self_recall::switching {
+
+void switchOn() {
+    g_switchedOn = true;
+    resetSession("switched on", false);
+}
+
+// A rewind in progress ends as if stopped in place; the effects fade while the hooks still run.
+void switchOff() {
+    RecallRuntime& rt = runtime();
+    if (rt.playback.rewinding) self_recall::playback::finish(rt, pure::PlaybackStop::SwitchedOff, true);
+    if (rt.playback.startPending) {
+        self_recall::pose_session::reset(false);
+        rt.playback.startPending = false;
+    }
+    g_switchedOn = false;
+    resetSession("switched off", true);
+}
+
+}  // namespace self_recall::switching
 
 namespace self_recall {
 namespace {

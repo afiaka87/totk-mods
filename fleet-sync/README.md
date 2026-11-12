@@ -1,4 +1,14 @@
-# Fleet Sync v0.3.1
+# Fleet Sync v0.3.2
+
+## Changes in v0.3.2
+
+- Fixed: the link now ends when the driven vehicle unloads or is destroyed (including when one of
+  its parts is removed). Before, a long Self Recall away from linked vehicles could close the game
+  on a Switch.
+- A Switch download again, for 1.2.1 and 1.4.3. It holds the same files as the emulator download.
+- This code was played on a Switch at 1.2.1 and 1.4.3, and on Ryujinx 1.3.3 at 1.2.1, inside Zonai
+  Fieldworks v0.9.4's test builds (the fix itself on the Switch at 1.4.3 and on Ryujinx). This
+  download has not had its own boot.
 
 ## Changes in v0.3.1
 
@@ -23,8 +33,7 @@ fast alignment keep the fleet together through takeoff and turns, without an ext
 ## Installation
 
 Requires Tears of the Kingdom **1.2.1** (build `9B4E43650501A4D4`) or **1.4.3** (build
-`277178B7DBA1B6D4`). Uses **subsdk6**. v0.3.1 has an emulator download only; the Switch download
-(v0.2.4, 1.2.1 only) uses the same layout as below.
+`277178B7DBA1B6D4`). Uses **subsdk6**. The emulator and Switch downloads hold the same files.
 
 - **Emulator:** extract into the game's mod/load directory, producing
   `Fleet Sync/exefs/`. Enable **Fleet Sync** in the add-ons list.

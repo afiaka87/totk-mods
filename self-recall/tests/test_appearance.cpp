@@ -40,7 +40,7 @@ TEST_CASE("historical body materials follow frame tokens while live clothing par
     REQUIRE(frames.bind(blobs, older, bareTokens));
     REQUIRE(frames.bind(blobs, newer, shirtTokens));
     blobs.release(first); blobs.release(second);
-    for (const auto current : {bare, shirt}) {
+    for (const auto& current : {bare, shirt}) {
         live = current;
         for (const auto key : {newer, older, newer}) {
             const auto token = frames.token(key, 0);

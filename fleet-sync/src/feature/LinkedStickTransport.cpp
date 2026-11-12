@@ -208,15 +208,10 @@ void* LinkedStickRuntime::initialActivationActor(void* oneShot,
     return reinterpret_cast<void*>(receiver);
 }
 
-pure::RemoteAssemblyMatch
-LinkedStickRuntime::classifyPublishedReceiverAssembly(
+LinkedStickRuntime::AssemblyIdentity LinkedStickRuntime::assemblyIdentity(
     std::uintptr_t actor) const {
-    const std::uint32_t count =
-        publication_.receiverCount.load(std::memory_order_acquire);
-    if (!totk::engine::isPlausibleAddress(actor) || !count) return {};
-
-    std::uintptr_t actorIntegrator = 0;
-    std::uint32_t actorIntegratorIndex = kInvalidIntegratorIndex;
+    AssemblyIdentity identity{};
+    if (!totk::engine::isPlausibleAddress(actor)) return identity;
     const std::uintptr_t registry =
         totk::engine::readMemory<std::uintptr_t>(
             actor + engine::offsets::kComponentRegistry);
@@ -225,17 +220,41 @@ LinkedStickRuntime::classifyPublishedReceiverAssembly(
             ? totk::engine::readMemory<std::uintptr_t>(
                   registry + engine::offsets::kSpecialPowerReceiver)
             : 0;
-    actorIntegrator =
+    identity.integrator =
         totk::engine::isPlausibleAddress(receiver)
             ? totk::engine::readMemory<std::uintptr_t>(
                   receiver + engine::offsets::kCombinedActorIntegrator)
             : 0;
-    if (totk::engine::isPlausibleAddress(actorIntegrator)) {
-        actorIntegratorIndex =
-            totk::engine::readMemory<std::uint32_t>(
-                actorIntegrator +
-                engine::offsets::kCombinedActorIntegratorIndex);
+    if (totk::engine::isPlausibleAddress(identity.integrator)) {
+        identity.index = totk::engine::readMemory<std::uint32_t>(
+            identity.integrator +
+            engine::offsets::kCombinedActorIntegratorIndex);
     }
+    return identity;
+}
+
+bool LinkedStickRuntime::controllerAssemblyMatches(std::uintptr_t actor) const {
+    const auto identity = assemblyIdentity(actor);
+    return pure::classifyRemoteAssemblyMatch(
+               actor, publication_.controllerActor.load(std::memory_order_relaxed),
+               identity.integrator,
+               publication_.controllerIntegrator.load(std::memory_order_relaxed),
+               identity.index,
+               publication_.controllerIntegratorIndex.load(std::memory_order_relaxed),
+               kInvalidIntegratorIndex)
+        .matches();
+}
+
+pure::RemoteAssemblyMatch
+LinkedStickRuntime::classifyPublishedReceiverAssembly(
+    std::uintptr_t actor) const {
+    const std::uint32_t count =
+        publication_.receiverCount.load(std::memory_order_acquire);
+    if (!totk::engine::isPlausibleAddress(actor) || !count) return {};
+
+    const auto identity = assemblyIdentity(actor);
+    const std::uintptr_t actorIntegrator = identity.integrator;
+    const std::uint32_t actorIntegratorIndex = identity.index;
 
     pure::RemoteAssemblyMatch aggregate{};
     for (std::size_t index = 0; index < count; ++index) {
@@ -369,6 +388,13 @@ bool LinkedStickRuntime::shouldKeepRemoteAssemblyResident(
                             : counters_.unloadChecks;
     checks.fetch_add(1, std::memory_order_relaxed);
     if (!totk::engine::isPlausibleAddress(actor)) return false;
+
+    // The controller vehicle is not kept loaded; withdraw the pair when it leaves, or worker-thread hooks use the freed controller.
+    if (controllerAssemblyMatches(actor)) {
+        publication_.receiverCount.store(0, std::memory_order_release);
+        controllerDeparted_.store(isDelete ? 2 : 1, std::memory_order_release);
+        return false;
+    }
 
     const pure::RemoteAssemblyMatch match =
         classifyPublishedReceiverAssembly(actor);

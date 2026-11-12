@@ -529,6 +529,15 @@ TEST_CASE("completed queue membership covers single body, linked clothing and mu
     CHECK(fixture.views[0].pose.queueAdmission == 1);
     CHECK(fixture.views[1].pose.queueAdmission == 0);
     CHECK(fixture.views[2].pose.queueAdmission == 1);
+    // Queued without the admission bit (culled) is distinct from absent from the queue.
+    CHECK(fixture.views[0].queued);
+    CHECK(fixture.views[1].queued);
+    CHECK(fixture.views[2].queued);
+    write(fixture.equipment, 0, std::uintptr_t{44});
+    REQUIRE(fixture.inspect() == model::CompletedQueueStatus::Ready);
+    CHECK_FALSE(fixture.views[2].queued);
+    CHECK(fixture.views[2].pose.queueAdmission == 0);
+    write(fixture.equipment, 0, std::uintptr_t{33});
     CHECK(fixture.queue == before);
     write(fixture.queue, 0x20, std::uint32_t{0});
     CHECK(fixture.inspect() == model::CompletedQueueStatus::MissingBody);
@@ -716,7 +725,7 @@ namespace self_recall_tests::test_recall_equipment_links {
 using namespace self_recall::model;
 
 TEST_CASE("fused attachment ownership follows collected equipment but rejects foreign parents") {
-    int player, sword, shield, droppedWeapon;
+    int player{}, sword{}, shield{}, droppedWeapon{};
     std::array<const void*, 2> owned{&sword, &shield};
     CHECK(isEquipmentParent(&player, &player, {}));
     CHECK(isEquipmentParent(&sword, &player, owned));

@@ -81,6 +81,9 @@ private:
         std::atomic<std::uintptr_t> controllerRidable{0};
         std::atomic<std::uintptr_t> observedControllerRidable{0};
         std::atomic<std::uintptr_t> controllerSeat{0};
+        // The controller vehicle's assembly, matched at the unload and delete checks like a receiver's.
+        std::atomic<std::uintptr_t> controllerIntegrator{0};
+        std::atomic<std::uint32_t> controllerIntegratorIndex{0xFFFFFFFF};
         std::array<ReceiverPublication, kMaxReceivers> receivers{};
         std::atomic<std::uint32_t> receiverCount{0};
         std::atomic<std::uintptr_t> activeController{0};
@@ -121,8 +124,14 @@ private:
     void publishReceiverAssemblyIdentity(
         std::size_t index, std::uintptr_t receiverComponent,
         bool reportChange);
+    struct AssemblyIdentity {
+        std::uintptr_t integrator = 0;
+        std::uint32_t index = kInvalidIntegratorIndex;
+    };
+    AssemblyIdentity assemblyIdentity(std::uintptr_t actor) const;
     pure::RemoteAssemblyMatch classifyPublishedReceiverAssembly(
         std::uintptr_t actor) const;
+    bool controllerAssemblyMatches(std::uintptr_t actor) const;
     bool shouldKeepRemoteAssemblyResident(
         std::uintptr_t actor, pure::PresenceBoundary boundary);
     void resetPairDiagnostics();
@@ -155,6 +164,8 @@ private:
     pure::LinkInput input_{};
     std::atomic<std::uint64_t> guideCopySerial_{0};
     PairPublication publication_{};
+    // Set by the unload (1) or delete (2) check when the controller vehicle leaves; the next tick clears the pair.
+    std::atomic<std::uint8_t> controllerDeparted_{0};
     Counters counters_{};
     bool rangeHitLogged_ = false;
     bool rangeMissLogged_ = false;

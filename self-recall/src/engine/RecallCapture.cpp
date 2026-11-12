@@ -607,6 +607,62 @@ void resume(bool clearHistory) {
     g_suspended.store(false, std::memory_order_release);
 }
 
+namespace {
+// Diagnostic for ANIMATION_RENDER_FAILED code=8 (final admission): names every model of the refused frame,
+// its owner and gear slot, what the prepared frame expects, and how the game's draw queue holds it.
+void logAdmissionRefusal(const frame::CompletedModelPhase& phase, const OwnedModelCollection& collection,
+                         const pure::RecordedPoseFrame& prepared, unsigned refused) {
+    const unsigned count = collection.modelCount;
+    // Static: modelsComplete holds g_collecting, so one caller at a time; keeps ~4 KiB off the render stack.
+    static std::array<model::View, pure::kPoseModelLimit> views;
+    static std::array<std::uint16_t, pure::kPoseModelLimit> nodeFlags;
+    for (unsigned i = 0; i < count; ++i) views[i] = collection.views[i];
+    const auto queue = model::inspectCompletedQueue(phase.queue, {views.data(), count}, collection.bodyModels,
+                                                    !profiles::newerRenderer(), nodeFlags.data());
+    Logging.Log("[self-recall] ADMISSION_REFUSED epoch=%llu model=%u models=%u prepared=%u body=%u clothing=%u "
+                "singles=%u groups=%u queue=%u",
+                static_cast<unsigned long long>(phase.epoch), refused, count, unsigned(prepared.header.modelCount),
+                unsigned(collection.bodyModels), unsigned(collection.clothingModels),
+                unsigned(phase.queuedSingles), unsigned(phase.queuedGroups), unsigned(queue));
+    for (unsigned i = 0; i < count; ++i) {
+        const auto* unit = reinterpret_cast<const void*>(collection.views[i].identity.unit);
+        const void* owner = i < collection.bodyModels ? collection.actors[0] : nullptr;
+        for (unsigned g = 0; g < collection.equipmentCount && !owner; ++g) {
+            const auto& group = collection.equipmentGroups[g];
+            if (i >= group.first && i < unsigned(group.first + group.count)) owner = group.actor;
+        }
+        char name[48] = "?";
+        const auto* text = owner ? read<const char*>(owner, totk::engine::layout::kActorNamePointer) : nullptr;
+        if (text && totk::engine::isPlausibleStringAddress(reinterpret_cast<std::uintptr_t>(text)) &&
+            totk::engine::read_guard::admit(text, 0, sizeof(name) - 1)) {
+            unsigned n = 0;
+            for (; n + 1 < sizeof(name) && text[n]; ++n) name[n] = text[n];
+            name[n] = 0;
+        }
+        const char* kind = i < collection.bodyModels ? "body"
+            : i < collection.clothingModels ? "clothing" : "gear";
+        unsigned slot = pure::kGearInvalidSlot, sub = 0, parent = 0;
+#if SELF_RECALL_STORAGE_PROFILE == 7
+        slot = collection.gearBindings[i].slot;
+        sub = collection.gearBindings[i].model;
+        parent = collection.gearBindings[i].parentResolved;
+#endif
+        const bool inPrepared = i < prepared.header.modelCount;
+        Logging.Log("[self-recall] ADMISSION_MODEL i=%u kind=%s actor=%s slot=%u sub=%u parent=%u "
+                    "prepared_admit=%u shown=%u live_admit=%u queued=%u node=0x%02x cull=0x%x flags=0x%x "
+                    "bound_shapes=%u bones=%u materials=%u",
+                    i, kind, name, slot, sub, parent,
+                    inPrepared ? unsigned(prepared.models[i].queueAdmission) : 99u,
+                    inPrepared ? unsigned(model::nativeModelVisibility(unit, prepared, i)) : 99u,
+                    unsigned(views[i].pose.queueAdmission), unsigned(nodeFlags[i] >> 8),
+                    unsigned(nodeFlags[i] & 0xFFu), read<std::uint32_t>(unit, 0xC),
+                    unsigned(read<std::uint16_t>(unit, 0x12)), unsigned(read<std::uint16_t>(unit, 0x24)),
+                    unsigned(collection.views[i].identity.boneCount),
+                    unsigned(collection.views[i].identity.materialCount));
+    }
+}
+}
+
 void modelsComplete(const frame::CompletedModelPhase& phase) {
     const bool rendering = pose_session::active();
     if (!rendering && (!g_enabled.load(std::memory_order_acquire) ||
@@ -663,9 +719,12 @@ void modelsComplete(const frame::CompletedModelPhase& phase) {
         reject(Rejection::ControlChanged, phase.epoch); return;
     }
     if (rendering) {
-        if (historical.get()->animation.header.worldGeneration == control.worldGeneration)
+        if (historical.get()->animation.header.worldGeneration == control.worldGeneration) {
             pose_render::verifyComplete(phase.epoch, historical.get()->animation,
                                   {collection.views.data(), collection.modelCount});
+            if (const auto refused = pose_render::takeAdmissionRefusal(phase.epoch))
+                logAdmissionRefusal(phase, collection, historical.get()->animation, refused - 1u);
+        }
         return;
     }
     if (!g_enabled.load(std::memory_order_acquire) || !current.enabled ||

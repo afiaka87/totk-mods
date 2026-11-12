@@ -12,6 +12,7 @@
 #include "RecallVisual.hpp"
 #include "RecallModelEngine.hpp"
 #include "GameProfiles.hpp"
+#include "totk/suite/Member.hpp"
 
 namespace self_recall::palette {
 struct PaletteSites {
@@ -546,7 +547,11 @@ void install(std::uintptr_t mainBase) {
     const auto& sites = profile().sites;
     g_mapUniform = reinterpret_cast<MapUniform>(mainBase + sites.mapUniform);
     if (profile().dynamicSaturation) gpu_lifetime::install(mainBase);
-    MainSceneInitializeHook::InstallAtOffset(sites.initializeScene);
+    {
+        // Zonai Fieldworks: scene setup can run before the game reads the player's switches.
+        TOTK_SUITE_ALWAYS_ON();
+        MainSceneInitializeHook::InstallAtOffset(sites.initializeScene);
+    }
     ForceDrawSetupHook::InstallAtOffset(sites.prepareShapeDraw);
     if (profile().dynamicSaturation) {
         SaturationWriteHook::InstallAtOffset(sites.writeSaturation);

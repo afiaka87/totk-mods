@@ -106,7 +106,7 @@ extern "C" void exl_main(void* /*x0*/, void* /*x1*/) {
         Logging.Log("[fieldworks] unknown game build main_text=%zx; nothing installed", textSize);
         return;
     }
-    Logging.Log("[fieldworks] v0.9.3 TotK %s module_offset=%lx", g_game->name,
+    Logging.Log("[fieldworks] v0.9.4 TotK %s module_offset=%lx", g_game->name,
                 exl::util::modules::GetSelfStart() - base);
     // Fleet Sync, Bivouac and BotW Abilities name game code by its 1.2.1 offset (totk/port/Port.hpp);
     // they install on 1.2.1 and 1.4.3 and refuse the other versions.

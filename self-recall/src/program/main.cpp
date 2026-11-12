@@ -44,14 +44,15 @@ HOOK_DEFINE_TRAMPOLINE(NpadCalcHook) {
 };
 }
 
-extern "C" void exl_main(void*, void*) {
-    exl::hook::Initialize();
-    const uintptr_t mainBase = exl::util::modules::GetTargetStart();
+namespace self_recall::suite {
+
+// Shared by the standalone module and Zonai Fieldworks; false = unknown game build, nothing installed.
+bool install(std::uintptr_t mainBase) {
     const std::size_t textSize = exl::util::GetMainModuleInfo().m_Text.m_Size;
     const auto* game = self_recall::profiles::activate(mainBase, textSize);
     if (!game) {
         Logging.Log("[self-recall] unknown TotK game build; hooks disabled");
-        return;
+        return false;
     }
     if (!self_recall::pose_render::sitesValid(mainBase, textSize) ||
         !self_recall::palette::sitesValid(mainBase, textSize) ||
@@ -60,7 +61,7 @@ extern "C" void exl_main(void*, void*) {
         !self_recall::frame::sitesValid(mainBase, textSize) ||
         !self_recall::pose_recorder::sitesValid(mainBase, textSize)) {
         Logging.Log("[self-recall] native hooks differ from selected game build; hooks disabled");
-        return;
+        return false;
     }
     totk::engine::Totk121Offsets::kSceneModuleInstance.value =
         self_recall::profiles::address(0x04728538);
@@ -93,8 +94,26 @@ extern "C" void exl_main(void*, void*) {
                                 self_recall::pose_recorder::prepareScene});
     RayCastWorkerHook::InstallAtOffset(self_recall::profiles::address(0x00858590));
     NpadCalcHook::InstallAtOffset(self_recall::profiles::address(0x02A267BC));
-    Logging.Log("[self-recall] v1.1.3 TotK=%s storage=%s: Glide outfit selects 1.25/1.5/2/4x Recall speed",
+    Logging.Log("[self-recall] v1.1.4 TotK=%s storage=%s: Glide outfit selects 1.25/1.5/2/4x Recall speed",
                 game->name, self_recall::pure::kStorageProfileName);
+    return true;
+}
+
+#ifdef TOTK_SUITE_MEMBER
+void enabled(bool on) {
+    if (on) self_recall::switching::switchOn();
+    else self_recall::switching::switchOff();
+    Logging.Log("[self-recall] SWITCHED %s", on ? "on" : "off");
+}
+#endif
+
+}  // namespace self_recall::suite
+
+#ifndef TOTK_SUITE_MEMBER
+extern "C" void exl_main(void*, void*) {
+    exl::hook::Initialize();
+    (void)self_recall::suite::install(exl::util::modules::GetTargetStart());
 }
 
 extern "C" NORETURN void exl_exception_entry() { EXL_ABORT("unreachable"); }
+#endif

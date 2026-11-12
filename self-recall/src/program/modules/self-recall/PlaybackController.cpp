@@ -251,6 +251,7 @@ void start(RecallRuntime& runtime) {
     (void)effects::startRewind();
     effects::buildRoute();
     setEvent("REWINDING - B cancels");
+    SRLOG("REWIND_START samples=%u", static_cast<unsigned>(playback.rewindTotal));
 }
 
 void finish(RecallRuntime& runtime, pure::PlaybackStop stop,

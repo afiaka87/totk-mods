@@ -377,7 +377,7 @@ enum class PlaybackStop {
     PoseApplyFailed, ClockUnavailable, RayBlocked, RouteUnavailable,
     NonfiniteCurrent, Blocked, Finished, UnsafeSample, PoseUnavailable,
     NonfiniteSample, NativePathFailed, PaletteFailed, AnimationRenderFailed,
-    UnsafeLiveState, CancelledByB, StaminaExhausted, StaminaUnavailable, Count,
+    UnsafeLiveState, CancelledByB, StaminaExhausted, StaminaUnavailable, SwitchedOff, Count,
 };
 
 struct PlaybackStopText { const char* reason; const char* event; };
@@ -400,6 +400,7 @@ inline constexpr PlaybackStopText kPlaybackStopText[]{
     {"CANCELLED_BY_B", "cancelled"},
     {"STAMINA_EXHAUSTED", "Recall ended: stamina depleted"},
     {"STAMINA_UNAVAILABLE", "stopped: stamina unavailable"},
+    {"SWITCHED_OFF", "stopped: Self Recall switched off"},
 };
 
 static_assert(sizeof(kPlaybackStopText) / sizeof(*kPlaybackStopText) ==

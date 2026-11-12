@@ -494,11 +494,10 @@ void install(std::uintptr_t mainBase) {
     g_profile = &profiles::row(kGpuProfiles);
     const auto inlineEnd = g_profile->inlineListEnd;
     if (inlineEnd.offset) {
-        const auto* entry = reinterpret_cast<const void*>(mainBase + inlineEnd.offset - 8);
-        if (read<std::uint32_t>(entry, 0) != 0xAA1603E0 ||
-            read<std::uint32_t>(entry, 4) != 0xF9400108 ||
-            read<std::uint32_t>(entry, 8) != inlineEnd.word ||
-            read<std::uint32_t>(entry, 12) != 0xF9002B00) {
+        const std::uintptr_t entry = mainBase + inlineEnd.offset - 8;
+        const auto word = [=](int i) { return totk::suite::checkedCode(entry + 4 * i); };
+        if (word(0) != 0xAA1603E0 || word(1) != 0xF9400108 || word(2) != inlineEnd.word ||
+            word(3) != 0xF9002B00) {
             Access access;
             g_lifetime.freeze();
             access.noteFailure(Operation::ListEnd);
@@ -507,6 +506,9 @@ void install(std::uintptr_t mainBase) {
             return;
         }
     }
+    // Stays on in Zonai Fieldworks: this record follows every frame from start to end, and one that stopped
+    // partway through a frame would refuse every later Recall until the game restarts.
+    TOTK_SUITE_ALWAYS_ON();
     const auto& site = g_profile->hooks;
     if (site.draw) FrameworkDrawHook::InstallAtOffset(site.draw);
     if (site.seal) FrameSealHook::InstallAtOffset(site.seal);

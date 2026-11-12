@@ -93,6 +93,9 @@ std::uintptr_t g_mainBase = 0;
 alignas(pure::RenderFrameStore) std::byte g_storage[sizeof(pure::RenderFrameStore)];
 pure::RenderFrameStore* g_frames = nullptr;
 std::atomic<std::uint64_t> g_failure{0};
+std::atomic<std::uint64_t> g_refusedEpoch{0};
+std::atomic<unsigned> g_refusedModel{0};
+std::atomic<std::uint32_t> g_culledLogged{0};
 std::atomic<std::uint64_t> g_startEpoch{0};
 std::atomic<std::uint32_t> g_frameGeneration{0};
 std::atomic<std::uint64_t> g_latchedEpoch{0};
@@ -445,6 +448,20 @@ void verifyComplete(std::uint64_t epoch, const pure::RecordedPoseFrame& recorded
         }
         if (visible == pure::AnimationVisibility::Visible) {
             if (!current[i].pose.queueAdmission) {
+#if SELF_RECALL_STORAGE_PROFILE == 7
+                // Switch: a queued current-gear unit culled from every view (empty cull mask) is not drawn live either.
+                // Units missing from the queue (the sleeping paraglider) still refuse.
+                const auto* unit = reinterpret_cast<const void*>(b.unit);
+                if (current[i].queued && read<std::uint32_t>(unit, 0xC) == 0) {
+                    const auto generation = animation.header.key.generation;
+                    if (g_culledLogged.exchange(generation, std::memory_order_relaxed) != generation)
+                        Logging.Log("[self-recall] ADMISSION_CULLED model=%u flags=0x%x", static_cast<unsigned>(i),
+                                    unsigned(read<std::uint16_t>(unit, 0x12)));
+                    continue;
+                }
+#endif
+                g_refusedEpoch.store(epoch, std::memory_order_relaxed);
+                g_refusedModel.store(static_cast<unsigned>(i) + 1u, std::memory_order_release);
                 fail(Failure::Admission, static_cast<unsigned>(i));
                 return;
             }
@@ -591,6 +608,11 @@ bool copyWrist(std::uint32_t historyGeneration, pure::RenderWristFrame& out) {
     return pose_session::active();
 }
 std::uint64_t takeFailure() { return g_failure.exchange(0, std::memory_order_acq_rel); }
+
+unsigned takeAdmissionRefusal(std::uint64_t epoch) {
+    const auto model = g_refusedModel.exchange(0, std::memory_order_acq_rel);
+    return model && g_refusedEpoch.load(std::memory_order_relaxed) == epoch ? model : 0u;
+}
 void begin() {
     g_startEpoch.store(frame::epoch(), std::memory_order_release);
     g_frameGeneration.store(0, std::memory_order_release);

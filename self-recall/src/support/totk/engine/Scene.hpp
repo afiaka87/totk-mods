@@ -7,6 +7,9 @@
 #include <cstdint>
 
 namespace totk::engine {
+// Self Recall's own copy of these helpers. The inline namespace gives them names of their own, so a
+// module linking Self Recall with another mod's copy (Zonai Fieldworks) keeps both.
+inline namespace self_recall_member {
 
 enum class SceneResolveError : std::uint8_t {
     MainImageUnavailable,
@@ -149,4 +152,5 @@ findResidentActor(const SceneContext& scene, const char* name) {
     return core::Result<ActorHandle, RosterError>::success(found);
 }
 
+} // inline namespace self_recall_member
 }

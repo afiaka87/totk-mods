@@ -96,16 +96,35 @@ void refresh(std::uintptr_t screen) {
     }
 }
 
+void beginSelect(std::uint32_t category, std::uint32_t index) {
+    const auto snapshot = data::state().snapshot();
+    g_selected = {snapshot.ready ? keyItemIndex(kSaveKeys, slotName(category, index)) : -1,
+                  snapshot.generation};
+    g_selecting = g_selected.index >= 0;
+}
+
+void endSelect(std::uintptr_t screen) {
+    g_selecting = false;
+    configureAction(screen);
+}
+
 HOOK_DEFINE_TRAMPOLINE(Select) {
     static std::uint64_t Callback(std::uintptr_t screen, std::uint32_t category,
                                   std::uint32_t index, void* argument) {
-        const auto snapshot = data::state().snapshot();
-        g_selected = {snapshot.ready ? keyItemIndex(kSaveKeys, slotName(category, index)) : -1,
-                      snapshot.generation};
-        g_selecting = g_selected.index >= 0;
+        beginSelect(category, index);
         const auto result = Orig(screen, category, index, argument);
-        g_selecting = false;
-        configureAction(screen);
+        endSelect(screen);
+        return result;
+    }
+};
+
+// 1.4.1+ passes a result-flag pointer before category and index; the 1.2.1 form truncated it and the Switch closed the game.
+HOOK_DEFINE_TRAMPOLINE(SelectFlag) {
+    static std::uint64_t Callback(std::uintptr_t screen, bool* flag, std::uint32_t category,
+                                  std::uint32_t index, void* argument) {
+        beginSelect(category, index);
+        const auto result = Orig(screen, flag, category, index, argument);
+        endSelect(screen);
         return result;
     }
 };
@@ -184,7 +203,8 @@ void service(GameDataWriteReadiness readiness, std::uint64_t tick) {
 bool install(std::uintptr_t base) {
     if (!totk::port::codeMatches(base, kSites, "champions", "ITEM_BUILD_REFUSED")) return false;
     g_base = base;
-    Select::InstallAtOffset(0x1B16650_v121);
+    if (totk::port::is143()) SelectFlag::InstallAtOffset(0x1B16650_v121);
+    else Select::InstallAtOffset(0x1B16650_v121);
     Action::InstallAtOffset(0x1B1241C_v121);
     SetSlot::InstallAtOffset(0x1A58EE0_v121);
     Deal::InstallAtOffset(0x1B171AC_v121);

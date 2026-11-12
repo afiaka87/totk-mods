@@ -1,6 +1,15 @@
-# BotW Abilities v0.4.3
+# BotW Abilities v0.4.4
 
 Upgrading: replace the previous add-on folder so no file from the earlier version remains.
+
+## Changes in v0.4.4
+
+- Fixed: on a Switch at 1.4.3, eating or selecting an item from the pouch closed the game. The
+  Champion Key Items read the 1.4.x item-select call with the wrong arguments; on emulators the
+  same mistake misread the selected item.
+- A Switch download again, for 1.2.1 and 1.4.3. It holds the same files as the emulator download.
+- This code was played on a Switch at 1.2.1 and 1.4.3, and on Ryujinx 1.3.3 at 1.2.1, inside Zonai
+  Fieldworks v0.9.4's test builds. This download has not had its own boot.
 
 ## Changes in v0.4.3
 
@@ -255,13 +264,12 @@ cues, and Gale uses BotW's crouch pose.
 Requires Tears of the Kingdom **1.2.1** (build `9B4E43650501A4D4`) or **1.4.3** (build
 `277178B7DBA1B6D4`).
 
-**Emulator:** extract `botw-abilities-v0.4.3-emulator-subsdk7.zip` and copy its `BotW Abilities`
+**Emulator:** extract `botw-abilities-v0.4.4-emulator-subsdk7.zip` and copy its `BotW Abilities`
 folder into the game's mod folder (right-click the game, **Open Mod Data Location**). Enable
 **BotW Abilities** in the game's add-on list.
 
-**Switch (Atmosphere):** v0.4.3 has no Switch download yet. The Switch download is still
-`botw-abilities-v0.3.0-switch-subsdk7.zip` (1.2.1 only): copy its `0100F2C0115B6000` folder into
-`atmosphere/contents/` on the SD card.
+**Switch (Atmosphere):** extract `botw-abilities-v0.4.4-switch-subsdk7.zip` and copy its
+`0100F2C0115B6000` folder into `atmosphere/contents/` on the SD card.
 
 **Upgrading from v0.1.0:** remove the old BotW Abilities add-on before installing this update.
 On Switch, remove this mod's old `exefs/subsdk5` before copying the new files. Leaving both
@@ -298,6 +306,8 @@ Each archive contains the game payload: `exefs/subsdk7`, `exefs/main.npdm`, and 
 
 ## Known issues and testing limits
 
+- The v0.4.4 standalone download has not been played on a Switch; its code was played there inside
+  Zonai Fieldworks.
 - The two-handed Fury fix was tested in Citron; it has not had a separate Switch test.
 - Multishot bomb detonation was tested with three-shot volleys in Citron. Five-shot
   bows and the new multishot fix on Switch have not been separately tested.

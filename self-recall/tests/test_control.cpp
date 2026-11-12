@@ -529,6 +529,7 @@ TEST_CASE("typed playback exits preserve messages and glider-release decisions")
         Case{pure::PlaybackStop::CancelledByB, "CANCELLED_BY_B", "cancelled"},
         Case{pure::PlaybackStop::StaminaExhausted, "STAMINA_EXHAUSTED", "Recall ended: stamina depleted"},
         Case{pure::PlaybackStop::StaminaUnavailable, "STAMINA_UNAVAILABLE", "stopped: stamina unavailable"},
+        Case{pure::PlaybackStop::SwitchedOff, "SWITCHED_OFF", "stopped: Self Recall switched off"},
     };
     CHECK(cases.size() == static_cast<unsigned>(pure::PlaybackStop::Count));
     for (const auto& item : cases) {

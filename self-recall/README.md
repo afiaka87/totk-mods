@@ -1,4 +1,14 @@
-# Self Recall v1.1.3
+# Self Recall v1.1.4
+
+## Changes in v1.1.4
+
+- Fixed (Switch build): Recall no longer stops right after it starts when a fused material has a
+  part the game is not drawing at that moment. This was seen with a Silver Lynel Saber Horn fused
+  to a sword, after driving vehicles. The emulator build is unchanged except for the next point.
+- When Recall stops because a model is missing from the frame, the log now names the model, its
+  owner and its draw state.
+- Tested inside Zonai Fieldworks v0.9.4's Switch build on Ryujinx 1.3.3 at 1.2.1. This download has
+  not had its own boot, and the fix has not been played on a Switch.
 
 ## Changes in v1.1.3
 

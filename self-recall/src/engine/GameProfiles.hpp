@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "totk/suite/Member.hpp"
+
 namespace self_recall::profiles {
 
 enum class Version : std::uint8_t {
@@ -43,7 +45,7 @@ template <class T, std::size_t N> const T& row(const std::array<T, N>& rows) {
 // True when main+offset is inside .text and holds the expected instruction word.
 inline bool holds(std::uintptr_t mainBase, std::size_t textSize, std::uintptr_t offset, std::uint32_t word) {
     return offset && offset <= textSize - sizeof(word) &&
-           *reinterpret_cast<const std::uint32_t*>(mainBase + offset) == word;
+           totk::suite::checkedCode(mainBase + offset) == word;
 }
 template <std::size_t N>
 bool holds(std::uintptr_t mainBase, std::size_t textSize, const std::array<std::uintptr_t, N>& offsets,
