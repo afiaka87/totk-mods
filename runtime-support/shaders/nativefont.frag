@@ -21,7 +21,8 @@ float coverage(ivec2 p) {
     return float((word>>((address%4u)*8u))&255u);
 }
 void main() {
-    // dFdy in this compiler reads external orientation state; this custom program does not bind it. Origins are aligned on both axes by CPU geometry using the native UI viewport size.
+    // dFdy in this compiler reads external orientation state; this custom program does not bind it.
+    // Origins are aligned on both axes by CPU geometry using the native UI viewport size.
     float step=max(abs(dFdx(pixel.x)),0.0001);
     ivec2 p=ivec2(floor(pixel));
     vec2 f=fract(pixel);

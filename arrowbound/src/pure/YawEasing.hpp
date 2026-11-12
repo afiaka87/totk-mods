@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 // Yaw planning: Link's captured 3x3 basis is kept and only a world-up yaw is pre-multiplied.
 #pragma once

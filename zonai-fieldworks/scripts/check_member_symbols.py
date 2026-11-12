@@ -1,6 +1,18 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) HanSoloBlaster, afiaka87
-"""Find code and data that two Fieldworks members define differently under the same name."""
+"""Find code and data that two Fieldworks members define under the same name.
+
+Inline functions, template instances and inline variables are weak symbols: the linker keeps one
+copy for the whole module. Members carry their own copies of some support headers, so two members
+can define the same name differently, and one member then runs the other's code. This check
+compares every weak definition that objects of two or more members emit:
+
+- a function whose disassembly (instructions and relocation targets) differs fails the check;
+- a variable shared by two members must be listed in checks/shared-variables.txt, which records
+  that someone reviewed the sharing; an unlisted or resized one fails the check.
+
+Usage: check_member_symbols.py --build <fieldworks build dir> --toolchain <devkitA64 bin dir>
+"""
 from __future__ import annotations
 
 import argparse
@@ -92,7 +104,9 @@ def main() -> int:
             bodies = collections.defaultdict(set)
             for member, _, _, obj in rows:
                 bodies[member].add(body(objdump, obj, symbol))
-            # A member may hold several bodies (mixed flags); two members with none in common differ.
+            # One member can compile the same header under different flags (BotW Abilities builds some
+            # files with -Os), so each member may hold several bodies. Two members whose bodies have
+            # nothing in common carry different source under one name.
             clashes = [(a, b) for i, a in enumerate(members) for b in members[i + 1:]
                        if not bodies[a] & bodies[b]]
             if clashes:

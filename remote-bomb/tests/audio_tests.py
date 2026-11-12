@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Verify source waveform fidelity and preservation of native sound resources."""
 from __future__ import annotations
 import argparse

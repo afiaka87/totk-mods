@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "Companion.hpp"
 #include <algorithm>
 #include <cmath>
@@ -9,11 +9,7 @@
 namespace botw_abilities::wolf {
 namespace {
 constexpr float kWarpDistance = 40, kBattleRange = 45, kHealRange = 30, kHeightLimit = 7.5f;
-// Beyond this the wolf drops a fight or a meal and rejoins the player instead of lingering (Clay,
-// wolf-compact-11: he should leave an NPC or a fox once the player is far enough). Kept below the warp
-// distance so he walks back before a warp is needed. The entry gate alone did not stop a fight already
-// running (Clay, wolf-compact-12: he does his own thing while Link is far away), so an ongoing fight
-// or meal also breaks off at kLeashBreak; the gap between the two keeps the edge from flapping.
+// Leash below warp range: start no fight or meal past kLeashRange, quit one past kLeashBreak (gap stops flapping).
 constexpr float kLeashRange = 28, kLeashBreak = 32;
 constexpr float kInitiateBattle = 16, kInitiateHunt = 45, kBeginAttack = 5, kKeepRange = 11;
 // The original's battle band (AnimalRangeKeepMoveWithLOS): between attacks the wolf closes in from beyond
@@ -26,10 +22,10 @@ constexpr BandRanges kBattleBand{15, 9, 4, 11}, kHuntBand{10, 5, 1, 6};
 // the boundary, the outer beyond. Reading the overlap as one unit either side is ours.
 constexpr float kCircleBoundary = 11, kCircleOverlap = 2;
 // Mod-authored: back in a fight this soon after the last one, the wolf skips the notice turn and roar
-// (Clay, wolf-compact-18: the double bark repeated after the enemies were already seen).
+// (HanSoloBlaster, wolf-compact-18: the double bark repeated after the enemies were already seen).
 constexpr float kRenotice = 300;
 // Mod-authored: a wolf this far behind a following player takes up nothing new until back beside him
-// (Clay, wolf-compact-18: he got distracted before reaching Link, and once led toward the sensor target).
+// (HanSoloBlaster, wolf-compact-18: he got distracted before reaching Link, and once led toward the sensor target).
 constexpr float kCatchUpStart = 15, kCatchUpEnd = 6;
 // A wolf that has stopped, at a follow point short of the player, is no longer catching up.
 constexpr float kCatchUpStill = 30;
@@ -37,9 +33,7 @@ constexpr float kBarkChance = 0.055f, kHitReach = 6, kFoodReach = 1.2f, kFoodHei
 constexpr float kHitTicks = 10, kStepLimit = 240, kChainTurnRate = 2;
 // A warp that found no ground near the player is asked for again this much later, the wolf still hidden.
 constexpr float kWarpAgain = 60;
-// Follow failures that warp again soon after the last warp-in escalate a hidden wait, so ground the
-// wolf cannot keep his feet on becomes a wait state instead of a loop of visible warps (Clay,
-// wolf-compact-12). A whistle or a come order ends the wait at once.
+// Fast repeat failures after a warp-in become a hidden wait, not visible warp loops; a whistle or come ends it.
 constexpr float kQuickFailWindow = 300;
 constexpr float kWarpHolds[]{0, 90, 240, 600};
 // The original's timed reactions: a small hit is 5 to 7 ticks and a burn is 15 to 17.
@@ -56,7 +50,7 @@ constexpr float kWallHitTicks = 45, kLostTicks = 25, kRestrictTicks = 300, kClos
 // The hunting root's approach gives up sooner (NoPathTimer 120).
 constexpr float kFailPathCooldown = 120, kNoPathTimer = 220, kHuntNoPathTimer = 120;
 constexpr float kFoodTimeout = 300, kFoodPower = 3600;
-// One meal per stop: after eating, further food is ignored for a while (Clay, wolf-compact-14).
+// One meal per stop: after eating, further food is ignored for a while (HanSoloBlaster, wolf-compact-14).
 constexpr float kFoodCooldown = 900;
 // A hidden wait ends early once the player has clearly moved elsewhere since the warp-out.
 constexpr float kHoldRelease = 10;
@@ -116,9 +110,7 @@ constexpr unsigned kChainAttacks = 5;
            mode == CompanionMode::WarpIn;
 }
 
-// Idle scripts a leaving or far player pulls the wolf out of mid-animation: the notice and
-// pre-attack turns, the look-around, the recoil hop, the howl and the bite. Strikes, reactions, warps
-// and the summon-in keep playing (Clay, wolf-compact-15: he sat at a distraction until a whistle).
+// Idle scripts a leaving player interrupts (turns, look-around, hop, howl, bite); strikes and warps keep playing.
 [[nodiscard]] constexpr bool yieldsToLeader(CompanionMode mode) {
     switch (mode) {
     case CompanionMode::Notice: case CompanionMode::Lookout: case CompanionMode::Recoil:
@@ -322,10 +314,7 @@ void Companion::faceLeader(const CompanionInput& input, float angle) {
 }
 
 bool Companion::wantsFood(const CompanionInput& input) const {
-    // Scavenging is idle charm (Clay, wolf-compact-14): one meal at a time, never at full health and
-    // never while the player is walking away. A player-dropped gift is deliberate feeding, so it is
-    // still taken at full health and while the player merely walks — only a sprinting-away player
-    // overrides it.
+    // Scavenge one meal at a time, not at full health or while the player leaves; dropped gifts yield only to a sprint.
     if (foodCooldown_ > 0 || input.leaderFleeing) return false;
     if (!input.food.dropped && (input.leaderLeaving || life_ >= kMaxLife)) return false;
     return input.food.present && input.food.distance <= kHealRange && input.food.height <= kFoodHeight &&
@@ -334,7 +323,7 @@ bool Companion::wantsFood(const CompanionInput& input) const {
 
 bool Companion::wantsFight(const CompanionInput& input) const {
     // A sprinting-away player takes the wolf with him; a walking-away player only forgoes new prey
-    // hunts — enemies are still engaged (Clay, wolf-compact-14).
+    // hunts - enemies are still engaged (HanSoloBlaster, wolf-compact-14).
     if (input.leaderFleeing) return false;
     if (input.target.prey && input.leaderLeaving) return false;
     return input.target.present && input.target.distance <= kBattleRange && input.playerDistance <= kLeashRange;
@@ -367,7 +356,7 @@ void Companion::followLost(const CompanionInput& input) {
     if (++followFailures_ >= kFollowFailures) {
         if (sinceWarpIn_ >= kQuickFailWindow) warpStreak_ = 0;
         // Ground the wolf cannot keep his feet on right next to the player is a wait, not a warp
-        // onto Link (Clay, wolf-compact-14: stairs stuck him and resummoned him on the player).
+        // onto Link (HanSoloBlaster, wolf-compact-14: stairs stuck him and resummoned him on the player).
         if (input.playerDistance <= kLeashBreak) warpStreak_ = std::max(warpStreak_, 1u);
         constexpr auto kLastHold = sizeof(kWarpHolds) / sizeof(kWarpHolds[0]) - 1;
         const float hold = kWarpHolds[std::min<std::size_t>(warpStreak_, kLastHold)];
@@ -382,9 +371,7 @@ void Companion::followLost(const CompanionInput& input) {
 }
 
 void Companion::followUpdate(const CompanionInput& input, CompanionOutput& output) {
-    // Mod-authored: a wolf standing short of a standing player is lost too, and his failures count until
-    // he is back beside him (Clay, wolf-compact-19: he sat at the edge of the catch-up range and did not
-    // close in once Link stopped). Changed in wolf-compact-20 from counting only beyond kFollowFar.
+    // Mod-authored: a wolf stopped short of a standing player also counts follow failures until back beside him.
     const bool parked = input.leaderStill && input.playerDistance > kCatchUpEnd;
     if (input.playerDistance <= kCatchUpEnd || (input.playerDistance <= kFollowFar && !parked)) followFailures_ = 0;
     const bool stalled = input.standing && (input.playerDistance > kFollowFar || parked);
@@ -836,7 +823,7 @@ void Companion::awaitWarp(const CompanionInput& input, CompanionOutput& output) 
 void Companion::advance(const CompanionInput& input, CompanionOutput& output) {
     if (warping(mode_) || mode_ == CompanionMode::Dying) invincible_ = 2;
     // A sprinting-away or past-the-leash player ends idle scripts at once instead of after the
-    // animation; the normal selector then follows or warps (Clay, wolf-compact-15).
+    // animation; the normal selector then follows or warps (HanSoloBlaster, wolf-compact-15).
     if (yieldsToLeader(mode_) && !input.event &&
         (input.leaderFleeing || input.playerDistance > kLeashBreak || wantsWarp(input))) {
         selectNormal(input, output);
@@ -893,9 +880,7 @@ void Companion::advance(const CompanionInput& input, CompanionOutput& output) {
         if (runScript(input, output)) settleStrike(output);
         break;
     case CompanionMode::AttackTurn:
-        // The bite follows only a turn that left him facing the enemy; otherwise he closes and turns again,
-        // and the turns count toward the approach time limit. Changed in wolf-compact-19 from biting however
-        // the turn ended (Clay, wolf-compact-18: he faced an enemy, turned away, and bit the wrong way).
+        // Bite only after a turn that faces the enemy; otherwise close and turn again, counting toward the approach limit.
         moving_ += input.delta;
         if (runScript(input, output)) {
             if (input.target.present && input.target.distance <= kBeginAttack &&

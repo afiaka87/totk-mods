@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Reject private graphs that disconnect the inherited native movement update."""
 
 from pathlib import Path

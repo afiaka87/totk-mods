@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (C) Clay Mullis
+// Copyright (C) HanSoloBlaster, afiaka87
 #pragma once
 
 #include "totk/engine/Pointer.hpp"

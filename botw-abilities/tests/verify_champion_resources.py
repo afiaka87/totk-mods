@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Verify generated Champion resources against owned data and the actual composed output."""
 import argparse
 import copy

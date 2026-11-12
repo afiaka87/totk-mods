@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 layout(std140,binding=0) uniform Filter {vec4 sizes,kernel;};
 ivec2 imagePixel(vec2 p,vec2 size){
 #ifndef REMOTE_BOMB_PREVIEW

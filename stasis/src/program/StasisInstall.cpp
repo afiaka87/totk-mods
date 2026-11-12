@@ -6,6 +6,7 @@
 #include "StasisSignals.hpp"
 #include "StasisSurface.hpp"
 #include "Totk121Offsets.hpp"
+#include "totk/port/CodeCheck.hpp"
 
 namespace {
 namespace engine = stasis::engine;
@@ -56,6 +57,28 @@ HOOK_DEFINE_TRAMPOLINE(StasisPhysicsClockHook) {
         engine::publishPhysicsTime(frameScale);
     }
 };
+// On 1.4.3 the routine above misses one frame path; the frame-rate update runs every frame (scale at +16).
+HOOK_DEFINE_TRAMPOLINE(StasisFrameRateHook) {
+    static void Callback(void *rate, float frames) {
+        Orig(rate, frames);
+        engine::publishPhysicsTime(
+            engine::read<float>(reinterpret_cast<std::uintptr_t>(rate) + 16));
+    }
+};
+using namespace totk::port::literals;
+constexpr std::ptrdiff_t kFrameRateUpdate143 = 0x3E67F0_v143;
+bool frameRateUpdateMatches(std::uintptr_t base) {
+    const auto site = base + static_cast<std::uintptr_t>(kFrameRateUpdate143);
+    const auto first = totk::suite::checkedCode(site), second = totk::suite::checkedCode(site + 4),
+               store = totk::suite::checkedCode(site + 0x30);
+    if (totk::engine::entryMatches(first, 0x6DBD23E9) &&
+        (second == 0xA9017BFD || totk::engine::chainedAbsoluteTail(site, first)) &&
+        store == 0xBD001001)
+        return true;
+    Logging.Log("[stasis] off on 1.4.3: the frame-rate update reads %08x,%08x store=%08x", first,
+                second, store);
+    return false;
+}
 HOOK_DEFINE_TRAMPOLINE(StasisNativeSelectionHook) {
     static std::uintptr_t Callback(std::uintptr_t screen) {
         const auto result = Orig(screen);
@@ -136,12 +159,18 @@ HOOK_DEFINE_TRAMPOLINE(StasisEnemyPositionHook) {
 bool stasis::install(std::uintptr_t base) {
     if (!engine::validate(base))
         return false;
+    // Without its clock Stasis could freeze an object and never count the hold down.
+    if (totk::port::is143() && !frameRateUpdateMatches(base))
+        return false;
     engine::moduleBase = base;
     stasis::render::install();
     stasis::surface::install();
     stasis::audio::install();
     StasisNpadHook::InstallAtOffset(offsets::kNinJoyNpadDeviceCalc);
-    StasisPhysicsClockHook::InstallAtOffset(offsets::kPhysicsModuleUpdateDeltaFrame);
+    if (totk::port::is143())
+        StasisFrameRateHook::InstallAtOffset(kFrameRateUpdate143);
+    else
+        StasisPhysicsClockHook::InstallAtOffset(offsets::kPhysicsModuleUpdateDeltaFrame);
     StasisAcceptedHitHook::InstallAtOffset(offsets::kTgHitInfoSetHitInfo);
     StasisRaycastHook::InstallAtOffset(offsets::kRayCast);
     StasisAiUpdateHook::InstallAtOffset(offsets::kAiElementDoUpdate);
@@ -157,7 +186,15 @@ bool stasis::install(std::uintptr_t base) {
     StasisNativeSelectionHook::InstallAtOffset(offsets::kUIShortCutMainItemScreenDoOutBeforeImpl);
     StasisAbilityAdmissionHook::InstallAtOffset(offsets::kNativeAbilityAdmission);
     StasisAimCameraHook::InstallAtOffset(offsets::kUpdateAimCamera);
-    Logging.Log("[stasis] v0.1.17 installed");
+    Logging.Log("[stasis] v0.2.0 installed");
     return true;
 }
-bool stasis::chooseFromWheel(std::uintptr_t screen) { return engine::wheelChosen(screen); }
+bool stasis::chooseFromWheel(std::uintptr_t screen) {
+#ifdef TOTK_SUITE_MEMBER
+    if (!stasis::runtime::switchedOn()) return false;
+#endif
+    return engine::wheelChosen(screen);
+}
+#ifdef TOTK_SUITE_MEMBER
+void stasis::switched(bool on) { stasis::runtime::setSwitchedOn(on); }
+#endif

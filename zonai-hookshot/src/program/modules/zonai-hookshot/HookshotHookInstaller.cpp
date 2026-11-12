@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 // Hook installation shared by the standalone host and Fieldworks.
 #include "HookshotHookInstaller.hpp"

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 #include <lib.hpp>
 #include <nn/os.h>
@@ -40,9 +40,20 @@ bool takeSnapshot(Snapshot& out) {
     nn::os::UnlockMutex(&g_lock);
     zonai_hookshot::pure::Vec3 hand{};
     if(out.visible&&playerPresentation::usesHandOrigin()) {
-        if(playerPresentation::handOrigin(hand)) {
+        // Diagnostic: log why and how often the chain hides for want of the hand position, and when it returns.
+        static unsigned hiddenReason = 0, hiddenDraws = 0;
+        const unsigned reason = playerPresentation::handOriginState(hand);
+        if(!reason) {
+            if(hiddenDraws) Logging.Log("[zonai-hookshot] CHAIN_SHOWN after_hidden_draws=%u last_reason=%u", hiddenDraws, hiddenReason);
+            hiddenDraws = 0;
             out.nearPoint[0]=hand.x;out.nearPoint[1]=hand.y;out.nearPoint[2]=hand.z;
-        } else out.visible=0;
+        } else {
+            if(!hiddenDraws || reason != hiddenReason)
+                Logging.Log("[zonai-hookshot] CHAIN_HIDDEN reason=%u (2=not-tracked 4=not-published 8=old-generation 16=stale)", reason);
+            hiddenReason = reason;
+            ++hiddenDraws;
+            out.visible=0;
+        }
     }
     return true;
 }

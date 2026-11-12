@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 #include "PlayerService.hpp"
+
+#include "totk/port/Port.hpp"
 
 namespace bivouac::engine {
 namespace {
 
-constexpr std::ptrdiff_t kSceneModuleInstanceOffset = 0x04728538;
+constexpr totk::port::Code kSceneModuleInstanceOffset = 0x04728538;
 constexpr std::ptrdiff_t kActorNameOffset = 0x218;
 constexpr std::ptrdiff_t kActorComponentRegistryOffset = 0x228;
 constexpr std::ptrdiff_t kActorPositionOffset = 0x2B4;
@@ -76,8 +78,17 @@ void* PlayerService::resolve() const {
         if (actor == 0) {
             continue;
         }
+        // 1.4.3: actor member +0x40 is unverified in that game's code; check it before reading a name.
+        if (totk::port::is143() && !validPointer(actor)) {
+            continue;
+        }
         const auto name =
             *reinterpret_cast<const char**>(actor + kActorNameOffset);
+        if (totk::port::is143()
+            && (reinterpret_cast<std::uintptr_t>(name) < 0x1000000
+                || reinterpret_cast<std::uintptr_t>(name) >= 0x8000000000ull)) {
+            continue;
+        }
         if (nameEquals(name, "Player")) {
             return reinterpret_cast<void*>(actor);
         }

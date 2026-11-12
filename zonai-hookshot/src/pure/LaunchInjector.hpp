@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 // The optional Fall route injects X and a one-shot jump boost only from solid ground.
 #pragma once

@@ -1,10 +1,18 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #pragma once
 #include "Totk121Offsets.hpp"
 #include "totk/engine/CodeCheck.hpp"
+#if defined(TOTK_PORT)
+#include "totk/port/CodeCheck.hpp"
+#endif
 namespace cryonis::signatures {
+// These are the 1.2.1 words; totk::port::codeMatches compares the recorded words on 1.4.3.
+#if defined(TOTK_PORT)
+using Site = totk::port::Site;
+#else
 using Site = totk::engine::CodeSite;
+#endif
 inline constexpr Site kRuntime[]{
     {offsets::kNativeAbilityAdmission, 0xD10143FF, 0xA9017BFD},
     {offsets::kPhysicsModuleUpdateDeltaFrame, 0xF9400828, 0xB40002A8},

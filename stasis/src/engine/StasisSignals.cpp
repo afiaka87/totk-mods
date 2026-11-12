@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "StasisSignals.hpp"
 #include "StasisActors.hpp"
 #include "StasisCamera.hpp"
@@ -32,7 +32,10 @@ bool firstRefusal(unsigned bit) { return !(signals.motionRefused.fetch_or(bit) &
 
 bool validate(std::uintptr_t base) {
     eng::motion::validate(base);
-    return totk::engine::codeMatches(base, signatures::kRuntime, "stasis", "BUILD_REFUSED");
+    if (!totk::port::codeMatches(base, signatures::kRuntime, "stasis", "BUILD_REFUSED"))
+        return false;
+    return totk::port::is143() ||
+           totk::port::codeMatches(base, signatures::kRuntime121, "stasis", "BUILD_REFUSED");
 }
 void nativeSelectionAccepted(std::uintptr_t screen) {
     const auto count = readGame.template operator()<int>(screen + 0x1A8);

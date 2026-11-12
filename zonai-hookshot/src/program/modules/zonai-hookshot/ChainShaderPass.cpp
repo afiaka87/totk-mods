@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 // One premultiplied screen-space draw renders the chain and reticle.
 #include "ChainShaderPass.hpp"

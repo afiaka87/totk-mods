@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #pragma once
 #include "totk/core/Units.hpp"
 #include <cmath>
@@ -10,7 +10,7 @@ namespace botw_abilities::wolf {
 
 enum class FollowSide : unsigned char { Unset, Positive, Negative };
 // The faster the player moves, the closer the station point rides, so a sprinting player has the
-// wolf right beside him instead of eight units ahead (Clay, wolf-compact-12).
+// wolf right beside him instead of eight units ahead (HanSoloBlaster, wolf-compact-12).
 struct FollowDistances {
     float lateral = 2.11f;
     float stationary = 3.5f;

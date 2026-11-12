@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Import the original blessing effects, playback voices and recharge announcements."""
 
 from __future__ import annotations

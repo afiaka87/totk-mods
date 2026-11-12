@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "NativeAction.hpp"
 #include "NativeApi.hpp"
 #include <limits>
@@ -8,7 +8,7 @@ namespace botw_abilities::wolf {
 namespace {
 using namespace totk::engine;
 NativeApi g_api;
-constexpr CodeSite kSites[]{
+constexpr totk::port::Site kSites[]{
     {0xA29340, 0xD10243FF, 0xA9067BFD},
     {0x1BC8B38, 0x91083008, 0x720000BF},
 };

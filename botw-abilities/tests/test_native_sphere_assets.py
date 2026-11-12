@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Native sphere format regressions and candidate integration contracts."""
 import argparse
 import hashlib

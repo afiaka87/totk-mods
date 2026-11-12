@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 // Chain and reticle evaluated per pixel in flipped pixel space (x right, y down); chain_math.inl holds the shared identities.
 #version 450

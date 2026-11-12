@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #pragma once
 namespace cryonis {
 // build_pillar.py reads these literals; scale remains a percentage of original dimensions.

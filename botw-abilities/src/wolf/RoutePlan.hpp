@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #pragma once
 #include <cstdint>
 
@@ -7,19 +7,11 @@ namespace botw_abilities::wolf {
 
 enum class Route : std::uint8_t { Direct, Near, Far };
 
-// DistanceRequestingPath on the original follow and food nodes. The rule that reads them was not
-// found; beyond the distance he plans a route, inside it he goes straight while the line is open, as
-// the node names and CheckLineReachable describe. The follow band was widened from the original's 17
-// after wolf-compact-12: route churn near the boundary (164 starts, 16 completions) was the circling
-// Clay saw, and straight running self-recovers.
+// Beyond this he plans a route, inside it runs straight on open lines; follow widened from 17 to stop route churn.
 inline constexpr float kFollowRouteDistance = 24, kFoodRouteDistance = 10;
 // GoalDistanceTolerance on the original far path.
 inline constexpr float kRouteArrival = 8;
-// The original's battle moves always plan a path (WolfLink.baiprog in Clay's BotW dump). The approach
-// plans until 9 units out (CloseEndDist) with a 6-unit goal tolerance; the rush to the bite plans to
-// the enemy itself (GoalDistanceTolerance 0, IsAutoGearDownEnabled off). Changed in wolf-compact-17
-// from straight running inside 16 units with an 8-unit tolerance, which ran him into walls and
-// restarted near routes every few ticks short of the bite (wolf-compact-15 run 2).
+// Battle moves always plan a path: the approach to 9 units with 6-unit tolerance, the rush to the enemy itself.
 inline constexpr float kBattleArrival = 9, kBattleTolerance = 6, kRushTolerance = 0;
 // The enemy moves, so the rush updates its goal this often (ticks).
 inline constexpr float kRushRetarget = 10;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 // Scene, Link and the camera: the gameplay thread's only window into guest memory.
 #pragma once

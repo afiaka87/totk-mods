@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "Audio.hpp"
 #include "AudioPlayback.hpp"
 #include "AudioTables.hpp"
-#include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include <lib.hpp>
 
 namespace botw_abilities::champions::audio {
@@ -11,9 +11,9 @@ namespace {
 using totk::engine::readMemory;
 using totk::engine::isPlausibleAddress;
 
-constexpr std::uintptr_t kFindAsset = 0xAFD150,
-                         kEmit = 0xAFD244, kFade = 0xAF78BC, kSoundSystem = 0x471A578;
-constexpr totk::engine::CodeSite kSites[]{
+constexpr totk::port::Code kFindAsset = 0xAFD150,
+                           kEmit = 0xAFD244, kFade = 0xAF78BC, kSoundSystem = 0x471A578;
+constexpr totk::port::Site kSites[]{
     {kFindAsset, 0xA9BA7BFD, 0},
     {kEmit, 0xA9BA7BFD, 0}, {kFade, 0xA9BB7BFD, 0xF9000BF9}};
 std::uintptr_t g_base{};
@@ -34,7 +34,7 @@ struct Writer {
     ~Writer() { if (acquired) g_writing.clear(std::memory_order_release); }
 };
 
-template <class Fn> Fn call(std::uintptr_t offset) {
+template <class Fn> Fn call(totk::port::Code offset) {
     return reinterpret_cast<Fn>(g_base + offset);
 }
 
@@ -129,7 +129,7 @@ bool start(Cue cue, bool looping) {
 
 bool install(std::uintptr_t base) {
     if (g_ready) return true;
-    if (!totk::engine::codeMatches(base, kSites, "champions", "AUDIO_INSTALL_REFUSED")) return false;
+    if (!totk::port::codeMatches(base, kSites, "champions", "AUDIO_INSTALL_REFUSED")) return false;
     g_base = base;
     g_ready = true;
     Logging.Log("[champions] AUDIO_INSTALLED cues=%zu native-private-calls=1", kAssets.size());

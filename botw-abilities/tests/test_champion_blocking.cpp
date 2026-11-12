@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include <doctest.h>
 #include "Blocking.hpp"
 #include "totk/engine/ActorReference121.hpp"

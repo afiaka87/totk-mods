@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //
-// Shared TotK runtime support — low-level on-screen text draw path.
+// Shared TotK runtime support - low-level on-screen text draw path.
 // Original work Copyright (C) aquacluck and the totk-lotuskit contributors
 //   <https://github.com/aquacluck/totk-lotuskit>
-// Modifications Copyright (C) Clay Mullis
+// Modifications Copyright (C) HanSoloBlaster, afiaka87
 //
 // Derived from totk-lotuskit (src/program/TextWriter.hpp), GPLv2. This is the
 // canonical reconciliation of the nine per-mod copies (F-B2); the per-donor
@@ -12,7 +12,7 @@
 // Current contract (invariants, not history):
 //   * Draw requests are queued as nodes on a per-frame heap; render hooks draw the
 //     queue on EVERY composited layer (render-only, idempotent) so whichever layer
-//     composites last carries the text — the per-frame wipe lives in resetFrame(),
+//     composites last carries the text - the per-frame wipe lives in resetFrame(),
 //     which the overlay ticks once per frame from the input hook. Binding either
 //     half to one named layer reintroduces the "overlay vanishes in gameplay"
 //     defect (Tool 2D is not composited during normal play).
@@ -79,7 +79,7 @@ namespace lotuskit {
 
     class TextWriter {
         public:
-        inline static sead::Color4f defaultColor = {1.0, 1.0, 1.0, 1.0}; // pure white (Clay v0.27.2 readout: all on-screen text white)
+        inline static sead::Color4f defaultColor = {1.0, 1.0, 1.0, 1.0}; // pure white (HanSoloBlaster v0.27.2 readout: all on-screen text white)
         inline static sead::Color4f shadowColor = {0, 0, 0, 1}; // black
         inline static void setDefaultColor(const sead::Color4f& v) { defaultColor = v; }
         inline static void setShadowColor(const sead::Color4f& v) { shadowColor = v; }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (C) Clay Mullis
+// Copyright (C) HanSoloBlaster, afiaka87
 #pragma once
 
 #include "totk/core/FixedString.hpp"
@@ -137,6 +137,10 @@ struct ActiveProcessRosterAccess {
     core::SceneToken scene{};
 };
 
+// With TOTK_PORT the three places translate to the running game, so this copy has its own name.
+#if defined(TOTK_PORT) && TOTK_PORT
+inline namespace ported {
+#endif
 [[nodiscard]] inline core::Result<ActiveProcessRosterAccess, RosterError>
 resolveActiveProcessRoster(std::uintptr_t mainBase, core::SceneToken scene) {
     if (!isPlausibleAddress(mainBase)) {
@@ -162,6 +166,9 @@ resolveActiveProcessRoster(std::uintptr_t mainBase, core::SceneToken scene) {
             scene,
         });
 }
+#if defined(TOTK_PORT) && TOTK_PORT
+}  // inline namespace ported
+#endif
 
 // Runs under the process-list mutex: no logging, engine calls or blocking.
 // Revalidate scene and captured name before reusing any retained ActorHandle.

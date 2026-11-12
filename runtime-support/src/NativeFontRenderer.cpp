@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (C) Clay Mullis
-
+// Copyright (C) HanSoloBlaster, afiaka87
 // Native UI target, NVN pools and fenced upload slots transfer from accepted BindFS rendering.
 #include "totk/ui/NativeFontRenderer.hpp"
 #include "native-font/NvnAbi.hpp"
@@ -17,6 +16,8 @@ constexpr auto kFragment = aligned(sizeof(shaders::vertCode), 256);
 constexpr auto kCodeEnd = kFragment + sizeof(shaders::fragCode);
 constexpr auto kSlotBegin = aligned(kCodeEnd + 16384, 4096);
 constexpr auto kSlotBytes = aligned(kQuads * sizeof(Quad), 4096);
+__attribute__((section(".bss.pool.2.font_storage")))
+__attribute__((section(".bss.pool.2.font_storage")))
 alignas(4096) unsigned char storage[kSlotBegin + 2 * kSlotBytes]{};
 n::Pool pool{}, fontPool{};
 n::Program program{};
@@ -128,7 +129,12 @@ void draw(const Frame& frame, std::uintptr_t drawContext, std::uintptr_t target,
           std::uintptr_t viewport, std::uintptr_t restoreState) {
     if (!frame.count || !target || !viewport) return;
     const auto graphics = read<std::uintptr_t>(mainBase + offsets::graphics);
+#if defined(TOTK_PORT) && TOTK_PORT
+    auto* device = reinterpret_cast<n::Device*>(
+        read<std::uintptr_t>(graphics + totk::port::pick<std::uintptr_t>(0x30, 0x168)));
+#else
     auto* device = reinterpret_cast<n::Device*>(read<std::uintptr_t>(graphics + 0x30));
+#endif
     const auto get = reinterpret_cast<n::GetProc>(read<std::uintptr_t>(mainBase + offsets::getProc));
     auto* command = reinterpret_cast<n::Command*>(read<std::uintptr_t>(drawContext + 0xb8));
     if (!device || !get || !command || !initializeGpu(device, get)) return;
@@ -184,6 +190,13 @@ void draw(const Frame& frame, std::uintptr_t drawContext, std::uintptr_t target,
     pending[slot] = true;
     nextSlot = (slot + 1) & 1;
     reinterpret_cast<void (*)(void*, void*)>(complete)(buffer, context);
+#if defined(TOTK_PORT) && TOTK_PORT
+    if (totk::port::is143()) {
+        // 1.4.3's release routine takes a third argument; the game passes {2, 0} at its own pair of these calls.
+        const std::uint32_t release[2]{2, 0};
+        native<void (*)(void*, void*, const std::uint32_t*)>(offsets::barrier)(buffer, context, release);
+    } else
+#endif
     native<void (*)(void*, void*)>(offsets::barrier)(buffer, context);
     apply(reinterpret_cast<void*>(restoreState), context);
 }
@@ -202,6 +215,35 @@ bool configure(std::uintptr_t base, Atlas input, Services port) noexcept {
         return false;
     }
     services = port;
+#if defined(TOTK_PORT) && TOTK_PORT
+    // The same eight words as below; on 1.4.3 the recorded words apply, so an already hooked entry is refused.
+    const struct { totk::port::Code site; std::uint32_t first, second; } signatures[]{
+        {offsets::uiDraw, 0xd10283ff, 0xa9067bfd},
+        {offsets::contextCtor, 0x52802028, 0}, {offsets::contextApply, 0xd10243ff, 0},
+        {offsets::barrier, 0xa9be7bfd, 0}, {offsets::viewportApply, 0xa9bc7bfd, 0},
+        {offsets::viewportSize, 0x2d420800, 0}, {offsets::renderBufferBind, 0xd103c3ff, 0}};
+    const bool game143 = totk::port::is143();
+    for (const auto& signature : signatures) {
+        std::uint32_t first = signature.first, second = signature.second;
+        if (game143) {
+            const std::uint32_t* words = signature.site.available()
+                ? totk::port::recordedWords(signature.site.source()) : nullptr;
+            if (!words) {
+                report("[native-font] text off on 1.4.3: a native routine has no recorded 1.4.3 place");
+                return false;
+            }
+            first = words[0];
+            if (second) second = words[1];
+        }
+        const std::uintptr_t at = base + signature.site;
+        if (read<std::uint32_t>(at) != first || (second && read<std::uint32_t>(at + 4) != second)) {
+            report(game143 ? "[native-font] text off on 1.4.3: a native routine does not start with "
+                             "its recorded words"
+                           : "[native-font] TotK 1.2.1 native signature refused");
+            return false;
+        }
+    }
+#else
     const struct { std::uintptr_t offset; std::uint32_t word; } signatures[]{
         {offsets::uiDraw, 0xd10283ff}, {offsets::uiDraw + 4, 0xa9067bfd},
         {offsets::contextCtor, 0x52802028}, {offsets::contextApply, 0xd10243ff},
@@ -212,6 +254,7 @@ bool configure(std::uintptr_t base, Atlas input, Services port) noexcept {
             report("[native-font] TotK 1.2.1 native signature refused");
             return false;
         }
+#endif
     mainBase = base;
     atlas = input;
     configured = true;

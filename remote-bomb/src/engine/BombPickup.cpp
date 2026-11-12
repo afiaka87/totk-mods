@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "BombPickup.hpp"
 #include "BombWheelPickup.hpp"
 #include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include <lib.hpp>
 #include <cmath>
 #include <cstring>
 namespace remote_bomb::pickup {
 namespace {
 using namespace totk::engine;
-constexpr CodeSite sites[]{
+using namespace totk::port::literals;
+constexpr totk::port::Site sites[]{
     {0xAB92CC,0xA9BA7BFD,0xA9016FFC}, {0x15D1FC8,0x71002C3F,0x54000268},
     {0x1433D58,0xF9411408,0xB4000068}, {0xADF114,0xD10243FF,0xA9037BFD},
     {0x11BD100,0xF9411408,0xB4000068},
@@ -24,7 +26,7 @@ struct CreateArgument {
 };
 static_assert(sizeof(CreateArgument) == 0x98 && offsetof(CreateArgument,flags) == 0x90);
 }
-bool validate(std::uintptr_t base) { return codeMatches(base,sites,"remote-bomb","PICKUP_BIND_REFUSED"); }
+bool validate(std::uintptr_t base) { return totk::port::codeMatches(base,sites,"remote-bomb","PICKUP_BIND_REFUSED"); }
 bool ready(std::uintptr_t base, engine::Handle player) {
     const auto report = [](unsigned reason, unsigned ground = 0, unsigned movement = 0) {
         static unsigned previous = ~0u, reports = 0;
@@ -35,14 +37,14 @@ bool ready(std::uintptr_t base, engine::Handle player) {
         return reason == 0;
     };
     if (!player.isCurrent(player.scene)) return report(1);
-    const auto component = reinterpret_cast<std::uintptr_t(*)(std::uintptr_t)>(base+0x11BD100)(player.address);
+    const auto component = reinterpret_cast<std::uintptr_t(*)(std::uintptr_t)>(base+0x11BD100_v121)(player.address);
     if (!isPlausibleAddress(component)) return report(2);
-    const auto rider = reinterpret_cast<std::uintptr_t(*)(std::uintptr_t)>(base+0x1152394)(player.address);
-    if (isPlausibleAddress(rider) && reinterpret_cast<bool(*)(std::uintptr_t)>(base+0xB7D3EC)(rider))
+    const auto rider = reinterpret_cast<std::uintptr_t(*)(std::uintptr_t)>(base+0x1152394_v121)(player.address);
+    if (isPlausibleAddress(rider) && reinterpret_cast<bool(*)(std::uintptr_t)>(base+0xB7D3EC_v121)(rider))
         return report(3);
     const auto velocity = readMemory<engine::Position>(player.address+layout::kActorLinearVelocity);
-    // Native grounded state; no automatic pickup during swimming, climbing, riding or a fall.
-    const auto movement = readMemory<std::uint16_t>(component+5204);
+    // Native grounded state; no automatic pickup while swimming, climbing, riding or falling (same bits on 1.4.3).
+    const auto movement = readMemory<std::uint16_t>(component+totk::port::pick<std::uintptr_t>(5204,5212));
     const auto ground = readMemory<unsigned>(component+0xE50);
     const auto reason = !(ground&1) ? 4u : (movement&0x60f) ? 5u :
         !(std::isfinite(velocity.x) && std::isfinite(velocity.y) && std::isfinite(velocity.z)) ? 6u : 0u;
@@ -50,7 +52,7 @@ bool ready(std::uintptr_t base, engine::Handle player) {
 }
 bool spawn(std::uintptr_t base, engine::Handle player, Shape shape, Upgrade upgrade) {
     if (!ready(base,player)) return false;
-    const auto manager = readMemory<std::uintptr_t>(base+0x4722920);
+    const auto manager = readMemory<std::uintptr_t>(base+0x4722920_v121);
     if (!isPlausibleAddress(manager)) return false;
     CreateArgument argument{};
     const auto position = engine::position(player);
@@ -70,18 +72,18 @@ bool spawn(std::uintptr_t base, engine::Handle player, Shape shape, Upgrade upgr
     void* preactor{};
     using Create = bool(*)(std::uintptr_t,const char**,const CreateArgument*,void*,unsigned,
                           void*,void*,void*,bool,unsigned*,void**);
-    const bool accepted = reinterpret_cast<Create>(base+0xAB92CC)(manager,&name,&argument,nullptr,1,
+    const bool accepted = reinterpret_cast<Create>(base+0xAB92CC_v121)(manager,&name,&argument,nullptr,1,
         nullptr,nullptr,nullptr,false,&result,&preactor);
     Logging.Log("[remote-bomb] WHEEL_SPAWN actor=%s accepted=%u result=%u",name,unsigned(accepted),result);
     return accepted;
 }
 bool focused(std::uintptr_t base, engine::Handle player, engine::Handle bomb) {
     if (!ready(base,player) || !bomb.isCurrent(player.scene)) return false;
-    const auto receiver = reinterpret_cast<std::uintptr_t(*)(std::uintptr_t)>(base+0x1433D58)(player.address);
+    const auto receiver = reinterpret_cast<std::uintptr_t(*)(std::uintptr_t)>(base+0x1433D58_v121)(player.address);
     if (!isPlausibleAddress(receiver)) return false;
     // Match the highest-priority native attention action, not merely any nearby lift candidate.
     const auto link = reinterpret_cast<std::uintptr_t(*)(std::uintptr_t,std::uint64_t,int,int)>(
-        base+0xADF114)(receiver,0,-1,-1);
+        base+0xADF114_v121)(receiver,0,-1,-1);
     if (!isPlausibleAddress(link)) return false;
     const auto client = readMemory<std::uintptr_t>(link);
     return isPlausibleAddress(client) && intendedLift(bomb.address,

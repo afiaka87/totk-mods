@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Detect semantic omissions which an ASB writer can round-trip successfully."""
 
 from copy import deepcopy

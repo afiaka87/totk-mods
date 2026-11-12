@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 #include "ArrowboundHookInstaller.hpp"
 
@@ -16,6 +16,7 @@
 #include "../../../engine/ModelVisibility.hpp"
 #include "../../../engine/RagdollTransport.hpp"
 #include <arrowbound/ActiveGame.hpp>
+#include "totk/suite/Member.hpp"
 
 namespace {
 namespace parasail = arrowbound::parasail;
@@ -301,6 +302,8 @@ void install(std::uintptr_t mainBase, bool installShared) {
         else
             PouchSelectionDealHook::InstallAtOffset(h.pouchDeal.offset);
         FindMessageHook::InstallAtOffset(h.findMessage.offset);
+        // Stays on in Zonai Fieldworks: a carrier granted before switch-off must still stay out of the save.
+        TOTK_SUITE_ALWAYS_ON();
         SerializeSaveDataHook::InstallAtOffset(h.serializeSave.offset);
     }
     arrowbound::arrow_mode::setCodeOnlyReady(emblemReady);

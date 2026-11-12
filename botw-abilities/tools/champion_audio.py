@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Preserve owned DSP channels and native BARS records when composing Champion audio."""
 
 from __future__ import annotations

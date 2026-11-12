@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "BombInstall.hpp"
 #include <lib.hpp>
+#include "totk/port/CodeCheck.hpp"
+#include "totk/engine/Pointer.hpp"
 #include "BombRuntime.hpp"
 #include "BombRender.hpp"
 #include "BombPhysics.hpp"
 #include "BombBlast.hpp"
 #include "BombHud.hpp"
 #include "BombInventory.hpp"
+#include "BombVisualBackend.hpp"
 
 namespace bomb = remote_bomb::runtime;
+using namespace totk::port::literals;
 bool remote_bomb::chooseSphereFromWheel(std::uintptr_t screen) {
     return bomb::chooseFromWheel(screen,Shape::Sphere);
 }
@@ -88,6 +92,15 @@ HOOK_DEFINE_TRAMPOLINE(BombBodyAddedHook) {
         return added;
     }
 };
+// 1.4.3 writes that add step into its caller, which returns nothing: a body absent before the call and present after it was added.
+HOOK_DEFINE_TRAMPOLINE(BombBodyAdd143Hook) {
+    static void Callback(std::uintptr_t body, unsigned immediate) {
+        const auto before = remote_bomb::physics::inWorld(body);
+        Orig(body, immediate);
+        if (before && !*before && remote_bomb::physics::inWorld(body).value_or(false))
+            remote_bomb::physics::bodyAdded(body);
+    }
+};
 HOOK_DEFINE_TRAMPOLINE(BombMotionChangedHook) {
     static std::uintptr_t Callback(std::uintptr_t body, const int *preset,
                                    unsigned char registerChange, unsigned char keepActivation) {
@@ -105,6 +118,24 @@ HOOK_DEFINE_TRAMPOLINE(BombClockHook) {
         bomb::publishPhysicsTime(frames);
     }
 };
+// On 1.4.3 the routine above misses one frame path; the frame-rate update runs every frame (scale at +16).
+HOOK_DEFINE_TRAMPOLINE(BombFrameRateHook) {
+    static void Callback(void *rate, float frames) {
+        Orig(rate, frames);
+        bomb::publishPhysicsTime(totk::engine::readMemory<float>(reinterpret_cast<std::uintptr_t>(rate) + 16));
+    }
+};
+constexpr std::ptrdiff_t kFrameRateUpdate143 = 0x3E67F0_v143;
+bool frameRateUpdateMatches(std::uintptr_t base) {
+    const auto site = base + static_cast<std::uintptr_t>(kFrameRateUpdate143);
+    const auto first = totk::suite::checkedCode(site), second = totk::suite::checkedCode(site + 4),
+               store = totk::suite::checkedCode(site + 0x30);
+    if (totk::engine::entryMatches(first, 0x6DBD23E9) &&
+        (second == 0xA9017BFD || totk::engine::chainedAbsoluteTail(site, first)) && store == 0xBD001001)
+        return true;
+    Logging.Log("[remote-bomb] off on 1.4.3: the frame-rate update reads %08x,%08x store=%08x", first, second, store);
+    return false;
+}
 HOOK_DEFINE_TRAMPOLINE(BombWheelOpenHook) {
     static float Callback(std::uintptr_t screen) {
         const auto result = Orig(screen);
@@ -155,31 +186,56 @@ HOOK_DEFINE_TRAMPOLINE(BombAmiiboHook) {
 };
 }
 bool remote_bomb::install(std::uintptr_t base) {
+    if (totk::port::is143()) {
+        // Without its clock the mod never sees the game running.
+        if (!frameRateUpdateMatches(base))
+            return false;
+        // Places named outside the code checks below; one without a 1.4.3 entry would fault when used.
+        if (!totk::port::all(0xB0F844, 0x74F09C, 0x7B9274, 0x4716E48, 0x46707E8, 0x462EF90, 0x4717048,
+                             0x462E3D8, 0x4630020, 0x462E0F0, 0x462E1B8, 0x471DCB0, 0x4722920)) {
+            Logging.Log("[remote-bomb] off on 1.4.3: a game place it names has no 1.4.3 entry");
+            return false;
+        }
+    }
     if (!bomb::initialize(base) || !remote_bomb::physics::initialize(base) ||
         !remote_bomb::engine::explosion::initialize(base) || !remote_bomb::render::install(base) ||
         !remote_bomb::hud::install(base))
         return false;
-    BombPouchSortHook::InstallAtOffset(0x1A7450C);
-    BombMaterialSortHook::InstallAtOffset(0x1A733D0);
-    BombNpadHook::InstallAtOffset(0x2A267BC);
-    BombClockHook::InstallAtOffset(0x7EDC00);
-    BombWheelOpenHook::InstallAtOffset(0x1B1DC94);
-    BombWheelExitHook::InstallAtOffset(0x19AD3F4);
-    BombWheelCloseHook::InstallAtOffset(0x1B1EEB8);
-    BombNativeSelectionHook::InstallAtOffset(0x1B1EEF8);
-    BombPlayerKeyHook::InstallAtOffset(0x1D30CBC);
-    BombAbilityAdmissionHook::InstallAtOffset(0x932610);
-    BombAmiiboHook::InstallAtOffset(0x1D29AAC);
-    BombBodyAddedHook::InstallAtOffset(0x23326FC);
-    BombMotionChangedHook::InstallAtOffset(0xAAD62C);
-    BombBlastContactHook::InstallAtOffset(0x1396A0C);
-    BombElementInstanceHook::InstallAtOffset(0x13884B0);
-    BombElementRemovalHook::InstallAtOffset(0x138B024);
-    BombElementPhysicsHook::InstallAtOffset(0x138B0D0);
-    BombChemicalDamageHook::InstallAtOffset(0x16FEB00);
-    BombExplosionListClearHook::InstallAtOffset(0x138FE84);
-    BombExplosionDeathHook::InstallAtOffset(0x15A935C);
-    BombNativeTimerHook::InstallAtOffset(0x1C1F768);
+    BombPouchSortHook::InstallAtOffset(0x1A7450C_v121);
+    BombMaterialSortHook::InstallAtOffset(0x1A733D0_v121);
+    BombNpadHook::InstallAtOffset(0x2A267BC_v121);
+    if (totk::port::is143())
+        BombFrameRateHook::InstallAtOffset(kFrameRateUpdate143);
+    else
+        BombClockHook::InstallAtOffset(0x7EDC00_v121);
+    BombWheelOpenHook::InstallAtOffset(0x1B1DC94_v121);
+    BombWheelExitHook::InstallAtOffset(0x19AD3F4_v121);
+    BombWheelCloseHook::InstallAtOffset(0x1B1EEB8_v121);
+    BombNativeSelectionHook::InstallAtOffset(0x1B1EEF8_v121);
+    BombPlayerKeyHook::InstallAtOffset(0x1D30CBC_v121);
+    BombAbilityAdmissionHook::InstallAtOffset(0x932610_v121);
+    BombAmiiboHook::InstallAtOffset(0x1D29AAC_v121);
+    // These nine hooks only act on bombs the mod simulates, so 1.4.3 skips them when both bombs are the game's own.
+    if (!totk::port::is143() || !nativeBomb(Shape::Sphere) || !nativeBomb(Shape::Cube)) {
+        if (totk::port::is143())
+            BombBodyAdd143Hook::InstallAtOffset(remote_bomb::physics::kBodyAdd143);
+        else
+            BombBodyAddedHook::InstallAtOffset(0x23326FC_v121);
+        BombMotionChangedHook::InstallAtOffset(0xAAD62C_v121);
+        BombBlastContactHook::InstallAtOffset(0x1396A0C_v121);
+        BombElementInstanceHook::InstallAtOffset(0x13884B0_v121);
+        BombElementRemovalHook::InstallAtOffset(0x138B024_v121);
+        BombElementPhysicsHook::InstallAtOffset(0x138B0D0_v121);
+        BombChemicalDamageHook::InstallAtOffset(0x16FEB00_v121);
+        BombExplosionListClearHook::InstallAtOffset(0x138FE84_v121);
+        BombExplosionDeathHook::InstallAtOffset(0x15A935C_v121);
+        if (totk::port::is143())
+            Logging.Log("[remote-bomb] own-bomb physics and blast hooks installed on 1.4.3 (body add through 0x1882A0)");
+    }
+    BombNativeTimerHook::InstallAtOffset(0x1C1F768_v121);
     Logging.Log("[remote-bomb] automatic Materials, pinned sorting and remote detonation installed");
     return true;
 }
+#ifdef TOTK_SUITE_MEMBER
+void remote_bomb::switched(bool on) { remote_bomb::runtime::setSwitchedOn(on); }
+#endif

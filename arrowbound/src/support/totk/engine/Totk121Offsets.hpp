@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 #pragma once
 
@@ -8,7 +8,7 @@
 #include <cstddef>
 
 namespace totk::engine {
-// ActiveGame.cpp replaces the 1.2.1 defaults with the running build profile before any reader runs.
+// Game addresses; defaults are 1.2.1's, and ActiveGame.cpp replaces them from the build profile at startup.
 struct Totk121Offsets {
     // SceneModule singleton variable; one dereference.
     static inline core::ImageOffset kSceneModuleInstance{0x04728538};

@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 #include "TerrainWaterService.hpp"
+
+#include "totk/port/Port.hpp"
 
 #include <cstddef>
 
 namespace bivouac::engine {
 namespace {
 
-constexpr std::ptrdiff_t kTerrainModuleIndirectOffset = 0x0462E178;
-constexpr std::ptrdiff_t kSearchTerrainSceneByNameOffset = 0x01334BAC;
-constexpr std::ptrdiff_t kGetWaterDepthOffset = 0x00CE8C94;
+constexpr totk::port::Code kTerrainModuleIndirectOffset = 0x0462E178;
+constexpr totk::port::Code kSearchTerrainSceneByNameOffset = 0x01334BAC;
+constexpr totk::port::Code kGetWaterDepthOffset = 0x00CE8C94;
 
 bool validPointer(std::uintptr_t value) {
     return value >= 0x1000000ull && value < 0x8000000000ull

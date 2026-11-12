@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 #include "CampAudio.hpp"
 
 #include <lib.hpp>
 
+#include "totk/port/Port.hpp"
+
 namespace bivouac::audio {
 namespace {
 
-constexpr std::ptrdiff_t kSearchAndEmitOffset = 0x00B026E0;
-constexpr std::ptrdiff_t kSoundSystemSlotOffset = 0x00462F2B0;
-constexpr std::ptrdiff_t kHandleIsValidOffset = 0x00D17C80;
+constexpr totk::port::Code kSearchAndEmitOffset = 0x00B026E0;
+constexpr totk::port::Code kSoundSystemSlotOffset = 0x00462F2B0;
+constexpr totk::port::Code kHandleIsValidOffset = 0x00D17C80;
 
 using SearchAndEmitFn = void (*)(void* user, const char* name, void* outHandle);
 using HandleIsValidFn = bool (*)(const void* handle);
@@ -85,6 +87,10 @@ bool emit(void* instance, const char* cueName) {
     std::uint8_t handle[16] = {0, 0, 0xFF, 0xFF};
     auto searchAndEmit = (SearchAndEmitFn)(g_mainBase + kSearchAndEmitOffset);
     searchAndEmit(instance, cueName, handle);
+    if (totk::port::is143()) {
+        // No 1.4.3 validity routine: played if a sound index was set (only the "cue refused" log reads this).
+        return handle[2] != 0xFF || handle[3] != 0xFF;
+    }
     auto isValid = (HandleIsValidFn)(g_mainBase + kHandleIsValidOffset);
     return isValid(handle);
 }

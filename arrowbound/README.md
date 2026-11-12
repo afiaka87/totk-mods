@@ -61,7 +61,7 @@ every modded bow have not been exhaustively tested.
 
 ## Source and license
 
-Original mod code is MIT licensed, copyright Clay Mullis.
+Original mod code is MIT licensed, copyright HanSoloBlaster, afiaka87.
 Source: https://github.com/afiaka87/totk-mods/tree/main/arrowbound
 The compiled module includes exlaunch (GPL-2.0):
 https://github.com/shadowninja108/exlaunch

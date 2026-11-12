@@ -1,20 +1,39 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "Appearances.hpp"
 #include "AppearanceState.hpp"
 #include "AppearanceObservation.hpp"
 #include "ChampionAppearances.hpp"
 #include "Effects.hpp"
 #include "support/SafeRead.hpp"
-#include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include <atomic>
+#include <cmath>
 #include <lib.hpp>
 
 namespace botw_abilities::champions::appearances {
 namespace {
 using namespace totk::engine;
+using namespace totk::port::literals;
 namespace observe = appearance_observation;
 using botw_abilities::support::safeRead;
+
+// TotK 1.4.3 spawns copies whose models use the 1.4.x shader values (tools/add_appearances143.py).
+constexpr std::array<const char*, 4> kActors143{
+    "Npc_ChampionsPocMiphaLifecycle143", "Npc_ChampionsPocRevaliLifecycle143",
+    "Npc_ChampionsPocDarukLifecycle143", "Npc_ChampionsPocUrbosaLifecycle143"};
+constexpr bool namesCopy(const char* actor, const char* copy) {
+    std::size_t i = 0;
+    for (; actor[i]; ++i)
+        if (actor[i] != copy[i]) return false;
+    return copy[i] == '1' && copy[i + 1] == '4' && copy[i + 2] == '3' && !copy[i + 3];
+}
+static_assert([] {
+    for (unsigned i = 0; i < kAppearances.size(); ++i)
+        if (!namesCopy(kAppearances[i].actor, kActors143[i])) return false;
+    return kAppearances.size() == kActors143.size();
+}());
+const char* actorName(unsigned index) { return totk::port::is143() ? kActors143[index] : kAppearances[index].actor; }
 
 std::uintptr_t g_base{};
 std::atomic<unsigned> g_epoch{};
@@ -22,12 +41,13 @@ struct Slot {
     AppearanceState state;
     std::atomic<bool> watching{}, unreadableReported{};
     std::atomic<float> frame{}, end{};
+    bool placedReported{};
 };
 std::array<Slot, 4> g_slots;
 std::array<ActorHandle, 4> g_actors;
 
 void remove(ActorHandle actor) {
-    reinterpret_cast<void(*)(std::uintptr_t)>(g_base + 0x83AA68)(actor.address);
+    reinterpret_cast<void(*)(std::uintptr_t)>(g_base + 0x83AA68_v121)(actor.address);
 }
 
 void clearPlayback(Slot& slot) {
@@ -37,11 +57,32 @@ void clearPlayback(Slot& slot) {
     slot.unreadableReported.store(false, std::memory_order_relaxed);
 }
 
+void reportPlacement(unsigned index, const TransformService& transforms, ActorHandle actor,
+                     const SceneContext& scene, const totk::core::WorldTransform& link) {
+    auto& slot = g_slots[index];
+    if (slot.placedReported) return;
+    slot.placedReported = true;
+    const auto placed = transforms.read(actor, scene.token);
+    if (!placed) {
+        Logging.Log("[champions] APPEARANCE_PLACED hero=%s error=%u", kAppearances[index].hero, unsigned(placed.error));
+        return;
+    }
+    const auto& a = placed.value.position;
+    const auto& l = link.position;
+    const float dx = a.x - l.x, dy = a.y - l.y, dz = a.z - l.z;
+    Logging.Log("[champions] APPEARANCE_PLACED hero=%s actor=(%f,%f,%f) link=(%f,%f,%f) distance=%f "
+                "playing=%f frame=%f end=%f", kAppearances[index].hero, double(a.x), double(a.y), double(a.z),
+                double(l.x), double(l.y), double(l.z), double(std::sqrt(dx * dx + dy * dy + dz * dz)),
+                double(slot.state.waiting), double(slot.frame.load(std::memory_order_relaxed)),
+                double(slot.end.load(std::memory_order_acquire)));
+}
+
 void spawn(unsigned index, const totk::core::WorldTransform& placement) {
     auto& slot = g_slots[index];
+    slot.placedReported = false;
     clearPlayback(slot);
     slot.watching.store(true, std::memory_order_release);
-    if (effects::spawnAppearance(kAppearances[index].actor, placement)) return;
+    if (effects::spawnAppearance(actorName(index), placement)) return;
     clearPlayback(slot);
     slot.state = {};
     Logging.Log("[champions] APPEARANCE_REFUSED hero=%s", kAppearances[index].hero);
@@ -84,7 +125,7 @@ void beginFrame() { g_actors = {}; }
 
 bool collect(const ActiveProcessView& actor) {
     for (unsigned i = 0; i < g_actors.size(); ++i) {
-        if (!actor.processName.equals(kAppearances[i].actor)) continue;
+        if (!actor.processName.equals(actorName(i))) continue;
         if (!g_actors[i].address) g_actors[i] = actor.handle;
         else {
             Logging.Log("[champions] APPEARANCE_DUPLICATE hero=%s", kAppearances[i].hero);
@@ -112,9 +153,12 @@ void service(const SceneContext& scene, const totk::core::WorldTransform& placem
             const auto error = transforms.force(actor, scene.token, placement);
             if (error != TransformError::None)
                 Logging.Log("[champions] APPEARANCE_FOLLOW_REFUSED hero=%s error=%u", kAppearances[i].hero, unsigned(error));
+            // Read back a quarter second in, after earlier frames' forces have been applied.
+            if (slot.state.waiting >= 0.25f) reportPlacement(i, transforms, actor, scene, placement);
             break;
         }
         case AppearanceAction::Delete:
+            reportPlacement(i, transforms, actor, scene, placement);
             if (!finished) Logging.Log("[champions] APPEARANCE_CLEANUP hero=%s orphanOrTimeout=1", kAppearances[i].hero);
             slot.watching.store(false, std::memory_order_release);
             remove(actor);
@@ -132,10 +176,10 @@ void service(const SceneContext& scene, const totk::core::WorldTransform& placem
 }
 
 bool install(std::uintptr_t base) {
-    constexpr CodeSite animation[]{{0x64B030, 0x39419008, 0x37000168}};
-    if (!codeMatches(base, animation, "champions", "APPEARANCE_ABI_REFUSED")) return false;
+    constexpr totk::port::Site animation[]{{0x64B030, 0x39419008, 0x37000168}};
+    if (!totk::port::codeMatches(base, animation, "champions", "APPEARANCE_ABI_REFUSED")) return false;
     g_base = base;
-    AutoPlay::InstallAtOffset(0x64B030);
+    AutoPlay::InstallAtOffset(0x64B030_v121);
     return true;
 }
 }

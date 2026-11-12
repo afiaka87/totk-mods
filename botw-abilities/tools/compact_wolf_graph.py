@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Shrink Wolf Link's animation graph to match the compacted clips.
 
 Commands the companion never requests route to the nearest surviving behaviour, unreachable nodes go,

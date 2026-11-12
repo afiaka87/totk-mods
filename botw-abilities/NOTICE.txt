@@ -1,4 +1,4 @@
-BotW Abilities' original source is MIT licensed, copyright Clay Mullis.
+BotW Abilities' original source is MIT licensed, copyright HanSoloBlaster, afiaka87.
 
 Wolf Link's converted model, skeleton, animations and sounds originate in the
 owner's Breath of the Wild 1.6.0 dump. They are included only in the mod archives,

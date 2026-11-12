@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "RagdollTransport.hpp"
 #include "ActorReference.hpp"
 #include "FlightClock.hpp"
@@ -293,7 +293,7 @@ HOOK_DEFINE_TRAMPOLINE(VelocityClampHook) {
         return native;
     }
 };
-// On 1.4.x, replace the queued velocity at +0x44 under the body lock after the native write.
+// 1.4.x inlines the clamp: after the native write, replace the queued velocity (+0x44) under the body lock.
 void overrideRequest(std::uintptr_t body, const pure::Vec3& incoming) {
     if (!candidate(body)) return;
     Lock lock;

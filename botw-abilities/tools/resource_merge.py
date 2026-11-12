@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Merge independent edits against clean resources, refusing ambiguous ownership."""
 
 from __future__ import annotations
@@ -91,6 +91,22 @@ def grown_elements(original, row, path):
     return len(after) - len(before)
 
 
+def enum_choices_appended(original, row):
+    """An enum may gain choices at the end of its RawValues and Values lists; nothing else changes.
+
+    The saved slots, defaults and sizes stay, so no save bytes move. Bivouac's accepted release adds
+    its camp choice this way and keeps the stock save metadata (added 2026-11-10 for Zonai Fieldworks).
+    """
+    names, hashes = ('RawValues', 'Values')
+    if without(row, (names, hashes)) != without(original, (names, hashes)):
+        return False
+    before, after = original.get(names, []), row.get(names, [])
+    added = len(after) - len(before)
+    return (added > 0 and after[:len(before)] == before and not set(after[len(before):]) & set(before)
+            and len(row.get(hashes, [])) == len(original.get(hashes, [])) + added
+            and row[hashes][:len(original[hashes])] == original[hashes])
+
+
 def grow(metadata, key, amount, index=None):
     if index is None:
         metadata[key] = type(metadata[key])(int(metadata[key]) + amount)
@@ -128,6 +144,8 @@ def saved_metadata(clean, data):
                 if index >= 0:
                     grow(metadata, 'AllDataSaveSize', added)
                     grow(metadata, 'SaveDataSize', added, index)
+                continue
+            if kind in ('Enum', 'EnumArray') and enum_choices_appended(original, row):
                 continue
             # A struct may gain registry entries or usable slots (Size); nothing else may change.
             if kind != 'Struct' or without(row, ('DefaultValue', 'Size')) != without(original, ('DefaultValue', 'Size')) \

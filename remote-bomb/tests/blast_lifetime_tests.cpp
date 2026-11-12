@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "BlastLifetime.hpp"
 #include "BlastDamage.hpp"
 #include "NativeBlastLifetime.hpp"

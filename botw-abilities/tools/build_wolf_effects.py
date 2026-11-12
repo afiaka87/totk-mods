@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Append the wolf's two effect users to the accepted private bank as a reviewed draft."""
 import argparse
 import hashlib
@@ -117,7 +117,7 @@ def main():
     generated = args.output / 'generated'
     generated.mkdir(exist_ok=True)
     actors = {key: f'EftLoc_Botw{key}' for key in specs}
-    header = ('// SPDX-License-Identifier: MIT\n// Copyright (c) Clay Mullis\n#pragma once\n'
+    header = ('// SPDX-License-Identifier: MIT\n// Copyright (c) HanSoloBlaster, afiaka87\n#pragma once\n'
               '#include <array>\n#include <cstdint>\nnamespace botw_abilities::champions {\n'
               'enum class Effect : std::uint8_t {\n    ' + ', '.join(specs) + ', Count\n};\n'
               f'inline constexpr std::array<const char*, {len(specs)}> kEffectActors{{{{\n'
@@ -128,7 +128,7 @@ def main():
     if ', '.join(specs) != old_names + ', ' + ', '.join(WOLF_KEYS):
         raise ValueError('the wolf entries must extend the accepted effect order, never reorder it')
     (generated / 'ChampionEffects.hpp').write_text(header, encoding='utf-8')
-    info = ('// SPDX-License-Identifier: MIT\n// Copyright (c) Clay Mullis\n#pragma once\n'
+    info = ('// SPDX-License-Identifier: MIT\n// Copyright (c) HanSoloBlaster, afiaka87\n#pragma once\n'
             '#include <cstddef>\n#include <cstdint>\nnamespace botw_abilities::effects {\n'
             f'inline constexpr std::size_t kPrivateEffectBytes = {len(merged)};\n'
             f'inline constexpr std::uint32_t kPrivateEffectChecksum = 0x{fingerprint(merged):08x};\n'

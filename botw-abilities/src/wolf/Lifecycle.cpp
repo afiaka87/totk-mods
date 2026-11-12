@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "Lifecycle.hpp"
 #include "NativeBrain.hpp"
 #include <lib.hpp>

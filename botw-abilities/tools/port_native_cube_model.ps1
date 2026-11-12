@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 # Loaded by the shared native model loader after Toolbox initialization.
 Add-Type -ReferencedAssemblies (Join-Path $libDir 'Newtonsoft.Json.dll') -TypeDefinition @"
 using System;

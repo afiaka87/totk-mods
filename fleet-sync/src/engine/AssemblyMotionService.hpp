@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #include "pure/FleetTelemetryMath.hpp"
 #include "pure/MatchedFormation.hpp"
@@ -123,5 +124,27 @@ class AssemblyMotionService {
 };
 
 [[nodiscard]] const char* assemblyMotionStatusName(AssemblyMotionStatus status);
+
+// 1.4.3 has no motion-type routine; matches 1.2.1's 0x6AB438 (0 static, 1 keyframed, 2 dynamic).
+[[nodiscard]] inline std::uint32_t motionTypeFromMembers(void* body) {
+    const auto address = reinterpret_cast<std::uintptr_t>(body);
+    std::uintptr_t request = 0;
+    std::memcpy(&request, reinterpret_cast<const void*>(address + 0x60), sizeof(request));
+    if (request) {
+        std::uint32_t requestFlags = 0;
+        std::memcpy(&requestFlags, reinterpret_cast<const void*>(request + 0xD4),
+                    sizeof(requestFlags));
+        if (requestFlags & 4u) {
+            std::uint32_t requested = 0;
+            std::memcpy(&requested, reinterpret_cast<const void*>(request + 0x80),
+                        sizeof(requested));
+            return requested;
+        }
+    }
+    std::uint64_t flags = 0;
+    std::memcpy(&flags, reinterpret_cast<const void*>(address + 0x68), sizeof(flags));
+    if (flags & 0x40u) return 0;
+    return (flags & 0x80u) ? 1u : 2u;
+}
 
 }

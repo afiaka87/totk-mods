@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 // Fullscreen triangle from gl_VertexID alone; the chain is computed in the fragment stage.
 #version 450

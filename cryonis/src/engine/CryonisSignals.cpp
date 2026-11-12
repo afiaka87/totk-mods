@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "CryonisHooks.hpp"
 #include "CryonisEngine.hpp"
 #include "CryonisNode.hpp"
@@ -31,10 +31,46 @@ template <class Change> bool updateWheel(HookContext hook, std::uintptr_t screen
     auto w = input::unpack(prior);
     return change(w) && hook.signals.wheel.compare_exchange_strong(prior, input::pack(w));
 }
+// 1.4.3 inlines motion type and swimming; the helper entries and the clock hook are checked.
+bool validate143(std::uintptr_t base) {
+    using namespace totk::port::literals;
+    for (const auto &site : signatures::kRuntime) {
+        if (site.site.source() == offsets::kRigidBodyBaseGetMotionType.source() ||
+            site.site.source() == offsets::kGameActorIsSwimming.source())
+            continue;
+        if (!totk::port::codeMatches(base, std::span<const signatures::Site>(&site, 1), "cryonis",
+                                     "BUILD_REFUSED")) {
+            Logging.Log("[cryonis] Cryonis off on 1.4.3: a game routine it uses did not match");
+            return false;
+        }
+    }
+    static constexpr struct {
+        std::ptrdiff_t offset;
+        std::uint32_t first, second;
+    } only143[]{{0x3E67F0_v143, 0x6DBD23E9, 0xA9017BFD},
+                {0xB1FA20_v143, 0xF9411408, 0xB4000068},
+                {0xB1FEE0_v143, 0xF9400C08, 0xF9411508}};
+    for (const auto &site : only143) {
+        const auto first = totk::suite::checkedCode(base + site.offset),
+                   second = totk::suite::checkedCode(base + site.offset + 4);
+        if (first != site.first || second != site.second) {
+            Logging.Log("[cryonis] Cryonis off on 1.4.3: offset=%p expected=%08x,%08x actual=%08x,%08x",
+                        reinterpret_cast<void *>(site.offset), site.first, site.second, first, second);
+            return false;
+        }
+    }
+    return true;
+}
 }
 bool validate(std::uintptr_t base) {
     totk::engine::motion::validate(base);
-    return totk::engine::codeMatches(base, signatures::kRuntime, "cryonis", "BUILD_REFUSED");
+    if (totk::port::is143()) {
+        if (!totk::engine::motion::supported)
+            Logging.Log("[cryonis] motion aiming off on 1.4.3: the shared motion camera check "
+                        "did not accept this game");
+        return validate143(base);
+    }
+    return totk::port::codeMatches(base, signatures::kRuntime, "cryonis", "BUILD_REFUSED");
 }
 
 void publishPhysicsTime(HookContext hook, float frames) {

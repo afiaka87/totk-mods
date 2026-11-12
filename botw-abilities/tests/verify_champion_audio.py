@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Compare independent FWAV/BWAV decoding, including a second pass through every loop."""
 import argparse
 import hashlib

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Preserve native allocation budgets when importing or renaming sphere resources."""
 from pathlib import Path
 import sys

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Build the abilities page's wheel icons from BotW's own Stasis+ and Cryonis inventory icons.
 
 Each BotW icon (144x144 sRGB RGBA8) is encoded to ASTC 4x4 sRGB and written into a copy of the

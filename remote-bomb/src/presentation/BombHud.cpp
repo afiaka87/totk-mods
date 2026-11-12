@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "BombHud.hpp"
 #include "BombHudPolicy.hpp"
 #include "BombRuntime.hpp"
 #include "BombRender.hpp"
+#include "totk/port/Port.hpp"
 #include <lib.hpp>
 
 namespace remote_bomb::hud {
+using namespace totk::port::literals;
 namespace {
 hud_policy::Fade shown;
 std::uint64_t lastClock{};
@@ -35,7 +37,7 @@ HOOK_DEFINE_TRAMPOLINE(UiHook) {
 }
 bool install(std::uintptr_t base) {
     static_cast<void>(base);
-    UiHook::InstallAtOffset(0xB0F844);
+    UiHook::InstallAtOffset(0xB0F844_v121);
     Logging.Log("[remote-bomb] HUD_INSTALLED native UI and original rune gauge");
     return true;
 }

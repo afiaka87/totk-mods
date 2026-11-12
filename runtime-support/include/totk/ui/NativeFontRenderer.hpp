@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (C) Clay Mullis
+// Copyright (C) HanSoloBlaster, afiaka87
 #pragma once
 #include "totk/ui/NativeFont.hpp"
 
@@ -14,7 +14,7 @@ struct Services {
 using UiCallback = std::uint64_t (*)(void*, void*);
 using HookInstaller = bool (*)(void*, std::uintptr_t, UiCallback, UiCallback&);
 
-// Source-level process singleton. No TextWriter, debug-font loader, heap steal or texture ID use. configure/install once before drawing. publish/clear: one producer thread only. drawUi: one native UI consumer thread. A diagnostic may produce on that same thread.
+// Process singleton: configure/install once, publish/clear from one producer thread, drawUi from one UI thread.
 bool configure(std::uintptr_t mainBase, Atlas atlas, Services services) noexcept;
 bool installUiHook(HookInstaller installer, void* context) noexcept;
 bool publish(const Frame&) noexcept;

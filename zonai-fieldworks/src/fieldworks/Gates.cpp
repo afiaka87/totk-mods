@@ -185,7 +185,7 @@ void __wrap__ZN3exl4hook4nx6410HookInlineEmmb(std::uintptr_t site, std::uintptr_
 
 }  // extern "C"
 
-// Phantom Foothold's climbing edits: each gets its own stub that preserves x17 around the switch test.
+// Phantom Foothold's climbing edits: each gets its own stub that saves x17 below sp, tests the switch, restores it.
 namespace fieldworks::climb {
 namespace {
 
@@ -250,7 +250,7 @@ unsigned relocate(std::uint32_t word, std::uintptr_t site, std::uint32_t* rw, st
     return 3;
 }
 
-// Two adjacent edits where the second becomes a return: one read of the switch decides both.
+// Adjacent edits where the second returns: one switch read decides both, so a switch change can't split them.
 bool returnsNext(const VersionPatches& set, std::uint32_t i) {
     return i + 1 < set.count && set.patches[i + 1].offset == set.patches[i].offset + 4 &&
            set.patches[i + 1].replacement == kReturn;

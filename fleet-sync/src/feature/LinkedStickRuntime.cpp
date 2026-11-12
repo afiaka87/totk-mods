@@ -39,6 +39,15 @@ void LinkedStickRuntime::enter() {
     riderInputDiagnostics_.enter();
 }
 
+void LinkedStickRuntime::switchOff() {
+    if (controller_.address || receiverCount_) clearPair("switched off");
+    input_ = {};
+}
+
+bool LinkedStickRuntime::bridging() const {
+    return publication_.activeController.load(std::memory_order_acquire) != 0;
+}
+
 void LinkedStickRuntime::setEvent(const char* text) {
     Logging.Log("[fleet-sync] EVENT %s", text);
 }

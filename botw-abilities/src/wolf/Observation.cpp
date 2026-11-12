@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #if BOTW_ABILITIES_WOLF_DIAGNOSTIC
 #include "Observation.hpp"
 #include "NativeMotion.hpp"
@@ -8,11 +8,13 @@
 #include "ModelResources.hpp"
 #include "support/SafeRead.hpp"
 #include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include <atomic>
 #include <lib.hpp>
 
 namespace botw_abilities::wolf {
 namespace {
+using namespace totk::port::literals;
 std::array<std::atomic<std::uintptr_t>, 4> g_units;
 std::atomic<std::uintptr_t> g_controller{};
 std::atomic<unsigned> g_draws{}, g_triangles{}, g_requests{}, g_epoch{};
@@ -56,12 +58,12 @@ HOOK_DEFINE_TRAMPOLINE(Play) {
 }
 
 bool installObservation(std::uintptr_t base) {
-    constexpr totk::engine::CodeSite sites[]{
+    constexpr totk::port::Site sites[]{
         {0x74C284, 0xD10383FF, 0x6D0723E9}, {0xD280F4, 0xD10643FF, 0x6D1223E9},
     };
-    if (!totk::engine::codeMatches(base, sites, "wolf-link", "OBSERVATION_ABI_REFUSED")) return false;
-    Draw::InstallAtOffset(0x74C284);
-    Play::InstallAtOffset(0xD280F4);
+    if (!totk::port::codeMatches(base, sites, "wolf-link", "OBSERVATION_ABI_REFUSED")) return false;
+    Draw::InstallAtOffset(0x74C284_v121);
+    Play::InstallAtOffset(0xD280F4_v121);
     return true;
 }
 
@@ -106,7 +108,7 @@ void logObservation(const ActorReference& actor, std::uintptr_t base) {
             actor.generation(), i, unsigned(shape.visible), shape.boundInputs, shape.inputs,
             double(shape.sphere[0]), double(shape.sphere[1]), double(shape.sphere[2]), double(shape.sphere[4]));
     }
-    const auto as = reinterpret_cast<std::uintptr_t(*)(std::uintptr_t)>(base + 0xFCA854)(actor.address());
+    const auto as = reinterpret_cast<std::uintptr_t(*)(std::uintptr_t)>(base + 0xFCA854_v121)(actor.address());
     g_controller.store(as, std::memory_order_release);
     const auto quad = read<std::uintptr_t>(components + 0x3E0);
     Logging.Log("[wolf-link] AS_STATE id=%u slots=%d quadFlags=%x commandFlags=%x current=%u next=%u slot=%d",
@@ -115,7 +117,7 @@ void logObservation(const ActorReference& actor, std::uintptr_t base) {
         read<unsigned>(quad + 108), read<int>(quad + 116));
     std::array<char, 64> command{};
     if (as && read<int>(as + 24) > 0) {
-        const auto name = reinterpret_cast<std::uintptr_t(*)(std::uintptr_t, int)>(base + 0xD2881C)(as, 0);
+        const auto name = reinterpret_cast<std::uintptr_t(*)(std::uintptr_t, int)>(base + 0xD2881C_v121)(as, 0);
         safeRead(name, command.data(), command.size() - 1);
     }
     const auto ready = localFollowingReady(actor);

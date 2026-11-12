@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Cover the native requests absent from BotW's per-gear command interface."""
 
 from copy import deepcopy

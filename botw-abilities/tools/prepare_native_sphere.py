@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Extract the exact inspected game-data input for the experimental native sphere."""
 import argparse
 import hashlib

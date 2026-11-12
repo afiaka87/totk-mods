@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #pragma once
 #include <cstddef>
 #include <cstdint>
@@ -33,7 +33,9 @@ inline constexpr Entry kAbilityPage[kWedges]{
     {nullptr, u"", Choice::None},
 };
 
-constexpr unsigned turnPage(unsigned page, unsigned turns) { return (page + turns) % kPages; }
+constexpr unsigned turnPage(unsigned page, unsigned turns, unsigned pages = kPages) {
+    return (page + turns) % pages;
+}
 
 constexpr std::uint32_t textLength(const char16_t *text) {
     std::uint32_t length = 0;

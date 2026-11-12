@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "BombInput.hpp"
 #include "BombWheelPickup.hpp"
 #include <cstdlib>

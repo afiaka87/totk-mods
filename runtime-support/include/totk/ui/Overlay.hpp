@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //
-// Shared TotK runtime support — the pluggable on-screen overlay.
-// Banner/HUD logic Copyright (C) Clay Mullis
+// Shared TotK runtime support - the pluggable on-screen overlay.
+// Banner/HUD logic Copyright (C) HanSoloBlaster, afiaka87
 // StealHeapHook derived from totk-lotuskit (aquacluck and contributors), GPLv2.
 //
 // A drop-in module any exlaunch/subsdk9 mod uses to draw its own text on-screen
@@ -15,15 +15,15 @@
 //     overlay::hud::begin(); overlay::hud::linef(...);      // bottom-left DEBUG HUD (gated)
 //
 // Two boot-proven properties:
-//   * NO FLICKER — every visible element is ONE long-lived multi-line drawlist node
+//   * NO FLICKER - every visible element is ONE long-lived multi-line drawlist node
 //     re-queued each npad tick; the render hook paints the queue on whichever layer
 //     composites last, so nothing depends on a sub-framerate debug pass.
-//   * self-contained — the mod owns no heap; the overlay yoinks a live game heap at
+//   * self-contained - the mod owns no heap; the overlay yoinks a live game heap at
 //     boot (StealHeapHook) and lazily builds its frame heap on the first tick.
 //
 // The DEBUG HUD is the debug panel: gated behind OVERLAY_DEBUG_HUD (default 0).
 // When off it compiles to nothing, so a ship build never needs debug code stripped
-// out — flip the flag in the mod's CMake to bring it back for a calibration session.
+// out - flip the flag in the mod's CMake to bring it back for a calibration session.
 //
 // Pure layout policy (measurement, anchors, pips, HUD assembly) lives in
 // totk/ui/OverlayLayout.hpp and is host-tested; this module owns hooks, heaps,
@@ -53,7 +53,7 @@ namespace overlay {
     // tick(); thereafter the presentation is immutable. Fail-closed: an insane
     // configuration (per totk::ui::isSanePresentation) or a late call leaves the
     // canonical presentation active, logs one bounded diagnostic, and returns false.
-    // Scalar data is copied into static storage — no caller pointer is retained.
+    // Scalar data is copied into static storage - no caller pointer is retained.
     // Buffer values are logical caps clamped by the canonical compile-time storage.
     bool configurePresentation(const totk::ui::OverlayPresentation& presentation);
 
@@ -63,7 +63,7 @@ namespace overlay {
     // lotuskit::DebugDrawHooks::setWorldDrawCallback / setNativeWorldDrawCallback.
     void installHooks();
 
-    // Per-frame service — call once per npad tick, BEFORE any early-return in the mod's tick, so
+    // Per-frame service - call once per npad tick, BEFORE any early-return in the mod's tick, so
     // toasts always age and the frame heap is always reclaimed. Lazily creates the frame heap on the
     // first tick after the heap steal, re-queues the live banner, and (if OVERLAY_DEBUG_HUD) the HUD.
     void tick();
@@ -92,7 +92,7 @@ namespace overlay {
 
 #if OVERLAY_DEBUG_HUD
     // DEBUG HUD (bottom-left): refill it each tick with begin() then one linef() per line. The
-    // buffer is rendered (one frame lagged — harmless) by the next tick(). Compiles to nothing when
+    // buffer is rendered (one frame lagged - harmless) by the next tick(). Compiles to nothing when
     // OVERLAY_DEBUG_HUD is 0, so HUD call sites can stay in the mod source year-round behind the same
     // #if and never need stripping for a ship build.
     // Contract: begin(), the linef()s, and end() must ALL run on the tick thread, in that order. end()

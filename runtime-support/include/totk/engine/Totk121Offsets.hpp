@@ -1,37 +1,53 @@
 // SPDX-License-Identifier: MIT
-// Copyright (C) Clay Mullis
+// Copyright (C) HanSoloBlaster, afiaka87
 #pragma once
 
 #include "totk/core/Units.hpp"
+#if defined(TOTK_PORT) && TOTK_PORT
+#include "totk/port/Port.hpp"
+#endif
 
 #include <cstddef>
 
 namespace totk::engine {
 
+// With TOTK_PORT these 1.2.1 places translate at use; the own name keeps a non-port member's copy apart at link.
+#if defined(TOTK_PORT) && TOTK_PORT
+inline namespace ported {
+#endif
 struct Totk121Offsets {
+#if defined(TOTK_PORT) && TOTK_PORT
+    using Offset = port::ImageOffset;
+#else
+    using Offset = core::ImageOffset;
+#endif
     static constexpr const char* kGameVersion = "1.2.1";
     static constexpr const char* kBuildId = "9B4E43650501A4D4";
 
     // SceneModule singleton slot; one dereference to SceneModule.
-    static constexpr core::ImageOffset kSceneModuleInstance{0x04728538};
+    static constexpr Offset kSceneModuleInstance{0x04728538};
     // BaseProcMgr holder slot; DOUBLE dereference to the manager.
-    static constexpr core::ImageOffset kProcessManagerIndirect{0x0462DED8};
-    static constexpr core::ImageOffset kProcessListLock{0x02B17270};
-    static constexpr core::ImageOffset kProcessListUnlock{0x02B17280};
+    static constexpr Offset kProcessManagerIndirect{0x0462DED8};
+    static constexpr Offset kProcessListLock{0x02B17270};
+    static constexpr Offset kProcessListUnlock{0x02B17280};
 
-    static constexpr core::ImageOffset kNpadCalc{0x02A267BC};
-    static constexpr core::ImageOffset kRaycastWorker{0x00858590};
+    static constexpr Offset kNpadCalc{0x02A267BC};
+    static constexpr Offset kRaycastWorker{0x00858590};
 
-    static constexpr core::ImageOffset kForceSetMatrix{0x006BA86C};
-    static constexpr core::ImageOffset kGetMotionType{0x006AB438};
-    static constexpr core::ImageOffset kRequestChangeMotionType{0x00E8BE30};
-    static constexpr core::ImageOffset kRequestSetLinearVelocity{0x00ACC874};
+    static constexpr Offset kForceSetMatrix{0x006BA86C};
+    // 1.4.3 has no such routine (the game reads the type inline): see Transform.hpp.
+    static constexpr Offset kGetMotionType{0x006AB438};
+    static constexpr Offset kRequestChangeMotionType{0x00E8BE30};
+    static constexpr Offset kRequestSetLinearVelocity{0x00ACC874};
 
     // GameDataMgr holder slot; DOUBLE dereference to the manager.
-    static constexpr core::ImageOffset kGameDataManagerIndirect{0x0462E3D8};
-    static constexpr core::ImageOffset kGameDataGetInt{0x010CD5BC};
-    static constexpr core::ImageOffset kGameDataSetInt{0x00B51B08};
+    static constexpr Offset kGameDataManagerIndirect{0x0462E3D8};
+    static constexpr Offset kGameDataGetInt{0x010CD5BC};
+    static constexpr Offset kGameDataSetInt{0x00B51B08};
 };
+#if defined(TOTK_PORT) && TOTK_PORT
+}  // inline namespace ported
+#endif
 
 namespace layout {
 

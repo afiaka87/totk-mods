@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "Hud.hpp"
 #include "HudPolicy.hpp"
 #include "ChampionHudAssets.hpp"
-#include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include <lib.hpp>
 
 namespace botw_abilities::champions::hud {
@@ -56,11 +56,12 @@ void service(const SavedSnapshot& saved, const std::array<Context,4>& contexts) 
     g_frame = frame;
 }
 bool install(std::uintptr_t base) {
-    constexpr totk::engine::CodeSite sites[]{
+    using namespace totk::port::literals;
+    constexpr totk::port::Site sites[]{
         {0xD832C8,0xD10303FF,0x6D0523E9}, {0x1B0D124,0xA9BE7BFD,0xF9000BF3}};
-    if (!totk::engine::codeMatches(base,sites,"champions","HUD_INSTALL_REFUSED")) return false;
-    StatusUpdate::InstallAtOffset(0xD832C8);
-    StatusClose::InstallAtOffset(0x1B0D124);
+    if (!totk::port::codeMatches(base,sites,"champions","HUD_INSTALL_REFUSED")) return false;
+    StatusUpdate::InstallAtOffset(0xD832C8_v121);
+    StatusClose::InstallAtOffset(0x1B0D124_v121);
     const bool ready = totk::render::registerHudExtension(g_extension);
     Logging.Log("[champions] HUD_REGISTERED ready=%u icons=4",unsigned(ready));
     return ready;

@@ -1,20 +1,44 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 #include "engine/LinkAudio.hpp"
 
 #include <lib.hpp>
 
+#include <cstring>
+
+#include "totk/port/Port.hpp"
+
 namespace linked_stick::engine::audio {
 namespace {
 // TotK 1.2.1 sound path: Bivouac CampAudio, observed in v0.25.0.
-constexpr std::ptrdiff_t kSearchAndEmit = 0x00B026E0;
-constexpr std::ptrdiff_t kSystemSlot = 0x0462F2B0;
-constexpr std::ptrdiff_t kHandleIsValid = 0x00D17C80;
+constexpr totk::port::Code kSearchAndEmit = 0x00B026E0;
+constexpr totk::port::Code kSystemSlot = 0x0462F2B0;
+constexpr totk::port::Code kHandleIsValid = 0x00D17C80;
 std::uintptr_t base = 0;
 
 bool pointer(std::uintptr_t p) {
     return p >= 0x1000000 && p < 0x8000000000ull && (p & 3) == 0;
+}
+
+// TotK 1.4.3 only: that game has no handle-validity routine and does this table lookup in line.
+bool handleLive143(const std::uint8_t* handle) {
+    using namespace totk::port::literals;
+    std::int16_t index = 0;
+    std::uint32_t createId = 0;
+    std::memcpy(&index, handle + 2, sizeof(index));
+    std::memcpy(&createId, handle + 4, sizeof(createId));
+    const auto system = static_cast<std::int8_t>(handle[0]);
+    if (index == -1 || system < 0 || system > 1) return false;
+    const auto tables = *reinterpret_cast<const std::uintptr_t*>(base + 0x395F388_v143);
+    const auto strides = *reinterpret_cast<const std::uintptr_t*>(base + 0x395F390_v143);
+    if (!pointer(tables) || !pointer(strides)) return false;
+    const auto table = reinterpret_cast<const std::uint64_t*>(tables)[system];
+    const auto stride = reinterpret_cast<const std::uint64_t*>(strides)[system];
+    const std::uint64_t slot =
+        stride * static_cast<std::uint64_t>(static_cast<std::int64_t>(index)) + table;
+    if (slot == 0 || !pointer(slot)) return false;
+    return *reinterpret_cast<const std::uint32_t*>(slot + 0x20) == createId;
 }
 
 bool interfaceName(const char* name) {
@@ -70,7 +94,9 @@ bool play(const char* cue) {
     using Emit = void (*)(void*, const char*, void*);
     using Valid = bool (*)(const void*);
     reinterpret_cast<Emit>(base + kSearchAndEmit)(instance, cue, handle);
-    const bool emitted = reinterpret_cast<Valid>(base + kHandleIsValid)(handle);
+    const bool emitted = totk::port::is143()
+        ? handleLive143(handle)
+        : reinterpret_cast<Valid>(base + kHandleIsValid)(handle);
     Logging.Log("[fleet-sync] AUDIO cue=%s requested=1 emitted=%u", cue, emitted ? 1u : 0u);
     return emitted;
 }

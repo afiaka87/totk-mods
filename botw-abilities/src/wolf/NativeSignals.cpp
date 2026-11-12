@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "NativeSignals.hpp"
 #include "NativeApi.hpp"
 #include <lib.hpp>
@@ -8,15 +8,16 @@ namespace botw_abilities::wolf {
 namespace {
 using namespace totk::engine;
 using totk::core::WorldPosition;
-constexpr std::uintptr_t kNoiseOwner = 0xFC12CC, kNoiseSend = 0x69987C, kLetterSend = 0x1F11380;
-constexpr std::uintptr_t kLookOwner = 0xFA82A0, kLookStart = 0x101EE28, kLookMove = 0x1320D58, kLookStop = 0x11B257C;
-constexpr CodeSite kSites[]{
+constexpr totk::port::Code kNoiseOwner = 0xFC12CC, kNoiseSend = 0x69987C, kLetterSend = 0x1F11380;
+constexpr totk::port::Code kLookOwner = 0xFA82A0, kLookStart = 0x101EE28, kLookMove = 0x1320D58, kLookStop = 0x11B257C;
+constexpr totk::port::Site kSites[]{
     {kNoiseOwner, 0xF9411408, 0xB4000068}, {kNoiseSend, 0xD10103FF, 0xA9027BFD},
     {kLetterSend, 0xA9BD7BFD, 0xF9000BF5}, {kLookOwner, 0xF9411408, 0xB4000068},
     {kLookStart, 0xA9BE7BFD, 0xA9014FF4}, {kLookMove, 0xA9BE7BFD, 0xA9014FF4},
     {kLookStop, 0x39457408, 0x360005A8},
 };
-constexpr std::uintptr_t kEventSlot = 0x462E3E8, kEventCurrent = 0x58, kLookEnabled = 349, kLetterBox = 888;
+constexpr totk::port::Code kEventSlot = 0x462E3E8;
+constexpr std::uintptr_t kEventCurrent = 0x58, kLookEnabled = 349, kLetterBox = 888;
 constexpr std::uint16_t kNoiseKind = 512;
 constexpr float kHowlLevel = 10;
 constexpr std::uint32_t kForceEscape = 1916731393, kNobody = UINT32_MAX;

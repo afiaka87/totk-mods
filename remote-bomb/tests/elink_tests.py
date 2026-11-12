@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Validate installed native effect bytes, stock-user preservation and the Time Bomb explosion."""
 import argparse
 import hashlib

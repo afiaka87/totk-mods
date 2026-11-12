@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Build private Champion effect carriers from owned native effect resources."""
 
 from __future__ import annotations
@@ -221,7 +221,7 @@ def build(args):
     (args.output / 'effects-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8')
     generated = args.output / 'generated'
     generated.mkdir(exist_ok=True)
-    header = ('// SPDX-License-Identifier: MIT\n// Copyright (c) Clay Mullis\n#pragma once\n'
+    header = ('// SPDX-License-Identifier: MIT\n// Copyright (c) HanSoloBlaster, afiaka87\n#pragma once\n'
               '#include <array>\n#include <cstdint>\nnamespace botw_abilities::champions {\n'
               'enum class Effect : std::uint8_t {\n    ' + ', '.join(specs) + ', Count\n};\n'
               f'inline constexpr std::array<const char*, {len(specs)}> kEffectActors{{{{\n')

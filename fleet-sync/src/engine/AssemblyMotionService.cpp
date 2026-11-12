@@ -9,6 +9,7 @@
 #include "pure/VehicleMatch.hpp"
 #include "totk/engine/Pointer.hpp"
 #include "totk/engine/Totk121Offsets.hpp"
+#include "totk/port/CodeCheck.hpp"
 
 namespace linked_stick::engine {
 namespace math = pure::matched;
@@ -52,33 +53,33 @@ int milli(float x) {
 
 void AssemblyMotionService::configure(std::uintptr_t mainBase) {
     *this = AssemblyMotionService{};
+    // Shipped first words (1.4.3: recorded); another mod's hook here still passes (1.4.x Arrowbound hooks one).
+    constexpr totk::port::Site motion[]{
+        {offsets::kHavokReadVelocities, 0xA9BD7BFD, 0},
+        {offsets::kBodyNextLinearVelocity, 0xA9BD7BFD, 0},
+        {offsets::kBodyNextAngularVelocity, 0xFC1C0FEA, 0},
+        {offsets::kBodyCenterOfMassWorld, 0xD100C3FF, 0},
+        {offsets::kRequestAngularVelocity, 0xFC1B0FEA, 0},
+        {totk::engine::Totk121Offsets::kRequestSetLinearVelocity.value, 0xFC1B0FEA, 0},
+    };
     if (!totk::engine::isPlausibleAddress(mainBase) ||
-        totk::engine::readMemory<std::uint32_t>(mainBase + offsets::kHavokReadVelocities) !=
-            0xA9BD7BFD ||
-        totk::engine::readMemory<std::uint32_t>(mainBase + offsets::kBodyNextLinearVelocity) !=
-            0xA9BD7BFD ||
-        totk::engine::readMemory<std::uint32_t>(mainBase + offsets::kBodyNextAngularVelocity) !=
-            0xFC1C0FEA ||
-        totk::engine::readMemory<std::uint32_t>(mainBase + offsets::kBodyCenterOfMassWorld) !=
-            0xD100C3FF ||
-        totk::engine::readMemory<std::uint32_t>(mainBase + offsets::kRequestAngularVelocity) !=
-            0xFC1B0FEA ||
-        totk::engine::readMemory<std::uint32_t>(
-            mainBase + totk::engine::Totk121Offsets::kRequestSetLinearVelocity.value) !=
-            0xFC1B0FEA) {
+        !totk::port::codeMatches(mainBase, motion, "fleet-sync", "FORMATION_OFF physics routine"))
         return;
-    }
     mainBase_ = mainBase;
-    collisionReady_ =
-        totk::engine::readMemory<std::uint32_t>(mainBase + offsets::kRequestLayerHitMask) == 0xA9BC7BFD &&
-        totk::engine::readMemory<std::uint32_t>(mainBase + offsets::kHavokBodyIsValid) == 0xA9BE7BFD &&
-        totk::engine::readMemory<std::uint32_t>(mainBase + offsets::kHavokGetBody) == 0xA9BE7BFD;
+    constexpr totk::port::Site collision[]{
+        {offsets::kRequestLayerHitMask, 0xA9BC7BFD, 0},
+        {offsets::kHavokBodyIsValid, 0xA9BE7BFD, 0},
+        {offsets::kHavokGetBody, 0xA9BE7BFD, 0},
+    };
+    collisionReady_ = totk::port::codeMatches(mainBase, collision, "fleet-sync", "COLLISION_OFF physics routine");
     Logging.Log("[fleet-sync][collision] ABI ready=%u mask=%x valid=%x body=%x", collisionReady_ ? 1u : 0u,
         totk::engine::readMemory<std::uint32_t>(mainBase + offsets::kRequestLayerHitMask),
         totk::engine::readMemory<std::uint32_t>(mainBase + offsets::kHavokBodyIsValid),
         totk::engine::readMemory<std::uint32_t>(mainBase + offsets::kHavokGetBody));
-    getMotionType_ = reinterpret_cast<GetMotionTypeFunction>(
-        mainBase + totk::engine::Totk121Offsets::kGetMotionType.value);
+    getMotionType_ = totk::port::is143()
+        ? &motionTypeFromMembers
+        : reinterpret_cast<GetMotionTypeFunction>(
+              mainBase + totk::engine::Totk121Offsets::kGetMotionType.value);
     requestLinearVelocity_ = reinterpret_cast<RequestLinearVelocityFunction>(
         mainBase + totk::engine::Totk121Offsets::kRequestSetLinearVelocity.value);
     requestAngularVelocity_ = reinterpret_cast<RequestLinearVelocityFunction>(

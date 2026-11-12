@@ -1,36 +1,39 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 #pragma once
 
 #include "totk/core/Units.hpp"
+#include "totk/port/Port.hpp"
 
 #include <cstddef>
 
 namespace totk::engine {
+// Game places named by their 1.2.1 offset; `.value` gives the running game's (1.2.1 or 1.4.3).
 struct Totk121Offsets {
     static constexpr const char* kGameVersion = "1.2.1";
     static constexpr const char* kBuildId = "9B4E43650501A4D4";
 
     // SceneModule singleton slot; one dereference.
-    static constexpr core::ImageOffset kSceneModuleInstance{0x04728538};
+    static constexpr totk::port::ImageOffset kSceneModuleInstance{0x04728538};
     // BaseProcMgr holder slot; double dereference.
-    static constexpr core::ImageOffset kProcessManagerIndirect{0x0462DED8};
-    static constexpr core::ImageOffset kProcessListLock{0x02B17270};
-    static constexpr core::ImageOffset kProcessListUnlock{0x02B17280};
+    static constexpr totk::port::ImageOffset kProcessManagerIndirect{0x0462DED8};
+    static constexpr totk::port::ImageOffset kProcessListLock{0x02B17270};
+    static constexpr totk::port::ImageOffset kProcessListUnlock{0x02B17280};
 
-    static constexpr core::ImageOffset kNpadCalc{0x02A267BC};
-    static constexpr core::ImageOffset kRaycastWorker{0x00858590};
+    static constexpr totk::port::ImageOffset kNpadCalc{0x02A267BC};
+    static constexpr totk::port::ImageOffset kRaycastWorker{0x00858590};
 
-    static constexpr core::ImageOffset kForceSetMatrix{0x006BA86C};
-    static constexpr core::ImageOffset kGetMotionType{0x006AB438};
-    static constexpr core::ImageOffset kRequestChangeMotionType{0x00E8BE30};
-    static constexpr core::ImageOffset kRequestSetLinearVelocity{0x00ACC874};
+    static constexpr totk::port::ImageOffset kForceSetMatrix{0x006BA86C};
+    // No 1.4.3 place (the game does this inline there): check `.value.available()` before use.
+    static constexpr totk::port::ImageOffset kGetMotionType{0x006AB438};
+    static constexpr totk::port::ImageOffset kRequestChangeMotionType{0x00E8BE30};
+    static constexpr totk::port::ImageOffset kRequestSetLinearVelocity{0x00ACC874};
 
     // GameDataMgr holder slot; double dereference.
-    static constexpr core::ImageOffset kGameDataManagerIndirect{0x0462E3D8};
-    static constexpr core::ImageOffset kGameDataGetInt{0x010CD5BC};
-    static constexpr core::ImageOffset kGameDataSetInt{0x00B51B08};
+    static constexpr totk::port::ImageOffset kGameDataManagerIndirect{0x0462E3D8};
+    static constexpr totk::port::ImageOffset kGameDataGetInt{0x010CD5BC};
+    static constexpr totk::port::ImageOffset kGameDataSetInt{0x00B51B08};
 };
 
 namespace layout {

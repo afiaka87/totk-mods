@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 // Controller seams: the gameplay frame (fresh samples, owned mask), the newest live raw slot, and
 // the processed controller after calcImpl_.

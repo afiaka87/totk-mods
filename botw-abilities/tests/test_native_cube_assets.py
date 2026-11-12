@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Check live cube references, inherited allocations and accepted sphere isolation."""
 import argparse
 import hashlib

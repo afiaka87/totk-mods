@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "NativeBrain.hpp"
 #include "NativeGroundMotion.hpp"
 #include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include <atomic>
 
 namespace botw_abilities::wolf {
 namespace {
 using namespace totk::engine;
-constexpr CodeSite kSites[]{{0x6635B8, 0xD10483FF, 0x6D0B23E9}};
+using namespace totk::port::literals;
+constexpr totk::port::Site kSites[]{{0x6635B8, 0xD10483FF, 0x6D0B23E9}};
 std::uintptr_t g_base{};
 BrainUpdate g_update{};
 std::atomic<std::uint32_t> g_selected{UINT32_MAX};
@@ -44,14 +46,15 @@ HOOK_DEFINE_TRAMPOLINE(Scheduler) {
 
 bool installBrainApi(std::uintptr_t base, BrainUpdate update) {
     if (g_base) return base == g_base && update == g_update;
-    if (!update || !initializeActorApi(base) || !codeMatches(base, kSites, "wolf-link", "BRAIN_ABI_REFUSED")) {
+    if (!update || !initializeActorApi(base) ||
+        !totk::port::codeMatches(base, kSites, "wolf-link", "BRAIN_ABI_REFUSED")) {
         Logging.Log("[wolf-link] AI_INSTALL_REFUSED callback=%u", unsigned(update != nullptr));
         return false;
     }
     if (!installGroundMotionApi(base)) return false;
     g_update = update;
     g_base = base;
-    Scheduler::InstallAtOffset(0x6635B8);
+    Scheduler::InstallAtOffset(0x6635B8_v121);
     return true;
 }
 

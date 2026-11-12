@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "ModelVisibility.hpp"
 #if ARROWBOUND_FLIGHT_DIAGNOSTICS
 #include "ActorReference.hpp"

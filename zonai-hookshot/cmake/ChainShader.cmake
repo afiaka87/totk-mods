@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 
 # Compiles the chain pass GLSL to Maxwell binaries with the pinned external compiler and emits a generated header.
 get_filename_component(HOOKSHOT_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Add persistent Champion state and Key Item discovery without editing native flags."""
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def build(args):
     (args.output / 'state-restbl-forces.tsv').write_text(f'{RESOURCE[:-3]}\t{floor}\n', encoding='utf-8')
     generated = args.output / 'generated'
     generated.mkdir(exist_ok=True)
-    header = ('// SPDX-License-Identifier: MIT\n// Copyright (c) Clay Mullis\n#pragma once\n'
+    header = ('// SPDX-License-Identifier: MIT\n// Copyright (c) HanSoloBlaster, afiaka87\n#pragma once\n'
               '#include <array>\n#include <cstdint>\nnamespace botw_abilities::champions {\n'
               'struct SaveKeys { const char* actor; std::uint32_t enabled, charges, recharge; };\n'
               'inline constexpr std::array<SaveKeys, 4> kSaveKeys{{\n')

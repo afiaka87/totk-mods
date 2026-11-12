@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #pragma once
 #include "BombState.hpp"
 #include "BombEffects.hpp"
@@ -23,6 +23,11 @@ struct Presentation {
 };
 bool initialize(std::uintptr_t base);
 void tick(void *device);
+#ifdef TOTK_SUITE_MEMBER
+// Zonai Fieldworks' switch. Off: the next tick removes the placed bombs, and nothing new starts.
+void setSwitchedOn(bool on);
+bool switchedOn();
+#endif
 void publishPhysicsTime(float frames);
 void wheelOpened(std::uintptr_t screen);
 bool chooseFromWheel(std::uintptr_t screen, Shape shape);

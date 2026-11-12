@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #pragma once
 #include <lib.hpp>
 #include "../../../runtime-support/include/totk/render/PfxHookSite.hpp"

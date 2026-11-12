@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //
-// Shared TotK runtime support — the world seam's depth contract.
-// Copyright (C) Clay Mullis
+// Shared TotK runtime support - the world seam's depth contract.
+// Copyright (C) HanSoloBlaster, afiaka87
 //
 // Drawing at the end of the solid pass is only half of "depth-correct". The
 // other half is the render state the draw runs under, and the engine's own
@@ -10,8 +10,8 @@
 // over the world rather than becoming a surface that hides later translucent
 // effects), and then put the engine's state back before the frame continues.
 //
-// Two 128-byte graphics contexts are built once at configure time — one holding
-// the seam's state, one holding the engine's untouched default — because
+// Two 128-byte graphics contexts are built once at configure time (one holding
+// the seam's state, one holding the engine's untouched default) because
 // constructing them per frame would cost a call into the engine on the render
 // thread for a value that never changes.
 //

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //
-// Shared TotK runtime support — diagnostics sink for the UI layer.
-// Copyright (C) Clay Mullis
+// Shared TotK runtime support - diagnostics sink for the UI layer.
+// Copyright (C) HanSoloBlaster, afiaka87
 //
 // Shared code must not bind to a per-mod Logger (matrix T11/O10). Guard and
 // breadcrumb messages route through one settable sink; the default is the debug

@@ -1,10 +1,11 @@
 // Copyright (c) HanSoloBlaster, afiaka87
-// Zonai Fieldworks: eight mods in one subsdk6 module, each switched by the player's saved choice.
+// Zonai Fieldworks: eight mods in one subsdk6 module, each switched on or off per the player's saved choice.
 #include <lib.hpp>
 
 #include "arrowbound/GameProfiles.hpp"
 #include "fieldworks/Gates.hpp"
 #include "fieldworks/Switches.hpp"
+#include "totk/port/Generated.hpp"
 #include "totk/suite/Member.hpp"
 #include "wheel/WheelPage.hpp"
 
@@ -105,8 +106,17 @@ extern "C" void exl_main(void* /*x0*/, void* /*x1*/) {
         Logging.Log("[fieldworks] unknown game build main_text=%zx; nothing installed", textSize);
         return;
     }
-    Logging.Log("[fieldworks] v0.8.0 TotK %s module_offset=%lx", g_game->name,
+    Logging.Log("[fieldworks] v0.9.3 TotK %s module_offset=%lx", g_game->name,
                 exl::util::modules::GetSelfStart() - base);
+    // Fleet Sync, Bivouac and BotW Abilities name game code by its 1.2.1 offset (totk/port/Port.hpp);
+    // they install on 1.2.1 and 1.4.3 and refuse the other versions.
+    const auto ported = g_game->version == GameVersion::V121   ? totk::port::Game::V121
+                        : g_game->version == GameVersion::V143 ? totk::port::Game::V143
+                                                               : totk::port::Game::Unsupported;
+    if (!totk::port::use(ported, totk::port::generated::table(), base)) {
+        Logging.Log("[fieldworks] PORTED members off: game=%s early_addresses=%u", g_game->name,
+                    totk::port::state.early);
+    }
 
     for (std::size_t i = 0; i < fieldworks::gates::kMembers; ++i) {
         fieldworks::gates::beginMember(i);

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Author private Champion Key Items and original artwork without replacing Sage vows."""
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-Fleet Sync's original source is MIT Licensed, copyright Clay Mullis.
+Fleet Sync's original source is MIT Licensed, copyright HanSoloBlaster, afiaka87.
 Mod source: https://github.com/afiaka87/totk-mods/tree/main/fleet-sync
 
 The compiled module includes exlaunch (GPL-2.0), which is not relicensed by the

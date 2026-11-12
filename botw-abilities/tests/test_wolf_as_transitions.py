@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Original exact/default/excluded transitions must survive native first-match dispatch."""
 
 from copy import deepcopy

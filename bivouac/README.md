@@ -1,4 +1,14 @@
-# Bivouac v0.26.3
+# Bivouac v0.27.0
+
+## Changes in v0.27.0
+
+- Runs on Tears of the Kingdom **1.4.3** as well as 1.2.1, from the same download. The mod detects
+  the game version when it starts, and the download carries the game files for both versions.
+- Everything works the same on both versions. On 1.4.3 a second, backup way of noticing that you
+  ate a camp item is off; the normal one works.
+- Tested in Citron on 1.2.1 and 1.4.3 inside Zonai Fieldworks v0.9.3, which runs this same code and
+  these same game changes. This download has not had its own boot, and there is no Switch test.
+- Emulator download only for now; the Switch download stays at v0.26.3.
 
 ## Changes in v0.26.3
 
@@ -51,17 +61,19 @@ when a camp travel starts, and a sign tone when a camp is taken down.
 
 ## Requirements and installation
 
-Requires Tears of the Kingdom **1.2.1**, build `9B4E43650501A4D4`.
+Requires Tears of the Kingdom **1.2.1** (build `9B4E43650501A4D4`) or **1.4.3** (build
+`277178B7DBA1B6D4`).
 
-**Eden or another emulator:** extract `bivouac-v0.26.3-emulator-subsdk7.zip` and copy its `Bivouac`
-folder into the game's mod folder (in Eden: right-click the game, **Open Mod Data Location**).
+**Citron, Eden or another emulator:** extract `bivouac-v0.27.0-emulator-subsdk7.zip` and copy its
+`Bivouac` folder into the game's mod folder (right-click the game, **Open Mod Data Location**).
 Enable **Bivouac** in the game's add-on list.
 
-**Switch (Atmosphere):** extract `bivouac-v0.26.3-switch-subsdk7.zip` and copy its `0100F2C0115B6000`
-folder into `atmosphere/contents/` on the SD card.
+**Switch (Atmosphere):** v0.27.0 has no Switch download yet. The Switch download is still
+`bivouac-v0.26.3-switch-subsdk7.zip` (1.2.1 only): copy its `0100F2C0115B6000` folder into
+`atmosphere/contents/` on the SD card.
 
-Both archives contain the same files: `exefs/subsdk7`, `exefs/main.npdm`, and seven files under
-`romfs/`.
+The emulator archive contains `exefs/subsdk7`, `exefs/main.npdm`, and the game files under `romfs/`
+for both game versions.
 
 ## Compatibility
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "NativeInput.hpp"
 #include "NativeApi.hpp"
 #include "WorldMath.hpp"
@@ -9,7 +9,7 @@ namespace botw_abilities::wolf {
 namespace {
 using namespace totk::engine;
 NativeApi g_api;
-constexpr CodeSite kSites[]{
+constexpr totk::port::Site kSites[]{
     {0xB7EF98, 0xA9BE7BFD, 0xA9014FF4}, {0x753530, 0xA9BB7BFD, 0xF9000BF9},
     {0x9EE828, 0xA9BD7BFD, 0xA90157F6}, {0xDBD3C8, 0xFD416000, 0x910B0008},
     {0x823FD8, 0xD103C3FF, 0xFD0033EC},

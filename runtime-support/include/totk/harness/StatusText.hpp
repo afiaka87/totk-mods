@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //
-// Shared TotK runtime support — pure status-text memory for the solo harness.
-// Copyright (C) Clay Mullis
+// Shared TotK runtime support - pure status-text memory for the solo harness.
+// Copyright (C) HanSoloBlaster, afiaka87
 //
 // Exact extraction of the donor SoloHarness helpers (matrix H2). The 95-character
 // compare window is a deliberate contract: two statuses that agree on their first

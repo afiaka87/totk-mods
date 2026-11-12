@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 #pragma once
 
@@ -29,6 +29,11 @@ void installUniqueHooks();
 
 [[nodiscard]] bool removeNearestCamp(float maximumDistance = 10.0f);
 [[nodiscard]] Status status();
+// True from a camp-stamp warp until the arrival watch at the camp ends.
+[[nodiscard]] bool arrivalPending();
+// Zonai Fieldworks' switch: off removes the camps from the world and keeps their sites; on rebuilds them.
+void switchOff();
+void switchOn();
 
 // Standalone entry: initializes exlaunch, installs the shared drivers and the unique hooks.
 void install();

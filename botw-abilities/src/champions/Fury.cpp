@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "Fury.hpp"
 #include "Combat.hpp"
 #include "Effects.hpp"
@@ -11,7 +11,7 @@
 #include "Runtime.hpp"
 #include "UseEvents.hpp"
 #include "totk/engine/ActorRoster.hpp"
-#include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include "totk/engine/NativeRead.hpp"
 #include "totk/engine/Transform.hpp"
 #include <lib.hpp>
@@ -20,14 +20,17 @@ namespace botw_abilities::champions::fury_native {
 namespace {
 using namespace totk::engine;
 using namespace totk::engine::native_read;
-constexpr CodeSite kSites[]{ {0x1725600,0xFC160FEE,0x6D0133ED}, {0x11BD100,0xF9411408,0xB4000068},
-    {0x6836B0,0xF94C1808,0xB4000228},
+using namespace totk::port::literals;
+constexpr totk::port::Site kSites[]{ {0x1725600,0xFC160FEE,0x6D0133ED}, {0x11BD100,0xF9411408,0xB4000068},
     {0x1D545AC,0xA9BE7BFD,0xA9014FF4}, {0x1D54618,0xD10203FF,0x6D022BEB},
     {0x1D548C8,0xA9BE7BFD,0xA9014FF4}, {0xBC7610,0xF9400408,0xF9400508},
     {0xFA7F08,0xF9411408,0xB4000068}, {0xADDCF4,0x92407C28,0x7100203F},
     {0x1623BC4,0xD10083FF,0xA9017BFD}, {0x9F1B14,0xD101C3FF,0x6D0123E9},
     {0x1D2C004,0xF9402408,0xF9400108} };
-constexpr CodeSite kTargetSites[]{{0x1327B90,0xF9411408,0xB4000168}};
+// Checked only, never called: 1.4.3 has no such routine, so this entry applies to 1.2.1 alone.
+constexpr totk::port::Site kSites121[]{{0x6836B0,0xF94C1808,0xB4000228}};
+constexpr totk::port::Site kTargetSites[]{{0x1327B90,0xF9411408,0xB4000168}};
+constexpr totk::port::Member kChargeLevel{0x1144,0x1150}, kStamina{0x13E4,0x13EC}, kExtraStamina{0x13E8,0x13F0};
 std::uintptr_t g_base{};
 UseEvents<4, FuryRequest> g_requests;
 std::atomic<bool> g_active{};
@@ -56,7 +59,7 @@ bool requestHits(const SceneContext& scene, const FuryRequest& request) {
         const auto position = readMemory<totk::core::WorldPosition>(address + layout::kActorPosition);
         if (!furyTargetInRange(request.placement.position,position,true) || !alive(address))
             return VisitControl::Continue;
-        if (!reinterpret_cast<bool(*)(std::uintptr_t)>(g_base + 0x1327B90)(address))
+        if (!reinterpret_cast<bool(*)(std::uintptr_t)>(g_base + 0x1327B90_v121)(address))
             return VisitControl::Continue;
         if (!fury_damage::queue({address,readMemory<std::uint32_t>(address + 0x10)},*balance,expires)) {
             ++full;
@@ -81,12 +84,12 @@ void queueChargedImpact(const void* actor, unsigned char charged, unsigned level
     const auto* name = read<const char*>(actor, layout::kActorNamePointer);
     if (!admit(name, 0, 7) || std::memcmp(name, "Player", 7) != 0) return;
     if (!heavy) {
-        const auto equipment = reinterpret_cast<std::uintptr_t(*)(const void*)>(g_base + 0xFA7F08)(actor);
+        const auto equipment = reinterpret_cast<std::uintptr_t(*)(const void*)>(g_base + 0xFA7F08_v121)(actor);
         if (!isPlausibleAddress(equipment)) {
             Logging.Log("[champions] FURY_REFUSED reason=equipment");
             return;
         }
-        const auto type = reinterpret_cast<unsigned(*)(std::uintptr_t, unsigned)>(g_base + 0xADDCF4)(equipment, 0);
+        const auto type = reinterpret_cast<unsigned(*)(std::uintptr_t, unsigned)>(g_base + 0xADDCF4_v121)(equipment, 0);
         // Heavy spins use stamina instead of native charge level; their finisher must not strike again.
         if (type == 2) return;
     }
@@ -119,7 +122,7 @@ void queueChargedImpact(const void* actor, unsigned char charged, unsigned level
 }
 
 void sampleHeavySpin(std::uintptr_t action, bool entering) {
-    const auto actor = reinterpret_cast<std::uintptr_t(*)(std::uintptr_t)>(g_base + 0xBC7610)(action);
+    const auto actor = reinterpret_cast<std::uintptr_t(*)(std::uintptr_t)>(g_base + 0xBC7610_v121)(action);
     const auto saved = data::state().snapshot();
     const auto context = currentContext(Blessing::Urbosa);
     const auto scene = resolveScene(g_base);
@@ -137,14 +140,14 @@ void sampleHeavySpin(std::uintptr_t action, bool entering) {
                 unsigned(saved.ready), unsigned(bool(scene)), unsigned(owned), unsigned(admission(saved.states[3], context)));
         return;
     }
-    const auto* component = reinterpret_cast<const void*(*)(std::uintptr_t)>(g_base + 0x11BD100)(actor);
-    if (!admit(component, 0x13E4, 8)) {
+    const auto* component = reinterpret_cast<const void*(*)(std::uintptr_t)>(g_base + 0x11BD100_v121)(actor);
+    if (!admit(component, kStamina, 8)) {
         g_heavy.end(action);
         if (entering) Logging.Log("[champions] FURY_HEAVY_REFUSED reason=stamina-component");
         return;
     }
-    // StaminaCalculator at Player+0x1388 publishes normal/extra stamina at +0x5c/+0x60.
-    const float stamina = read<float>(component, 0x13E4) + read<float>(component, 0x13E8);
+    // StaminaCalculator at Player+0x1388 (1.4.3: +0x1390) publishes normal/extra stamina at +0x5c/+0x60.
+    const float stamina = read<float>(component, kStamina) + read<float>(component, kExtraStamina);
     const HeavyFuryKey key{action, actor, scene.value.token.value, saved.generation};
     if (entering) {
         const bool accepted = g_heavy.begin(key, stamina);
@@ -154,7 +157,7 @@ void sampleHeavySpin(std::uintptr_t action, bool entering) {
         Logging.Log("[champions] FURY_HEAVY_THRESHOLD stamina=%f", double(stamina));
     }
     // The native charge scheduler uses virtual key 9 for the held attack input.
-    const bool attackHeld = reinterpret_cast<bool(*)(const void*, unsigned)>(g_base + 0x1D2C004)(component, 9);
+    const bool attackHeld = reinterpret_cast<bool(*)(const void*, unsigned)>(g_base + 0x1D2C004_v121)(component, 9);
     if (g_heavy.release(key, attackHeld)) {
         Logging.Log("[champions] FURY_HEAVY_RELEASE stamina=%f", double(stamina));
         queueChargedImpact(reinterpret_cast<const void*>(actor), 1, 1, &key);
@@ -182,8 +185,8 @@ bool serviceRequests(const SceneContext& scene, Context context) {
 
 void updateCharge(const ActorHandle& player, Context context, bool struck) {
     const auto saved = data::state().snapshot();
-    const auto* component = reinterpret_cast<const void*(*)(std::uintptr_t)>(g_base+0x11BD100)(player.address);
-    const auto level = read<unsigned>(component,0x1144);
+    const auto* component = reinterpret_cast<const void*(*)(std::uintptr_t)>(g_base+0x11BD100_v121)(player.address);
+    const auto level = read<unsigned>(component,kChargeLevel);
     const bool heavy = g_heavy.charging();
     const bool charging = !struck && saved.ready && (heavy || (read<unsigned>(component,2780) & 0x40000000u)) &&
         canReleaseFury(saved.states[3],context,heavy ? 1 : level,true);
@@ -243,14 +246,15 @@ void service(const SceneContext& scene, const ActorHandle& player, Context conte
 }
 
 bool install(std::uintptr_t base) {
-    if (!codeMatches(base,kSites,"champions","FURY_BUILD_REFUSED")) return false;
-    if (!codeMatches(base,kTargetSites,"champions","FURY_TARGET_BUILD_REFUSED")) return false;
+    if (!totk::port::codeMatches(base,kSites,"champions","FURY_BUILD_REFUSED")) return false;
+    if (!totk::port::is143() && !totk::port::codeMatches(base,kSites121,"champions","FURY_BUILD_REFUSED")) return false;
+    if (!totk::port::codeMatches(base,kTargetSites,"champions","FURY_TARGET_BUILD_REFUSED")) return false;
     if (!fury_damage::install(base)) return false;
     g_base = base;
-    ChargedImpact::InstallAtOffset(0x1725600);
-    HeavySpinEnter::InstallAtOffset(0x1D545AC);
-    HeavySpinUpdate::InstallAtOffset(0x1D54618);
-    HeavySpinLeave::InstallAtOffset(0x1D548C8);
+    ChargedImpact::InstallAtOffset(0x1725600_v121);
+    HeavySpinEnter::InstallAtOffset(0x1D545AC_v121);
+    HeavySpinUpdate::InstallAtOffset(0x1D54618_v121);
+    HeavySpinLeave::InstallAtOffset(0x1D548C8_v121);
     return true;
 }
 } // namespace botw_abilities::champions::fury_native

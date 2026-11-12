@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "GameData.hpp"
 #include "SaveBuffer.hpp"
 #include "ChampionSaveSchema.hpp"
-#include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include "totk/engine/GameData.hpp"
 #include <lib.hpp>
 
 namespace botw_abilities::champions::data {
 namespace {
 using namespace totk::engine;
-constexpr std::uintptr_t kCalc = 0xEE9704, kSetSave = 0x1730EEC, kSerialize = 0x241469C;
-constexpr CodeSite kSites[]{
+using namespace totk::port::literals;
+constexpr totk::port::Code kCalc = 0xEE9704, kSetSave = 0x1730EEC, kSerialize = 0x241469C;
+constexpr totk::port::Site kSites[]{
     {kCalc, 0xA9BA7BFD, 0xA9016FFC}, {kSetSave, 0xB94CC008, 0x6B02011F},
     {kSerialize, 0xD10103FF, 0xA9017BFD},
     {0xD45810, 0xA9BD7BFD, 0xF9000BF5}, {0xD7D620, 0x34000262, 0xF940D008},
@@ -22,7 +23,7 @@ std::uintptr_t g_base{};
 std::atomic<std::uintptr_t> g_manager{};
 SavedState g_state;
 
-template <class Fn> Fn call(std::uintptr_t offset) { return reinterpret_cast<Fn>(g_base + offset); }
+template <class Fn> Fn call(totk::port::Code offset) { return reinterpret_cast<Fn>(g_base + offset); }
 
 struct Reader {
     std::uintptr_t manager;
@@ -134,7 +135,7 @@ SavedState& state() { return g_state; }
 
 StateTransfer flush(GameDataWriteReadiness readiness) {
     if (!g_base || readiness != GameDataWriteReadiness::LiveGameplayAndWorkerAlive) return StateTransfer::NotReady;
-    const auto manager = resolveGameDataManagerFromHolder(g_base + 0x462E3D8);
+    const auto manager = resolveGameDataManagerFromHolder(g_base + 0x462E3D8_v121);
     if (!manager || manager.value != g_manager.load(std::memory_order_acquire) || loading(manager.value))
         return StateTransfer::NotReady;
     const auto snapshot = g_state.snapshot();
@@ -147,7 +148,7 @@ StateTransfer flush(GameDataWriteReadiness readiness) {
 }
 
 bool install(std::uintptr_t base) {
-    if (!codeMatches(base, kSites, "champions", "GAMEDATA_BUILD_REFUSED")) return false;
+    if (!totk::port::codeMatches(base, kSites, "champions", "GAMEDATA_BUILD_REFUSED")) return false;
     g_base = base;
     SetSave::InstallAtOffset(kSetSave);
     Calc::InstallAtOffset(kCalc);

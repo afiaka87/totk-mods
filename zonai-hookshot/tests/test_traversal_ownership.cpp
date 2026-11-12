@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include <doctest.h>
 #include <initializer_list>
 #include "TraversalOwnership.hpp"

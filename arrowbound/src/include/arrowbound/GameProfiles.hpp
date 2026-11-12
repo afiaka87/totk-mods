@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 // Generated from the local main image of each supported game build; do not edit by hand.
 // Every guarded instruction word below was checked against that build's image.

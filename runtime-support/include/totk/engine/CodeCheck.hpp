@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #pragma once
 #include "totk/engine/Pointer.hpp"
+#include "totk/suite/Member.hpp"
 #include <lib.hpp>
 #include <cstdint>
 #include <initializer_list>
@@ -41,11 +42,12 @@ inline bool chainedAbsoluteTail(std::uintptr_t site, std::uint32_t first) {
 }
 
 // True when every site matches the running game; the first mismatch is logged as "[owner] tag".
+// In Zonai Fieldworks the words are the game's own, from before any member hooked the site.
 inline bool codeMatches(std::uintptr_t base, std::span<const CodeSite> sites, const char *owner,
                         const char *tag) {
     for (const auto site : sites) {
-        const auto first = readMemory<std::uint32_t>(base + site.offset);
-        const auto second = readMemory<std::uint32_t>(base + site.offset + 4);
+        const auto first = totk::suite::checkedCode(base + site.offset);
+        const auto second = totk::suite::checkedCode(base + site.offset + 4);
         if (!entryMatches(first, site.first) ||
             (site.second && second != site.second && !chainedAbsoluteTail(base + site.offset, first))) {
             Logging.Log("[%s] %s offset=%p expected=%08x,%08x actual=%08x,%08x", owner, tag,

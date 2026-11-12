@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 #include <lib.hpp>
 
@@ -26,6 +26,7 @@
 #include "runtime/BivouacRuntime.hpp"
 #include "runtime/BivouacState.hpp"
 #include "totk/engine/Npad.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include <program/sd_logger.hpp>
 
 #ifndef BV_DIAG
@@ -46,21 +47,22 @@ namespace {
 
 using namespace bivouac::runtime::config;
 
+// PouchCountLeaf is hooked on 1.2.1 only; PouchNameGetter (used only by that hook) has no 1.4.3 place.
 namespace off {
-    constexpr ptrdiff_t NpadCalc        = 0x02a267bc;
-    constexpr ptrdiff_t RaycastWorker   = 0x00858590;
-    constexpr ptrdiff_t PouchCountLeaf  = 0x015C9870;
-    constexpr ptrdiff_t PouchNameGetter = 0x00CD2B30;
-    constexpr ptrdiff_t ConsumeMaterial = 0x01A6CBB0;
-    constexpr ptrdiff_t GmdGetStructStructByIndex = 0x00942FE8;
-    constexpr ptrdiff_t GmdGetStructString64      = 0x00D44600;
-    constexpr ptrdiff_t PouchGmdGlobal            = 0x046CBC98;
-    constexpr ptrdiff_t GmdMgrIndirect            = 0x0462E3D8;
-    constexpr ptrdiff_t GmdEmptyString64          = 0x0462E1B8;
-    constexpr ptrdiff_t StampIconWidgetTick       = 0x01AA7888;
-    constexpr ptrdiff_t MapHoverDispatch          = 0x00EC29A0;
-    constexpr ptrdiff_t MinimapIconPass           = 0x00D1EF30;
-    constexpr ptrdiff_t ClimbSpeedPost            = 0x01D579E8;
+    constexpr totk::port::Code NpadCalc        = 0x02a267bc;
+    constexpr totk::port::Code RaycastWorker   = 0x00858590;
+    constexpr totk::port::Code PouchCountLeaf  = 0x015C9870;
+    constexpr totk::port::Code PouchNameGetter = 0x00CD2B30;
+    constexpr totk::port::Code ConsumeMaterial = 0x01A6CBB0;
+    constexpr totk::port::Code GmdGetStructStructByIndex = 0x00942FE8;
+    constexpr totk::port::Code GmdGetStructString64      = 0x00D44600;
+    constexpr totk::port::Code PouchGmdGlobal            = 0x046CBC98;
+    constexpr totk::port::Code GmdMgrIndirect            = 0x0462E3D8;
+    constexpr totk::port::Code GmdEmptyString64          = 0x0462E1B8;
+    constexpr totk::port::Code StampIconWidgetTick       = 0x01AA7888;
+    constexpr totk::port::Code MapHoverDispatch          = 0x00EC29A0;
+    constexpr totk::port::Code MinimapIconPass           = 0x00D1EF30;
+    constexpr totk::port::Code ClimbSpeedPost            = 0x01D579E8;
 }
 
 constexpr u32 POUCH_NAME_FIELD_HASH = 0x25EFA387;
@@ -653,8 +655,12 @@ void reportCampHeartbeat() {
 #endif
 }
 
+// Set while Zonai Fieldworks has Bivouac switched off: the update does nothing, so no camp is rebuilt.
+bool gSwitchedOff = false;
+
 void bvTick(void* npadDevice,
             bivouac::runtime::ClimbObservation climbObservation) {
+    if (gSwitchedOff) return;
     g.scene.tick++;
     g.scene.player = gPlayers.resolve();
 
@@ -894,7 +900,15 @@ HOOK_DEFINE_INLINE(MapStampSelectHook) {
     }
 };
 
-bool hookWordMatches(ptrdiff_t offset, u32 expected, const char* label) {
+// `expected` is the 1.2.1 word; on 1.4.3 the site is compared with the word the address table recorded there.
+bool hookWordMatches(totk::port::Code site, u32 expected, const char* label) {
+    if (totk::port::is143()) {
+        if (totk::port::wordIs(g.scene.mainBase, site, expected)) { return true; }
+        Logging.Log("[bivouac] %s off on 1.4.3: the game code at its hook place is not the expected instruction",
+                    label);
+        return false;
+    }
+    const ptrdiff_t offset = site;
     const u32 actual = *reinterpret_cast<const u32*>(g.scene.mainBase + offset);
     if (actual == expected) { return true; }
     BVLOG("%s DISABLED: main+%p word %08x != expected %08x (version/cheat conflict)",
@@ -971,6 +985,23 @@ void bivouac::runtime::tick(void* npadDevice,
     bvTick(npadDevice, observation);
 }
 
+void bivouac::runtime::switchOff() {
+    int removed = 0;
+    for (Site& site : g.camps.sites) {
+        if (!site.active) continue;
+        gCampAssembler.teardownSite(site);
+        ++removed;
+    }
+    resetAllRuntime("switched off");
+    gSwitchedOff = true;
+    BVLOG("switch: off, %d camp(s) removed from the world (sites kept)", removed);
+}
+
+void bivouac::runtime::switchOn() {
+    resetAllRuntime("switched on");
+    gSwitchedOff = false;
+}
+
 void bivouac::runtime::onRaycast(RaycastFn original, const void* from,
                                  const void* object) {
     serviceRaycastWorker(original, from, object);
@@ -984,6 +1015,8 @@ bool bivouac::runtime::removeNearestCamp(float maximumDistance) {
                                snapshot.position.z, maximumDistance, "suite");
 }
 
+bool bivouac::runtime::arrivalPending() { return g.map.arrivalSite >= 0; }
+
 bivouac::runtime::Status bivouac::runtime::status() {
     int active = 0;
     for (const Site& site : g.camps.sites) {
@@ -994,7 +1027,13 @@ bivouac::runtime::Status bivouac::runtime::status() {
 
 void bivouac::runtime::installUniqueHooks() {
     ConsumeMaterialTrigger::InstallAtOffset(off::ConsumeMaterial);
-    PouchLeafHook::InstallAtOffset(off::PouchCountLeaf);
+    if (totk::port::is143()) {
+        // The consume-material trigger above places every camp; this backup is not carried over.
+        Logging.Log("[bivouac] pouch-leaf backup trigger off on 1.4.3: the hooked instruction does not "
+                    "carry a pouch count change, and its item-name routine has no 1.4.3 place");
+    } else {
+        PouchLeafHook::InstallAtOffset(off::PouchCountLeaf);
+    }
     StampIconWidgetTickHook::InstallAtOffset(off::StampIconWidgetTick);
     if (hookWordMatches(off::MapHoverDispatch, MAP_HOVER_DISPATCH_WORD, "map stamp travel")) {
         MapStampSelectHook::InstallAtOffset(off::MapHoverDispatch);

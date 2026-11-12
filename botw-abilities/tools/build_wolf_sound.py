@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Give the wolf his own sound user as a reviewed draft: the stock wolf's, plus the original's bite calls.
 
 The waves go in a bank of their own that the sound list loads with the wolf, so they cost memory only while

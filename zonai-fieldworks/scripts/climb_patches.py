@@ -1,4 +1,16 @@
-"""Emit Phantom Foothold's climbing edits for Fieldworks and check their hook windows."""
+"""Emit Phantom Foothold's climbing edits for Fieldworks and check their hook windows.
+
+Phantom's standalone release applies these edits as a cheat file. Fieldworks applies the same
+edits behind switchable hooks instead, so the data comes from Phantom's own generator
+(``mods/code/phantom-foothold/scripts/game_profiles.py``); nothing is copied by hand.
+
+A hook replaces one word (near branch) or up to five words (far branch) at its first address.
+Game code jumps into the five-word window at most of these sites, so Fieldworks installs them only
+as one-word hooks and refuses the edits when its module is out of near-branch range. The check
+verifies every original word and reports how many sites a five-word hook would break.
+
+    uv run --project scripts python mods/code/zonai-fieldworks/scripts/climb_patches.py [--write]
+"""
 
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (C) Clay Mullis
+// Copyright (C) HanSoloBlaster, afiaka87
 #pragma once
 
 #include "totk/core/Result.hpp"
@@ -7,6 +7,9 @@
 #include "totk/engine/ActorHandle.hpp"
 #include "totk/engine/Pointer.hpp"
 #include "totk/engine/Totk121Offsets.hpp"
+#if defined(TOTK_PORT) && TOTK_PORT
+#include "totk/port/Port.hpp"
+#endif
 
 #include <cmath>
 #include <cstdint>
@@ -32,6 +35,21 @@ using GetMotionTypeFunction = std::uint32_t (*)(void*);
 using RequestMotionTypeFunction = void (*)(void*, std::uint32_t);
 using RequestLinearVelocityFunction = void (*)(void*, const float*);
 
+// With TOTK_PORT fromMainBase translates its places, so TransformFunctions and TransformService have own names.
+#if defined(TOTK_PORT) && TOTK_PORT
+inline namespace ported {
+// 1.4.3 has no motion-type routine; it reads the type inline in kRequestChangeMotionType. Same reads as 1.2.1's.
+inline std::uint32_t motionTypeOfBody143(void* body) {
+    const auto address = reinterpret_cast<std::uintptr_t>(body);
+    const auto request = readMemory<std::uintptr_t>(address + 0x60);
+    if (request && (readMemory<std::uint32_t>(request + 0xD4) & 4U) != 0)
+        return readMemory<std::uint32_t>(request + 0x80);
+    const auto flags = readMemory<std::uint64_t>(address + 0x68);
+    if ((flags & 0x40U) != 0) return 0;
+    return (flags & 0x80U) != 0 ? 1 : 2;
+}
+#endif
+
 struct TransformFunctions {
     ForceSetMatrixFunction forceSetMatrix = nullptr;
     GetMotionTypeFunction getMotionType = nullptr;
@@ -40,6 +58,19 @@ struct TransformFunctions {
 
     [[nodiscard]] static TransformFunctions fromMainBase(std::uintptr_t mainBase) {
         if (!isPlausibleAddress(mainBase)) return {};
+#if defined(TOTK_PORT) && TOTK_PORT
+        if (port::is143()) {
+            return TransformFunctions{
+                reinterpret_cast<ForceSetMatrixFunction>(
+                    mainBase + Totk121Offsets::kForceSetMatrix.value),
+                &motionTypeOfBody143,
+                reinterpret_cast<RequestMotionTypeFunction>(
+                    mainBase + Totk121Offsets::kRequestChangeMotionType.value),
+                reinterpret_cast<RequestLinearVelocityFunction>(
+                    mainBase + Totk121Offsets::kRequestSetLinearVelocity.value),
+            };
+        }
+#endif
         return TransformFunctions{
             reinterpret_cast<ForceSetMatrixFunction>(
                 mainBase + Totk121Offsets::kForceSetMatrix.value),
@@ -52,6 +83,9 @@ struct TransformFunctions {
         };
     }
 };
+#if defined(TOTK_PORT) && TOTK_PORT
+}  // inline namespace ported
+#endif
 
 [[nodiscard]] inline TransformError validateHandle(const ActorHandle& handle,
                                                    core::SceneToken scene) {
@@ -76,6 +110,9 @@ struct TransformFunctions {
     return true;
 }
 
+#if defined(TOTK_PORT) && TOTK_PORT
+inline namespace ported {
+#endif
 class TransformService {
 public:
     explicit TransformService(TransformFunctions functions) : functions_(functions) {}
@@ -218,5 +255,8 @@ private:
 
     TransformFunctions functions_{};
 };
+#if defined(TOTK_PORT) && TOTK_PORT
+}  // inline namespace ported
+#endif
 
 } // namespace totk::engine

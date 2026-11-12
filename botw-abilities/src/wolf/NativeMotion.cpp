@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "NativeMotion.hpp"
 #include "NativeApi.hpp"
 #include "WorldMath.hpp"
@@ -8,14 +8,17 @@
 namespace botw_abilities::wolf {
 namespace {
 using namespace totk::engine;
+using namespace totk::port::literals;
 NativeApi g_api;
-constexpr CodeSite kSites[]{
+constexpr totk::port::Site kSites[]{
     {0x1B5CAF8, 0xF9411408, 0xB4000068}, {0x13335DC, 0xF9411408, 0xF9402908},
     {0x11C2004, 0xF9400400, 0xF9400008}, {0xD07788, 0xFC1C0FE8, 0xA9017BFD},
-    {0xD07764, 0xAA0003E8, 0x9100900A}, {0x1D96C24, 0xBD400100, 0xBD011C00},
+    {0x1D96C24, 0xBD400100, 0xBD011C00},
     {0x6A5530, 0xBD411E69, 0x39431F48}, {0x6C03D8, 0x1E280929, 0xB9405668},
     {0xF5ED74, 0xFC1C0FE8, 0xA9017BFD},
 };
+// 1.4.3 has no separate copy of this routine (it is inline in a caller). Nothing here calls it.
+constexpr totk::port::Site kSites121[]{{0xD07764, 0xAA0003E8, 0x9100900A}};
 constexpr std::uintptr_t kGears = 0x20, kPlayRate = 0x11C;
 constexpr int kAttackMode = 2, kEscapeExtraMode = 4;
 
@@ -33,14 +36,14 @@ bool validGears(const MotionGears& gears) {
 }
 }
 
-bool initializeMotionApi(std::uintptr_t base) { return g_api.bind(base, kSites, "MOTION_ABI_REFUSED"); }
+bool initializeMotionApi(std::uintptr_t base) { return g_api.bind(base, kSites, "MOTION_ABI_REFUSED", kSites121); }
 
 std::optional<CircleTable> nativeCircleTable() {
     if (!g_api.ready()) {
         Logging.Log("[wolf-link] MOTION_TABLE_UNAVAILABLE api=0");
         return std::nullopt;
     }
-    return CircleTable{reinterpret_cast<const CircleSample*>(g_api.base() + 0x3829844), 256};
+    return CircleTable{reinterpret_cast<const CircleSample*>(g_api.base() + 0x3829844_v121), 256};
 }
 
 std::optional<MotionState> readMotion(const ActorReference& actor) {
@@ -84,7 +87,7 @@ std::optional<float> readFollowSpeed(const ActorReference& actor, int gear, Spee
     if (!quad) return std::nullopt;
     // BotW's fifth probe crosses into EscapeEx; TotK's separate arrays must stay in bounds.
     const int mode = gear == 5 ? kEscapeExtraMode : kAttackMode;
-    const auto offset = kind == SpeedKind::Linear ? 0xD07788 : 0xF5ED74;
+    const totk::port::Code offset = kind == SpeedKind::Linear ? 0xD07788 : 0xF5ED74;
     const float speed = g_api.at<float(*)(std::uintptr_t, int, int)>(offset)(quad, mode, gear == 5 ? 1 : gear);
     if (!std::isfinite(speed) || speed < 0) {
         Logging.Log("[wolf-link] MOTION_SPEED_INVALID kind=%d gear=%d speed=%f", int(kind), gear, double(speed));

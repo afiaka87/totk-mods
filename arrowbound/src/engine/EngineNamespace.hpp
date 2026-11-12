@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
-// Each mod compiles the engine adapters under its own namespace and log tag to keep separate state.
+// Each mod compiles its own engine-adapter copy in its own namespace, so aim slot, sounds and caches stay separate.
 #pragma once
 
 #include "Vec3.hpp"

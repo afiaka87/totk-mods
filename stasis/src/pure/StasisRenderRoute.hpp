@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #pragma once
 namespace stasis::render {
 #if defined(STASIS_NATIVE_BLOOM) && STASIS_NATIVE_BLOOM

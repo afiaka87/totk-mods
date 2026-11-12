@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Keep Cryonis policy and native code on their documented sides of the boundary."""
 from pathlib import Path
 import re

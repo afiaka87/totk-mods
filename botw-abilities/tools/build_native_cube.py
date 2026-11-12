@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Extend the accepted native sphere recipe to the cube without rewriting the sphere."""
 import argparse
 import copy

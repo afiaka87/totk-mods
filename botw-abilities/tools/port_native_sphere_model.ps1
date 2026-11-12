@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 param(
   [Parameter(Mandatory = $true)][string]$InputBfresMc,
   [Parameter(Mandatory = $true)][string]$ToolboxDir,

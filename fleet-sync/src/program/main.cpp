@@ -1,8 +1,17 @@
 #include <lib.hpp>
 
+#include <array>
+#include <atomic>
+#include <cstdint>
+
 #include "engine/LinkedStickOffsets.hpp"
 #include "feature/LinkedStickRuntime.hpp"
 #include "totk/engine/Pointer.hpp"
+#include "totk/port/CodeCheck.hpp"
+
+#ifdef TOTK_SUITE_MEMBER
+#include "totk/suite/Member.hpp"
+#endif
 
 namespace {
 namespace offsets = linked_stick::engine::offsets;
@@ -173,10 +182,13 @@ HOOK_DEFINE_TRAMPOLINE(ActorPresenceIsDeleteHook) {
     }
 };
 
+// Zonai Fieldworks clears this when the player switches Fleet Sync off; the standalone module is always on.
+bool g_switchedOn = true;
+
 HOOK_DEFINE_TRAMPOLINE(NpadCalcHook) {
     static void Callback(void* device) {
         Orig(device);
-        linked_stick::feature::runtime().tick(device);
+        if (g_switchedOn) linked_stick::feature::runtime().tick(device);
     }
 };
 
@@ -189,11 +201,126 @@ HOOK_DEFINE_TRAMPOLINE(PhysicsRequestsHook) {
         if (audit) runtime.endPhysics();
     }
 };
+
+// 1.4.3 only: the physics job inlines its own request routine, so two instruction hooks bracket that copy.
+std::atomic<std::uintptr_t> g_inlinePhysicsFrame{0};
+
+// Integer register `index` of the hooked code; `ctx->X[]` does not work on a float context.
+std::uintptr_t inlineRegister(const exl::hook::InlineFloatCtx* ctx, unsigned index) {
+    return static_cast<std::uintptr_t>(*reinterpret_cast<const std::uint64_t*>(
+        reinterpret_cast<const std::uint8_t*>(ctx) + 0x200 + index * 8));
 }
 
-extern "C" void exl_main(void*, void*) {
-    exl::hook::Initialize();
-    const uintptr_t mainBase = exl::util::modules::GetTargetStart();
+HOOK_DEFINE_INLINE(InlinePhysicsBeginHook) {
+    static void Callback(exl::hook::InlineFloatCtx* ctx) {
+        const auto frame = inlineRegister(ctx, 29);
+        if (!frame) return;
+        void* framework = reinterpret_cast<void*>(inlineRegister(ctx, 25));
+        if (linked_stick::feature::runtime().beginPhysics(framework)) {
+            g_inlinePhysicsFrame.store(frame, std::memory_order_release);
+        }
+    }
+};
+
+HOOK_DEFINE_INLINE(InlinePhysicsEndHook) {
+    static void Callback(exl::hook::InlineFloatCtx* ctx) {
+        auto frame = inlineRegister(ctx, 29);
+        if (frame && g_inlinePhysicsFrame.compare_exchange_strong(
+                         frame, 0, std::memory_order_acq_rel)) {
+            linked_stick::feature::runtime().endPhysics();
+        }
+    }
+};
+
+void installInlinePhysics143(std::uintptr_t mainBase) {
+    using namespace totk::port::literals;
+    constexpr std::ptrdiff_t begin = 0x1807B0_v143;
+    constexpr std::ptrdiff_t end = 0x180E84_v143;
+    const std::uint32_t words[4] = {
+        totk::suite::checkedCode(mainBase + begin), totk::suite::checkedCode(mainBase + begin + 4),
+        totk::suite::checkedCode(mainBase + end), totk::suite::checkedCode(mainBase + end + 4)};
+    if (words[0] != 0x3941832A || words[1] != 0x7100011F || words[2] != 0x39418328 ||
+        words[3] != 0x7100011F) {
+        Logging.Log("[fleet-sync] formation off on 1.4.3: the per-frame physics job does not match "
+                    "(begin=%08x,%08x end=%08x,%08x)", words[0], words[1], words[2], words[3]);
+        return;
+    }
+    InlinePhysicsBeginHook::InstallAtOffset(begin);
+    InlinePhysicsEndHook::InstallAtOffset(end);
+    Logging.Log("[fleet-sync] formation on 1.4.3: per-frame physics job hooked at %p and %p",
+                reinterpret_cast<void*>(begin), reinterpret_cast<void*>(end));
+}
+
+// 1.4.3 only: naming the mod's callbacks in the presence table routes all three checks through them, as on 1.2.1.
+struct PresenceEntry143 {
+    const char* name;
+    std::uintptr_t entry, routine, callback;
+};
+
+std::array<PresenceEntry143, 3> presenceEntries143(std::uintptr_t mainBase) {
+    using namespace totk::port::literals;
+    return {{
+        {"calc", mainBase + 0x3634198_v143, mainBase + offsets::kActorPresenceIsCalc,
+         reinterpret_cast<std::uintptr_t>(&ActorPresenceIsCalcHook::Callback)},
+        {"delete", mainBase + 0x36341A0_v143, mainBase + offsets::kActorPresenceIsDelete,
+         reinterpret_cast<std::uintptr_t>(&ActorPresenceIsDeleteHook::Callback)},
+        {"unload", mainBase + 0x36341A8_v143, mainBase + offsets::kActorPresenceIsUnload,
+         reinterpret_cast<std::uintptr_t>(&ActorPresenceIsUnloadHook::Callback)},
+    }};
+}
+
+// True when all three table entries are writable data that still name the game's routines.
+bool presenceTableReady143(std::uintptr_t mainBase) {
+    for (const auto& entry : presenceEntries143(mainBase)) {
+        MemoryInfo info{};
+        std::uint32_t page{};
+        const bool writable =
+            !svcQueryMemory(&info, &page, entry.entry) && (info.perm & Perm_Rw) == Perm_Rw;
+        const auto held = writable ? totk::engine::readMemory<std::uintptr_t>(entry.entry) : 0;
+        if (held != entry.routine) {
+            Logging.Log("[fleet-sync] keep-loaded off on 1.4.3: presence table entry %s at %p is "
+                        "not the game routine (writable=%u holds=%p expected=%p)", entry.name,
+                        reinterpret_cast<void*>(entry.entry - mainBase), writable ? 1u : 0u,
+                        reinterpret_cast<void*>(held), reinterpret_cast<void*>(entry.routine));
+            return false;
+        }
+    }
+    return true;
+}
+
+// Call after the three presence hooks are installed, so each callback can reach the game routine.
+void routePresenceTable143(std::uintptr_t mainBase) {
+    for (const auto& entry : presenceEntries143(mainBase)) {
+        totk::engine::writeMemory(entry.entry, entry.callback);
+        Logging.Log("[fleet-sync] presence %s on 1.4.3: table entry %p was routine %p, now %p",
+                    entry.name, reinterpret_cast<void*>(entry.entry - mainBase),
+                    reinterpret_cast<void*>(entry.routine - mainBase),
+                    reinterpret_cast<void*>(
+                        totk::engine::readMemory<std::uintptr_t>(entry.entry)));
+    }
+}
+}
+
+namespace linked_stick::suite {
+
+#ifdef TOTK_SUITE_MEMBER
+// Zonai Fieldworks, on the controller thread. Off clears the pair and stops reading the stick clicks; the
+// physics hook runs a little longer to release the receivers (design 06, section 3a).
+void enabled(bool on) {
+    auto& runtime = linked_stick::feature::runtime();
+    g_switchedOn = on;
+    if (on) runtime.enter();
+    else runtime.switchOff();
+    Logging.Log("[fleet-sync] SWITCHED %s", on ? "on" : "off");
+}
+
+// Riding a linked stick: the game's active stick is the receiver's until the player gets off.
+bool busy() { return linked_stick::feature::runtime().bridging(); }
+#endif
+
+// Shared by the standalone module and Zonai Fieldworks, on TotK 1.2.1 and 1.4.3.
+bool install(std::uintptr_t mainBase) {
+    if (!totk::port::supported()) return false;
     auto& runtime = linked_stick::feature::runtime();
     runtime.initialize(mainBase);
     runtime.enter();
@@ -218,22 +345,38 @@ extern "C" void exl_main(void*, void*) {
         offsets::kRideOnCombinedControlStickExecute);
     RemoteEnergyRangeHook::InstallAtOffset(
         offsets::kRemoteEnergyRangeLoad);
-    ActorPresenceIsCalcHook::InstallAtOffset(
-        offsets::kActorPresenceIsCalc);
-    ActorPresenceIsUnloadHook::InstallAtOffset(
-        offsets::kActorPresenceIsUnload);
-    ActorPresenceIsDeleteHook::InstallAtOffset(
-        offsets::kActorPresenceIsDelete);
+    // On 1.4.3 the presence hooks go in only together with the table entries that lead to them.
+    const bool presence = !totk::port::is143() || presenceTableReady143(mainBase);
+    if (presence) {
+        ActorPresenceIsCalcHook::InstallAtOffset(
+            offsets::kActorPresenceIsCalc);
+        ActorPresenceIsUnloadHook::InstallAtOffset(
+            offsets::kActorPresenceIsUnload);
+        ActorPresenceIsDeleteHook::InstallAtOffset(
+            offsets::kActorPresenceIsDelete);
+    }
+    if (presence && totk::port::is143()) routePresenceTable143(mainBase);
     NpadCalcHook::InstallAtOffset(offsets::kNpadCalc);
-    if (totk::engine::readMemory<std::uint32_t>(mainBase + offsets::kPhysicsProcessRequests) ==
-        0xD10303FF) {
+    if (totk::port::wordIs(mainBase, offsets::kPhysicsProcessRequests, 0xD10303FF)) {
         PhysicsRequestsHook::InstallAtOffset(offsets::kPhysicsProcessRequests);
     } else {
         Logging.Log("[fleet-sync] physics hook signature mismatch; formation unavailable");
     }
+    if (totk::port::is143()) installInlinePhysics143(mainBase);
     Logging.Log(
         "[fleet-sync] fleet-row-11 hooks installed "
         "formation=pre-solve-havok trace=periodic-independent controls=tap-link-hold-clear audio=role-chimes text=none");
+    return true;
+}
+
+}  // namespace linked_stick::suite
+
+#ifndef TOTK_SUITE_MEMBER
+extern "C" void exl_main(void*, void*) {
+    exl::hook::Initialize();
+    if (!totk::port::start("fleet-sync")) return;
+    (void)linked_stick::suite::install(exl::util::modules::GetTargetStart());
 }
 
 extern "C" NORETURN void exl_exception_entry() { EXL_ABORT("unreachable"); }
+#endif

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "StasisActors.hpp"
 #include "StasisEnemyHold.hpp"
 #include "StasisEquipment.hpp"
@@ -35,6 +35,14 @@ bool attachedEquipment(std::uintptr_t actor) {
     return valid(attachment) && call<bool(*)(std::uintptr_t)>(offsets::kAttachmentIsValidOwner)(attachment);
 }
 unsigned motionType(std::uintptr_t body) {
+    if (totk::port::is143()) {
+        // 1.4.3 has this getter only as inline copies; the same reads, at the same offsets.
+        const auto pending = read<std::uintptr_t>(body + 96);
+        if (valid(pending) && (read<std::uint32_t>(pending + 212) & 4))
+            return read<std::uint32_t>(pending + 128);
+        const auto flags = read<std::uint64_t>(body + 104);
+        return (flags & 0x40) ? 0u : (flags & 0x80) ? 1u : 2u;
+    }
     return call<unsigned (*)(std::uintptr_t)>(offsets::kRigidBodyBaseGetMotionType)(body);
 }
 std::uintptr_t character(std::uintptr_t set) {
@@ -282,8 +290,14 @@ void forcePose(std::uintptr_t actor, const float *pose) {
         actor, pose, 0);
 }
 void commitPose(std::uintptr_t actor, const float *pose, float frameScale) {
-    call<float (*)(std::uintptr_t, const float *, float)>(offsets::kActorSetPose)(actor, pose,
-                                                                                  frameScale);
+    if (totk::port::is143()) {
+        // 1.4.3 sets the pose inline (position +692, rotation +704); its derived velocities are cleared below.
+        const float placed[12]{pose[3], pose[7], pose[11], pose[0], pose[1], pose[2],
+                               pose[4], pose[5], pose[6],  pose[8], pose[9], pose[10]};
+        std::memcpy(reinterpret_cast<void *>(actor + 692), placed, sizeof(placed));
+    } else
+        call<float (*)(std::uintptr_t, const float *, float)>(offsets::kActorSetPose)(actor, pose,
+                                                                                      frameScale);
     // A correction must not become next frame's movement.
     const float zero[kActorMotionFloats]{};
     std::memcpy(reinterpret_cast<void *>(actor + kActorMotionOffset), zero, sizeof(zero));

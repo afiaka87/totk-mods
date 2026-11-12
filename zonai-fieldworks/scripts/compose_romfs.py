@@ -1,6 +1,23 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) HanSoloBlaster, afiaka87
-"""Compose Zonai Fieldworks' game files from each member's accepted standalone capture."""
+"""Compose Zonai Fieldworks' game files from each member's accepted standalone capture (design 06, §7).
+
+`compose` writes <output>/romfs, <output>/restbl-forces.tsv and <output>/compose-receipt.json:
+- every member's RomFS files, except its own resource-size table;
+- the files Bivouac and BotW Abilities both replace, merged against the clean 1.2.1 files with BotW
+  Abilities' merge code, which refuses two members changing the same value differently;
+- the eight wheel glyph icons;
+- parse-budget floors: every budget a member's own table raises, the merged files' floors and the
+  icons' floors.
+
+`budgets` rebuilds the table the way the deploy does and confirms that it covers every budget each
+member's own table asks for. `check` reports members whose newest capture of the same build is not
+the pinned artifact.
+
+`port143` carries the composed files whose names carry a game version, and the
+release table, to the names TotK 1.4.3 reads, into <output>/romfs143. A member's own 1.4.3 copies of
+those files are left out of `compose`: the carry runs once, on the merged files.
+"""
 
 from __future__ import annotations
 
@@ -38,6 +55,22 @@ GLYPHS = {
     "FwSurvey": "zonai-survey",
 }
 PAYLOAD_TOPS = {"exefs", "romfs", "cheats"}
+
+
+def ported_names() -> dict[str, str]:
+    """1.4.3 name -> 1.2.1 name of every file the carry step writes from a 1.2.1 file."""
+    from totk_version_port import romfs_rebase as carry
+
+    names = {new: old for old, new in carry.NAMES.items()}
+    names.update({new: old for old, (new, _) in carry.REDIRECTS.items()})
+    return names
+
+
+def carried_only() -> set[str]:
+    """1.4.3 files with no 1.2.1 file of their own: the edited name table and the 1.4.3 resource table."""
+    from totk_version_port import romfs_rebase as carry
+
+    return {carry.ADDRESS_TABLE, carry.TABLE_143}
 
 
 def sha256(data: bytes) -> str:
@@ -155,9 +188,9 @@ def merge_shared(path: str, clean: bytes, members: dict[str, bytes]):
     raise ValueError(f"{path} is replaced by {sorted(members)} and has no merge")
 
 
-# The glyph fills this share of the area BotW Abilities' wheel art fills.
+# The glyph fills this share of the area BotW Abilities' wheel art fills (was 1.0 until 2026-11-11).
 GLYPH_SCALE = 0.75
-# Members whose glyph reads larger than the rest at the common scale.
+# Members whose glyph reads larger than the rest at the common scale (HanSoloBlaster, 2026-11-11 boot).
 GLYPH_SCALES = {"zonai-hookshot": 0.66}
 
 
@@ -241,7 +274,12 @@ def read_forces(path: Path) -> dict[str, int]:
 
 
 def budgets(args) -> int:
-    """Rebuild the table the way the deploy does and compare it with every member's own table."""
+    """Rebuild the table the way the deploy does and compare it with every member's own table.
+
+    The deploy adds to the shared table already in the emulator, which only grows. BotW Abilities' own
+    table carries budgets whose resource names no shipped file or floor gives; they reach the shared table
+    through its earlier deploys, so pass --shared-table to start from that table as the deploy does.
+    """
     from totk_mod_tools.restbl_floors import grow_restbl
     from totk_mod_tools.zstd_helper import TotkZstd
 
@@ -296,7 +334,11 @@ def raise_entries(raw: bytes, hashed: dict[int, int], named: dict[str, int]) -> 
 
 
 def table(args) -> int:
-    """Build the resource-size table that ships in the package."""
+    """Build the resource-size table that ships in the package (design 06, section 7).
+
+    Start from the clean table, size every composed file, apply the floors, then raise every budget that a
+    member's own released table raises. Other players do not have the developer's shared table add-on.
+    """
     import zstandard
     from totk_mod_tools.restbl_floors import grow_restbl
     from totk_mod_tools.zstd_helper import TotkZstd
@@ -365,15 +407,23 @@ def compose(args) -> int:
     member_tables: dict[str, bytes] = {}
     forces: dict[str, int] = {}
     unnamed: dict[str, int] = {}
+    ported, carried, left_out = ported_names(), carried_only(), {}
     for member, payload in member_payloads(root, members):
         romfs = payload / "romfs"
         if not romfs.is_dir():
             continue
+        shipped = {path.relative_to(romfs).as_posix() for path in romfs.rglob("*") if path.is_file()}
         for source in sorted(path for path in romfs.rglob("*") if path.is_file()):
             path = source.relative_to(romfs).as_posix()
             if path == RESOURCE_TABLE:
                 member_tables[member["slug"]] = z.decompress(source)
                 continue
+            # A member's 1.4.3 copy of a file it also ships for 1.2.1: `port143` carries the merged file.
+            if path in carried or (path in ported and ported[path] in shipped):
+                left_out.setdefault(member["slug"], []).append(path)
+                continue
+            if path in ported:
+                raise ValueError(f"{member['slug']}: {path} has no 1.2.1 file to carry it from")
             owners.setdefault(path, []).append((member["slug"], source))
         if member["slug"] in member_tables:
             hashed, named = raised(member_tables[member["slug"]], clean_table)
@@ -420,10 +470,27 @@ def compose(args) -> int:
     receipt = {"inputs_sha256": digest,
                "members": {member["slug"]: member["artifact"] for member in members},
                "files": files, "merges": merges, "icons": icons, "forces": len(forces),
-               "member_budgets_without_a_resource_name": unnamed}
+               "member_budgets_without_a_resource_name": unnamed,
+               "member_143_files_left_to_port143": left_out}
     receipt_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8", newline="\n")
     print(f"[fieldworks] {len(files)} game files, {len(merges)} merged, {len(icons)} icons, "
           f"{len(forces)} budget floors; member budgets without a resource name: {unnamed}")
+    return 0
+
+
+def port143(args) -> int:
+    """Carry the composed files and the release table to the names TotK 1.4.3 reads (<output>/romfs143)."""
+    from totk_version_port import romfs_rebase as carry
+
+    try:
+        receipt = carry.run(args.output / "romfs", args.romfs, args.romfs143, args.output / "romfs143",
+                            converter=args.xlink, sound_names=args.xlink_names,
+                            table121=args.output / "release-restbl" / RESOURCE_TABLE)
+    except carry.RebaseError as error:
+        print(f"[fieldworks] 1.4.3 game files FAILED: {error}")
+        return 1
+    print(f"[fieldworks] 1.4.3 game files: {len(receipt['files'])} written, "
+          f"{receipt['resource_table']['raised']} budgets raised in the 1.4.3 table")
     return 0
 
 
@@ -433,7 +500,9 @@ def check(args) -> int:
     stale = 0
     for member in read_members():
         newest = None
-        for receipt_path in (root / "captures" / member["slug"]).glob("*/*/receipt.json"):
+        captures = root / "captures" / member["slug"]
+        receipts = [*captures.glob("v*/*/receipt.json"), *captures.glob("diagnostics/*/*/receipt.json")]
+        for receipt_path in receipts:
             receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
             if receipt.get("build", {}).get("binary_directory_identity") != member["build"]:
                 continue
@@ -467,9 +536,16 @@ def main() -> int:
     release_table.add_argument("--romfs", type=Path, required=True, help="clean TotK 1.2.1 RomFS")
     release_table.add_argument("--output", type=Path, required=True, help="build directory")
     release_table.add_argument("--file-tool", type=Path, required=True)
+    carry = commands.add_parser("port143")
+    carry.add_argument("--romfs", type=Path, required=True, help="clean TotK 1.2.1 RomFS")
+    carry.add_argument("--romfs143", type=Path, required=True, help="clean TotK 1.4.3 files")
+    carry.add_argument("--output", type=Path, required=True, help="build directory")
+    carry.add_argument("--xlink", type=Path, required=True, help="the reviewed sound-link converter")
+    carry.add_argument("--xlink-names", type=Path, required=True, help="the converter's user-name list")
     commands.add_parser("check")
     args = parser.parse_args()
-    return {"compose": compose, "budgets": budgets, "table": table, "check": check}[args.command](args)
+    return {"compose": compose, "budgets": budgets, "table": table, "port143": port143,
+            "check": check}[args.command](args)
 
 
 if __name__ == "__main__":

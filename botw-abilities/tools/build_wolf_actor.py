@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Assemble a private Wolf Link resource draft; gameplay and allocation checks remain open."""
 
 import argparse

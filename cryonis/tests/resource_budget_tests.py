@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Regressions for fixed native allocations hidden behind tiny BGYML files."""
 import importlib.util
 from pathlib import Path

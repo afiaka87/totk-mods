@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Bake owned BotW Gale clips after checking the stock TotK skeleton matches."""
 from __future__ import annotations
 
@@ -234,7 +234,7 @@ def main() -> None:
     generated = receipt_path.parent / 'generated'
     generated.mkdir(parents=True, exist_ok=True)
     (generated / 'GalePoseInfo.hpp').write_text(
-        '// SPDX-License-Identifier: MIT\n// Copyright (c) Clay Mullis\n#pragma once\n'
+        '// SPDX-License-Identifier: MIT\n// Copyright (c) HanSoloBlaster, afiaka87\n#pragma once\n'
         '#include <cstddef>\n#include <cstdint>\nnamespace botw_abilities::champions {\n'
         f'inline constexpr std::size_t kGalePoseBytes = {len(data)};\n'
         f'inline constexpr std::uint32_t kGalePoseChecksum = 0x{zlib.crc32(data[HEADER.size:]):08X};\n'

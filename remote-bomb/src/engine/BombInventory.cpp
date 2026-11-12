@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "BombInventory.hpp"
 #include "BombWorld.hpp"
 #include "NativeInventoryReader.hpp"
@@ -8,6 +8,7 @@
 
 namespace remote_bomb::inventory {
 namespace eng = totk::engine;
+using namespace totk::port::literals;
 namespace {
 struct NameRef { const char *text; std::uint64_t pad[3]{}; };
 using ReadCount = unsigned (*)(std::uintptr_t, int *, const void *, unsigned);
@@ -45,7 +46,7 @@ Stock scan(std::uintptr_t base, std::uintptr_t manager, std::uintptr_t pouch, co
         if (stage != NameStage::None)
             return false;
         return std::strcmp(out.name, name) ||
-            (reinterpret_cast<ReadCount>(base + 0x92FF20)(manager, &out.quantity, record, 0x22344481) & 1);
+            (reinterpret_cast<ReadCount>(base + 0x92FF20_v121)(manager, &out.quantity, record, 0x22344481) & 1);
     });
     found.stage = unsigned(stage);
     return found;
@@ -60,8 +61,8 @@ Status stock(std::uintptr_t base, std::uintptr_t manager, std::uintptr_t pouch, 
 }
 }
 Stock probe(std::uintptr_t base, Shape shape, Upgrade upgrade, bool committed) {
-    const auto manager = base ? managerAt(base + 0x462E3D8) : 0;
-    const auto pouch = base ? managerAt(base + 0x4630020) : 0;
+    const auto manager = base ? managerAt(base + 0x462E3D8_v121) : 0;
+    const auto pouch = base ? managerAt(base + 0x4630020_v121) : 0;
     if (!manager || !pouch)
         return {Status::Unavailable};
     return scan(base, manager, pouch, engine::actorName(shape, upgrade), !committed);
@@ -70,14 +71,14 @@ static Status grant(std::uintptr_t base, Shape shape, Upgrade upgrade, bool work
                     bool onlyMissing) {
     if (!base || !workerAdvanced)
         return deferred("gameplay", Status::Deferred);
-    const auto manager = managerAt(base + 0x462E3D8);
-    const auto pouch = managerAt(base + 0x4630020);
+    const auto manager = managerAt(base + 0x462E3D8_v121);
+    const auto pouch = managerAt(base + 0x4630020_v121);
     if (!manager || !pouch)
         return deferred("manager", Status::Unavailable);
     NameRef name{engine::actorName(shape, upgrade)};
     auto *ref = reinterpret_cast<const char **>(&name);
     unsigned category{};
-    if (!(reinterpret_cast<ResolveCategory>(base + 0x1706D80)(&category, ref) & 1) ||
+    if (!(reinterpret_cast<ResolveCategory>(base + 0x1706D80_v121)(&category, ref) & 1) ||
         category != kMaterialCategory) {
         static unsigned reports{};
         if (reports++ < 12)
@@ -105,10 +106,10 @@ static Status grant(std::uintptr_t base, Shape shape, Upgrade upgrade, bool work
     }
     if (!writeRoom(manager))
         return Status::Deferred;
-    const auto empty = eng::readMemory<void *>(base + 0x462E0F0);
+    const auto empty = eng::readMemory<void *>(base + 0x462E0F0_v121);
     if (!eng::isPlausibleAddress(reinterpret_cast<std::uintptr_t>(empty)))
         return deferred("empty-reference", Status::Unavailable);
-    const auto result = reinterpret_cast<AddItem>(base + 0xCE0EEC)(
+    const auto result = reinterpret_cast<AddItem>(base + 0xCE0EEC_v121)(
         reinterpret_cast<void *>(pouch), ref, empty, category, 1, 1, 0, 0,
         0, 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu, nullptr, 1);
     Logging.Log("[remote-bomb] INVENTORY_GRANT actor=%s category=%u result=%llu", name.text,
@@ -123,14 +124,14 @@ Status restoreOne(std::uintptr_t base, Shape shape, Upgrade upgrade, bool worker
 }
 TakeStatus takeOne(std::uintptr_t base, Shape shape, Upgrade upgrade, bool workerAdvanced) {
     if (!base || !workerAdvanced) return TakeStatus::Deferred;
-    const auto manager = managerAt(base + 0x462E3D8), pouch = managerAt(base + 0x4630020);
+    const auto manager = managerAt(base + 0x462E3D8_v121), pouch = managerAt(base + 0x4630020_v121);
     if (!manager || !pouch || !writeRoom(manager)) return TakeStatus::Deferred;
     const auto before = probe(base,shape,upgrade,false);
     if (before.status != Status::Present || before.slot < 0 || before.quantity < 1)
         return TakeStatus::Deferred;
     // Remove one item without compacting the entire pouch. Native menu sorts read all slots.
-    // Category 5 resets at most five integer fields and two names; the normal write gate covers it.
-    reinterpret_cast<void(*)(std::uintptr_t,unsigned,int,int,bool,unsigned)>(base+0x15D1FC8)(
+    // Category 5 resets at most five ints and two names (write-gated); 1.4.3 forwarding the last argument is harmless.
+    reinterpret_cast<void(*)(std::uintptr_t,unsigned,int,int,bool,unsigned)>(base+0x15D1FC8_v121)(
         pouch,kMaterialCategory,before.slot,1,false,0);
     const auto after = probe(base,shape,upgrade,false);
     const auto result = removalResult(before,after);

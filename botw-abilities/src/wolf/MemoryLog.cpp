@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "MemoryLog.hpp"
 #include "support/SafeRead.hpp"
+#include "totk/port/Port.hpp"
 #include <lib.hpp>
 
 namespace botw_abilities::wolf {
 namespace {
 using support::safeRead;
-constexpr std::uintptr_t kSystemSlot = 0x462EEB8, kActorHeap = 8;
+constexpr totk::port::Code kSystemSlot = 0x462EEB8;
+constexpr std::uintptr_t kActorHeap = 8;
 std::uintptr_t g_base{};
 }
 

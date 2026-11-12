@@ -22,6 +22,10 @@ public:
     void initialize(std::uintptr_t mainBase);
     void enter();
     void tick(void* npadDevice);
+    // Fieldworks switch-off: clears the pair; later physics steps release the receivers' collision changes.
+    void switchOff();
+    // True while the player rides a linked controller stick and the game drives the receiver's stick.
+    [[nodiscard]] bool bridging() const;
     bool beginPhysics(void* framework);
     void endPhysics();
 

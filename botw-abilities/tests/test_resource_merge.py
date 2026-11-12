@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 import copy
 import struct
 import sys
@@ -91,6 +91,22 @@ class ResourceMergeTests(unittest.TestCase):
                                         ('IntArray', 0, 'OriginalSize', 3), ('String64Array', 0, 'SaveFileIndex', -1)):
             bad = copy.deepcopy(base['Data'])
             bad[kind][index][key] = value
+            with self.assertRaisesRegex(ValueError, 'native save flag changed'):
+                merge.saved_metadata(base, bad)
+
+    def test_enum_choices_appended_without_save_growth(self):
+        row = {'Hash': 9, 'RawValues': ['A', 'B'], 'Values': [10, 11], 'DefaultValue': [10], 'Size': 1,
+               'SaveFileIndex': 0}
+        base = {'Data': {'EnumArray': [row]}, 'MetaData': {'AllDataSaveSize': 200, 'SaveDataSize': [60],
+                                                          'SaveDirectory': ['progress.sav']}}
+        data = copy.deepcopy(base['Data'])
+        data['EnumArray'][0]['RawValues'] += ['Camp']
+        data['EnumArray'][0]['Values'] += [12]
+        self.assertEqual(merge.saved_metadata(base, data), base['MetaData'])
+        for key, value in (('RawValues', ['B', 'A', 'Camp']), ('Values', [10, 11]), ('DefaultValue', [12]),
+                           ('RawValues', ['A', 'B', 'A'])):
+            bad = copy.deepcopy(data)
+            bad['EnumArray'][0][key] = value
             with self.assertRaisesRegex(ValueError, 'native save flag changed'):
                 merge.saved_metadata(base, bad)
 

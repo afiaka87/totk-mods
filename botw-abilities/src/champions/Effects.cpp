@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "Effects.hpp"
 #include "Appearances.hpp"
 #include "EffectPulse.hpp"
@@ -8,7 +8,7 @@
 #include "GaleResources.hpp"
 #include "WindFields.hpp"
 #include "totk/engine/ActorRoster.hpp"
-#include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include "totk/engine/Transform.hpp"
 #include <algorithm>
 #include <lib.hpp>
@@ -16,7 +16,8 @@
 namespace botw_abilities::champions::effects {
 namespace {
 using namespace totk::engine;
-constexpr CodeSite kSites[]{
+using namespace totk::port::literals;
+constexpr totk::port::Site kSites[]{
     {0xAB92CC, 0xA9BA7BFD, 0xA9016FFC}, {0x83AA68, 0xD10143FF, 0xA9017BFD},
     {0x6BA86C, 0xA9BD7BFD, 0xF9000BF5},
 };
@@ -36,7 +37,7 @@ struct FuryBolt {
 };
 std::array<FuryBolt,64> g_bolts{};
 
-template <class Fn> Fn call(std::uintptr_t offset) { return reinterpret_cast<Fn>(g_base + offset); }
+template <class Fn> Fn call(totk::port::Code offset) { return reinterpret_cast<Fn>(g_base + offset); }
 
 struct CreateArgument {
     float position[3], rotation[9], scale[3];
@@ -55,7 +56,7 @@ const char* name(std::size_t index) {
 }
 
 bool spawnActor(const char* actor, const totk::core::WorldTransform& transform, const std::array<float,3>& scale) {
-    const auto manager = readMemory<std::uintptr_t>(g_base + 0x4722920);
+    const auto manager = readMemory<std::uintptr_t>(g_base + 0x4722920_v121);
     if (!isPlausibleAddress(manager)) {
         Logging.Log("[champions] EFFECT_SPAWN_REFUSED actor=%s reason=manager", actor);
         return false;
@@ -376,7 +377,7 @@ void service(const SceneContext& scene, const ActorHandle& player, float seconds
 }
 
 bool install(std::uintptr_t base) {
-    if (!codeMatches(base, kSites, "champions", "EFFECT_BUILD_REFUSED")) return false;
+    if (!totk::port::codeMatches(base, kSites, "champions", "EFFECT_BUILD_REFUSED")) return false;
     if (!field::install(base)) return false;
     if (!appearances::install(base)) return false;
     g_base = base;

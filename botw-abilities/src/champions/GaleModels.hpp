@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #pragma once
 #include "GalePoseMatrices.hpp"
 #include "totk/engine/ActorReference121.hpp"
 #include "totk/engine/NativeRead.hpp"
+#include "totk/port/Port.hpp"
 #include <optional>
 #include <string_view>
 
@@ -12,7 +13,7 @@ using totk::engine::native_read::admit;
 using totk::engine::native_read::read;
 using totk::engine::native_read::at;
 inline const void* registry(const void* actor) { return read<const void*>(actor, 0x228); }
-template<class Fn> Fn native(std::uintptr_t base, std::uintptr_t offset) { return reinterpret_cast<Fn>(base + offset); }
+template<class Fn> Fn native(std::uintptr_t base, totk::port::Code offset) { return reinterpret_cast<Fn>(base + offset); }
 
 using ActorReference = totk::engine::ActorReference121;
 
@@ -20,10 +21,15 @@ struct Identity {
     std::uintptr_t unit = 0, skeleton = 0, resource = 0;
     std::uint16_t boneCount = 0, materialCount = 0;
 };
+// Model-unit members as {1.2.1, 1.4.3}; each 1.4.3 value is where that game's own model code reads it.
 struct Layout {
-    std::size_t embeddedModel = 0x138, skeleton = 0x170, shapeCount = 0x168, shapeArray = 0x178;
+    totk::port::Member embeddedModel{0x138, 0xD8}, skeleton{0x170, 0x110}, shapeCount{0x168, 0x108},
+        shapeArray{0x178, 0x118}, size{0x360, 0x308}, materialCount{0x16A, 0x10A}, origin{0x338, 0x2E0},
+        relativeFlag{0x355, 0x2FD};
 };
 inline constexpr Layout kLayout;
+inline constexpr std::size_t kUnitCopyLimit = 0x360;
+static_assert(kLayout.size.v121() <= int(kUnitCopyLimit) && kLayout.size.v143() <= int(kUnitCopyLimit));
 inline constexpr unsigned kModelBoneLimit = 256;
 
 struct View {
@@ -34,20 +40,21 @@ struct View {
 };
 
 inline unsigned boneCountOf(const void* unit) {
-    return read<std::uint16_t>(read<const void*>(read<const void*>(unit, 0x170), 0), 0x38);
+    return read<std::uint16_t>(read<const void*>(read<const void*>(unit, kLayout.skeleton), 0), 0x38);
 }
 
 inline bool describe(std::uintptr_t base, const void* unit, View& view) {
-    if (!admit(unit, 0, 0x360) || read<std::uintptr_t>(unit, 0) != base + 0x45C0570) return false;
-    const auto* skeleton = read<const void*>(unit, 0x170);
+    if (!admit(unit, 0, kLayout.size) || read<std::uintptr_t>(unit, 0) != base + totk::port::Code(0x45C0570)) return false;
+    const auto* skeleton = read<const void*>(unit, kLayout.skeleton);
     const auto* resource = read<const void*>(skeleton, 0);
     const auto* matrices = read<const PoseMatrix*>(skeleton, 0x20);
     const auto count = read<std::uint16_t>(resource, 0x38);
     if (!admit(skeleton, 0, 0x48) || !count || count > kModelBoneLimit ||
         !admit(matrices, 0, count * sizeof(PoseMatrix))) return false;
     view = {{reinterpret_cast<std::uintptr_t>(unit), reinterpret_cast<std::uintptr_t>(skeleton),
-             reinterpret_cast<std::uintptr_t>(resource), count, read<std::uint16_t>(unit, 0x16A)},
-             matrices, read<std::array<float, 3>>(unit, 0x338), bool(read<std::uint8_t>(unit, 0x355) & 1)};
+             reinterpret_cast<std::uintptr_t>(resource), count, read<std::uint16_t>(unit, kLayout.materialCount)},
+             matrices, read<std::array<float, 3>>(unit, kLayout.origin),
+             bool(read<std::uint8_t>(unit, kLayout.relativeFlag) & 1)};
     for (float value : view.origin) if (!std::isfinite(value)) return false;
     return true;
 }

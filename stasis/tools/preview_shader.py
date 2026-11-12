@@ -1,4 +1,4 @@
-"""SPDX-License-Identifier: MIT. Copyright (c) Clay Mullis.
+"""SPDX-License-Identifier: MIT. Copyright (c) HanSoloBlaster, afiaka87.
 Render the integrated native multipass GLSL against independent scene/mask fixtures.
 No game assets. The GL framebuffer origin is adapted explicitly; native bindings,
 geometry, blend equations, ordinary draw counts and filtered bloom match the adapter.

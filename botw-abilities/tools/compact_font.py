@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Keep exact glyph pixels and advances for the abilities' fixed prompt strings."""
 
 import argparse

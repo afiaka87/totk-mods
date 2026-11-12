@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "PrivateEffects.hpp"
 #include "PrivateEffectResource.hpp"
 #include "PrivateEffectBanks.hpp"
 #include "PrivateEffectInfo.hpp"
-#include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
+#include "totk/suite/Member.hpp"
 #include <array>
 #include <atomic>
 #include <nn/fs.h>
@@ -13,9 +14,9 @@ namespace botw_abilities::effects {
 namespace {
 using totk::engine::readMemory;
 using totk::engine::isPlausibleAddress;
-constexpr std::uintptr_t kLoadResource = 0xF29A64, kELinkVersion = 0x2A5F778;
-constexpr std::uintptr_t kLookupString = 0x775954, kEffectModule = 0x47240C8;
-constexpr totk::engine::CodeSite kSites[]{
+constexpr totk::port::Code kLoadResource = 0xF29A64, kELinkVersion = 0x2A5F778;
+constexpr totk::port::Code kLookupString = 0x775954, kEffectModule = 0x47240C8;
+constexpr totk::port::Site kSites[]{
     {kLoadResource, 0xA9BF7BFD, 0x910003FD}, {kELinkVersion, 0x52800480, 0xD65F03C0},
     {kLookupString, 0xD10243FF, 0xA9037BFD}};
 constexpr std::uintptr_t kEffectManagerOffset = 0xF0, kBankDictionaryOffset = 0x120;
@@ -97,8 +98,10 @@ HOOK_DEFINE_TRAMPOLINE(LookupBank) {
 }
 
 bool install(std::uintptr_t base) {
-    if (!totk::engine::codeMatches(base, kSites, "botw-effects", "SIGNATURE_REFUSED")) return false;
+    if (!totk::port::codeMatches(base, kSites, "botw-effects", "SIGNATURE_REFUSED")) return false;
     g_base = base;
+    // Zonai Fieldworks: the game can load effect banks before it reads the player's switches.
+    TOTK_SUITE_ALWAYS_ON();
     LookupBank::InstallAtOffset(kLookupString);
     LoadResource::InstallAtOffset(kLoadResource);
     return true;

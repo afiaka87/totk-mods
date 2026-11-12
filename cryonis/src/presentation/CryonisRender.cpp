@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "CryonisRender.hpp"
 #include "CryonisRuntime.hpp"
 #include "CryonisHooks.hpp"
@@ -38,6 +38,19 @@ template <class T> void write(void *p, std::size_t offset, T v) {
 }
 void *variable(std::uintptr_t offset) {
     return read<void *>(reinterpret_cast<void *>(engine::moduleBase), offset);
+}
+// Members that move on 1.4.3, as {1.2.1, 1.4.3}; values match the Hookshot 1.4.x shader pass.
+namespace member {
+using totk::port::Member;
+constexpr Member kDevice{0x30, 0x168};
+constexpr Member kCameraView{0x100, 0x108}, kCameraProjection{0x160, 0x1A8};
+constexpr Member kCameraNear{0x1E0, 0x228}, kCameraFar{0x1E4, 0x22C};
+constexpr Member kContextTarget{0x540, 0x538}, kContextViewport{0x548, 0x540};
+constexpr Member kSceneBuffers{0x1EC0, 0x1EC8};
+constexpr Member kDepthFull{0x700, 0x618}, kDepthHalf{0xE40, 0x10C0};
+constexpr Member kTextureWidth{0x30, 0x40}, kTextureHeight{0x32, 0x42};
+constexpr Member kSamplerDescriptor{184, 208};
+constexpr Member kBlockAddress{0x78, 0x80}, kBlockSize{0x38, 0x40};
 }
 std::uint32_t g_refusals{};
 void refuse(unsigned reason) {
@@ -106,10 +119,10 @@ bool camera(const void *context, Camera &c) {
     const auto record = read<const unsigned char *>(context, 0x18);
     if (!record)
         return false;
-    std::memcpy(c.view, record + 0x100, sizeof(c.view));
-    std::memcpy(c.projection, record + 0x160, sizeof(c.projection));
-    c.near = read<float>(record, 0x1E0);
-    c.far = read<float>(record, 0x1E4);
+    std::memcpy(c.view, record + member::kCameraView, sizeof(c.view));
+    std::memcpy(c.projection, record + member::kCameraProjection, sizeof(c.projection));
+    c.near = read<float>(record, member::kCameraNear);
+    c.far = read<float>(record, member::kCameraFar);
     for (const auto value : c.view)
         if (!std::isfinite(value))
             return false;
@@ -127,7 +140,7 @@ bool initializePrograms() {
         refuse(1);
         return false;
     }
-    g_device = read<NVNdevice *>(graphics, 0x30);
+    g_device = read<NVNdevice *>(graphics, member::kDevice);
     if (!g_device) {
         refuse(2);
         return false;
@@ -359,27 +372,29 @@ struct DrawResources {
     unsigned width{}, height{};
 };
 bool resources(void *drawContext, void *scene, void *context, DrawResources &out) {
-    if (!drawContext || !scene || !context || !read<void *>(context, 0x540) ||
-        !read<void *>(context, 0x548)) {
+    if (!drawContext || !scene || !context || !read<void *>(context, member::kContextTarget) ||
+        !read<void *>(context, member::kContextViewport)) {
         refuse(13);
         return false;
     }
     auto command = read<NVNcommandBuffer *>(drawContext, 0xB8);
-    auto buffers = read<const void *>(scene, 0x1EC0);
+    auto buffers = read<const void *>(scene, member::kSceneBuffers);
     if (!command || !buffers || read<unsigned>(buffers, 8) < 1) {
         refuse(14);
         return false;
     }
     auto record = read<unsigned char *>(buffers, 0x10);
     const auto f = read<unsigned>(record, 8);
-    const unsigned slot = f & 1 ? 0x700 : f & 2 ? 0xE40 : 0;
+    const unsigned slot = f & 1   ? static_cast<unsigned>(member::kDepthFull)
+                          : f & 2 ? static_cast<unsigned>(member::kDepthHalf)
+                                  : 0;
     if (!record || !slot) {
         refuse(15);
         return false;
     }
     void *sampler = record + slot;
-    const auto width = read<std::uint16_t>(sampler, 0x30),
-               height = read<std::uint16_t>(sampler, 0x32);
+    const auto width = read<std::uint16_t>(sampler, member::kTextureWidth),
+               height = read<std::uint16_t>(sampler, member::kTextureHeight);
     if (width < 16 || height < 16 || width > 8192 || height > 8192) {
         refuse(16);
         return false;
@@ -408,7 +423,7 @@ bool upload(const Camera &c, const Presentation &snapshot, unsigned width, unsig
     const auto create = [&](void *&block, const void *data, std::size_t size) {
         call<void (*)(void **, const void *, std::size_t)>(offsets::kUtlCreateDynamicUniformBlock)(
             &block, data, size);
-        good &= block && read<std::uint64_t>(block, 0x78);
+        good &= block && read<std::uint64_t>(block, member::kBlockAddress);
     };
     if (snapshot.aiming)
         create(out.grid, snapshot.water, sizeof(snapshot.water));
@@ -457,7 +472,8 @@ bool bindTextures(void *drawContext, void *sampler, NVNcommandBuffer *command) {
     if (g_textureSampler < 0) {
         // Native AGL copies this 40-byte descriptor into its sampler pool.
         alignas(8) unsigned char descriptor[40];
-        std::memcpy(descriptor, static_cast<unsigned char *>(sampler) + 184, sizeof(descriptor));
+        std::memcpy(descriptor, static_cast<unsigned char *>(sampler) + member::kSamplerDescriptor,
+                    sizeof(descriptor));
         write<float>(descriptor, 16, 0);
         write<float>(descriptor, 20, 0);
         write<float>(descriptor, 24, 0);
@@ -509,12 +525,13 @@ void issuePasses(void *drawContext, void *context, const DrawResources &resource
     g_scissor(command, 0, 0, width, height);
     const auto bindBlock = [&](unsigned binding, const void *block) {
         for (const auto stage : {NVN_SHADER_STAGE_VERTEX, NVN_SHADER_STAGE_FRAGMENT})
-            g_bindUniform(command, stage, binding, read<std::uint64_t>(block, 0x78),
-                          read<std::uint32_t>(block, 0x38));
+            g_bindUniform(command, stage, binding, read<std::uint64_t>(block, member::kBlockAddress),
+                          read<std::uint32_t>(block, member::kBlockSize));
     };
     if (snapshot.aiming) {
         bindBlock(0, blocks.common);
-        g_bindUniform(command, NVN_SHADER_STAGE_VERTEX, 2, read<std::uint64_t>(blocks.grid, 0x78),
+        g_bindUniform(command, NVN_SHADER_STAGE_VERTEX, 2,
+                      read<std::uint64_t>(blocks.grid, member::kBlockAddress),
                       sizeof(snapshot.water));
         g_bindProgram(command, &g_waterProgram, 63);
         g_drawArrays(command, NVN_DRAW_PRIMITIVE_TRIANGLES, 0, 63 * 63 * 6);
@@ -541,8 +558,15 @@ void issuePasses(void *drawContext, void *context, const DrawResources &resource
     g_drawArrays(command, NVN_DRAW_PRIMITIVE_TRIANGLES, 0, 3);
     call<void (*)(void *, void *)>(offsets::kModelRenderContextUnbindDefaultFrameBuffer)(
         context, drawContext);
-    call<void (*)(void *, void *)>(offsets::kRestoreRenderBuffers)(read<void *>(context, 0x540),
-                                                                   drawContext);
+    if (totk::port::is143()) {
+        // 1.4.3's routine takes a third argument; the Hookshot pass passes the same value.
+        const std::uint64_t flags = 2;
+        call<void (*)(void *, void *, const std::uint64_t *)>(offsets::kRestoreRenderBuffers)(
+            read<void *>(context, member::kContextTarget), drawContext, &flags);
+    } else {
+        call<void (*)(void *, void *)>(offsets::kRestoreRenderBuffers)(read<void *>(context, 0x540),
+                                                                       drawContext);
+    }
     call<void (*)(void *)>(offsets::kGraphicsContextGraphicsContext)(state);
     call<void (*)(void *, void *)>(offsets::kGraphicsContextApply)(state, drawContext);
 }
@@ -592,11 +616,17 @@ struct Pfx {
 };
 }
 void install(std::uintptr_t base) {
-    if (!totk::engine::codeMatches(base, signatures::kRender, "cryonis", "RENDER_REFUSED"))
+    if (!totk::port::codeMatches(base, signatures::kRender, "cryonis", "RENDER_REFUSED")) {
+        if (totk::port::is143())
+            Logging.Log("[cryonis] pillar and water drawing off on 1.4.3: a render routine did "
+                        "not match");
         return;
-    if (totk::render::installPfxHook(
-            base, {signatures::kPfx.offset, signatures::kPfx.first, signatures::kPfx.second},
-            Pfx::Callback, Pfx::previous, "cryonis"))
+    }
+    if (totk::render::installPfxHook(base, signatures::kPfx, Pfx::Callback, Pfx::previous,
+                                     "cryonis"))
         Logging.Log("[cryonis] PFX installed");
+    else if (totk::port::is143())
+        Logging.Log("[cryonis] pillar and water drawing off on 1.4.3: the scene effects hook was "
+                    "refused");
 }
 }

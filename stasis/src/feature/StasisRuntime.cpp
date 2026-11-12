@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
+#include <atomic>
 #include "StasisRuntime.hpp"
 #include "StasisActors.hpp"
 #include "StasisAudio.hpp"
@@ -364,7 +365,15 @@ Presentation drawnState(float elapsedFrames) {
     visual.ratio = chargeRatio(g.charge, g.scalar, true, kParameters);
     return visual;
 }
+#ifdef TOTK_SUITE_MEMBER
+std::atomic<bool> g_switchedOn{true};
+#endif
 } // namespace
+
+#ifdef TOTK_SUITE_MEMBER
+void setSwitchedOn(bool on) { g_switchedOn.store(on, std::memory_order_release); }
+bool switchedOn() { return g_switchedOn.load(std::memory_order_acquire); }
+#endif
 
 void tick(void *device) {
     const auto frame = g_npad.read(device);
@@ -394,6 +403,15 @@ void tick(void *device) {
         return unavailable("player unavailable");
     g.player = actors.value.player;
     signals.recentPlayer.store(g.player.address, std::memory_order_release);
+#ifdef TOTK_SUITE_MEMBER
+    if (!switchedOn()) {
+        if (g.frozen.address) {
+            g.charge = {};  // no launch
+            release("switched off");
+        }
+        return unavailable("switched off");
+    }
+#endif
     const auto selections = signals.nativeSelections.load(std::memory_order_acquire);
     const bool otherChosen = g_otherAbilities.chosenElsewhere(eng::Ability::Stasis);
     if (selections != g_seenSelections || otherChosen) {

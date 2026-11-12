@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #pragma once
+#include <cstddef>
 #include <cstdint>
 
 namespace botw_abilities::wheel {
@@ -13,4 +14,15 @@ using Available = bool (*)();
 // Install after the abilities so these wheel hooks run first. False when the game does not match.
 bool install(std::uintptr_t base, Choose stasis, Choose cryonis, Choose sphere, Choose cube, Choose wolf = nullptr,
              Caption wolfCaption = nullptr, Available wolfAvailable = nullptr);
+
+// Zonai Fieldworks' switch page: wedges clockwise from the top; exit cancels; release on a valid wedge chooses.
+struct ExtraPage {
+    bool (*abilitiesShown)();               // false hides the abilities page for this opening
+    const char *(*icon)(std::size_t wedge);  // null leaves the wedge empty
+    bool (*valid)(std::size_t wedge);
+    bool (*checked)(std::size_t wedge);
+    const char16_t *(*caption)(std::size_t wedge);
+    void (*choose)(std::size_t wedge);
+};
+void setExtraPage(const ExtraPage *page);
 } // namespace botw_abilities::wheel

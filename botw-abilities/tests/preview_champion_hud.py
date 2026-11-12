@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Render the actual HUD shaders and prove the legacy bomb path retains its pixels."""
 import argparse
 import hashlib

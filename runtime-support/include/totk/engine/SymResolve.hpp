@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //
-// Shared TotK runtime support — runtime symbol resolution helpers.
+// Shared TotK runtime support - runtime symbol resolution helpers.
 // Copyright (C) aquacluck and the totk-lotuskit contributors
 //   <https://github.com/aquacluck/totk-lotuskit>
 //

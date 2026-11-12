@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Externalize exact generated texture bytes without changing geometry or texture metadata."""
 
 import argparse

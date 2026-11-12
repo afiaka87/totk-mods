@@ -14,6 +14,11 @@ function(arrowbound_import host_target)
     set_target_properties(arrowbound_feature PROPERTIES
         CXX_STANDARD 26
         INCLUDE_DIRECTORIES "${arrow_root}/src/include;${arrow_root}/src/pure;${arrow_root}/src/engine;${arrow_root}/src/support;${PROJECT_SOURCE_DIR}/src/lib;${host_includes}")
-    target_sources(${host_target} PRIVATE $<TARGET_OBJECTS:arrowbound_feature>)
+    if(TOTK_SUITE_CONFIG_ROOT)
+        # Zonai Fieldworks links every member object itself, under its own program settings.
+        totk_register_suite_member(arrowbound_feature)
+    else()
+        target_sources(${host_target} PRIVATE $<TARGET_OBJECTS:arrowbound_feature>)
+    endif()
     target_include_directories(${host_target} PRIVATE "${arrow_root}/src/include")
 endfunction()

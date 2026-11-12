@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "CryonisPrompt.hpp"
 #include "CryonisEngine.hpp"
 #include "Totk121Signatures.hpp"
@@ -14,7 +14,7 @@ std::uintptr_t follow(std::uintptr_t address) {
 }
 }
 void configurePrompt(std::uintptr_t base) {
-    g_promptReady = totk::engine::codeMatches(base, signatures::kPrompt, "cryonis", "HUD_REFUSED");
+    g_promptReady = totk::port::codeMatches(base, signatures::kPrompt, "cryonis", "HUD_REFUSED");
 }
 NativePrompt::NativePrompt(bool hide) {
     if (!hide || !g_promptReady)

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include <doctest.h>
 
 #include "HookshotState.hpp"
@@ -376,24 +376,6 @@ Machine latchedMachine(const MachineConfig& c = {}) {
     in.launchComplete = true;
     step(m, in, c);
     REQUIRE(m.phase == Phase::Latched);
-    return m;
-}
-
-}  // namespace
-
-namespace {
-
-Machine fallCruiseMachine(const MachineConfig& c = {}) {
-    MachineConfig legacy = c;
-    legacy.positionDriveEnabled = false;
-    auto m = latchedMachine(legacy);
-    auto in = idleInputs();
-    in.aEdge = true;
-    step(m, in, legacy);
-    in = idleInputs();
-    in.fallEntered = true;
-    step(m, in, legacy);
-    REQUIRE(m.phase == Phase::FallCruise);
     return m;
 }
 

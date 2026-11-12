@@ -1,16 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
-//
-// Shared TotK runtime support — pure overlay layout policy.
-// Copyright (C) Clay Mullis
-//
-// Engine-free: no exlaunch, nn, sead, or agl includes. This header is compiled by
-// the host test suite with warnings-as-errors and by the Switch engine sources.
-//
-// Every function here is an exact extraction of boot-proven donor logic; the donor
-// and the observed evidence for each rule are recorded in
-// mods/code/runtime-support/docs/behavior-matrix.md (rules O1–O7, T6, T12, H2).
-// Do not "improve" a formula without a new observation: several of these constants
-// and branches encode eyes-on calibration or fixes for Clay-observed defects.
+// Copyright (C) HanSoloBlaster, afiaka87
+// Engine-free overlay layout from boot-proven logic; change no constant without a new in-game observation.
 
 #pragma once
 
@@ -26,9 +16,7 @@ namespace tuning {
     inline constexpr float kScreenW = 1280.0f;
     inline constexpr float kScreenH = 720.0f;
 
-    // Banner (top-right TTL'd notice). Scale per Clay v0.27.2 readout; glyph
-    // advance 8.5 per the v0.27.3 right-edge-gap readout (unmeasured boot-tuning
-    // knob — nudge only on a new observation); margin 0 per Clay 2026-07-08.
+    // Banner: scale 1.40, glyph advance 8.5 and margin 0 are boot-calibrated; change only on a new observation.
     inline constexpr float  kBannerScale   = 1.40f;
     inline constexpr float  kBannerCharW   = 8.5f;
     inline constexpr float  kBannerTopY    = 16.0f;
@@ -121,7 +109,7 @@ struct OverlayPresentation {
     HudPresentation hud;
 };
 
-// The canonical appearance — exactly the calibrated tuning constants above.
+// The canonical appearance - exactly the calibrated tuning constants above.
 constexpr OverlayPresentation canonicalPresentation() {
     return OverlayPresentation{
         BannerPresentation{
@@ -153,7 +141,7 @@ inline bool isSaneColor(const Rgba& c) {
 }
 
 // Fail-closed validation. Bounds are deliberately generous around the calibrated
-// values — they reject nonsense (non-finite, off-screen, zero/oversized buffers,
+// values - they reject nonsense (non-finite, off-screen, zero/oversized buffers,
 // impossible line limits), not taste.
 inline bool isSanePresentation(const OverlayPresentation& p) {
     const BannerPresentation& b = p.banner;
@@ -175,7 +163,7 @@ inline bool isSanePresentation(const OverlayPresentation& p) {
     return true;
 }
 
-// ── banner measurement and anchoring (matrix O1–O3) ─────────────────────────────
+// ── banner measurement and anchoring (matrix O1-O3) ─────────────────────────────
 
 // Longest DISPLAY line of a composed (possibly multi-line) text, in characters.
 // White Whale v0.1.3: measuring the whole string as one line made multi-line cards
@@ -259,7 +247,7 @@ inline std::size_t buildChargeMeterText(char* out, std::size_t cap,
     }
     pips[at] = '\0';
 
-    // ">--<pips> <name>[ READY]" — same composition as the donor SNPrintf.
+    // ">--<pips> <name>[ READY]" - same composition as the donor SNPrintf.
     std::size_t n = 0;
     auto append = [&](const char* s) {
         while (*s != '\0' && n + 1 < cap) { out[n++] = *s++; }
@@ -273,7 +261,7 @@ inline std::size_t buildChargeMeterText(char* out, std::size_t cap,
     return n;
 }
 
-// ── debug HUD text assembly (matrix O6–O7) ──────────────────────────────────────
+// ── debug HUD text assembly (matrix O6-O7) ──────────────────────────────────────
 
 // Append one already-formatted line to the HUD buffer. Exact donor hud::linef
 // semantics: a full buffer drops the line whole (returns false); otherwise lines
@@ -281,7 +269,7 @@ inline std::size_t buildChargeMeterText(char* out, std::size_t cap,
 inline bool hudAppendLine(char* buf, std::size_t cap, const char* line) {
     std::size_t len = 0;
     while (buf[len] != '\0') { ++len; }
-    if (len + 2 >= cap) { return false; }               // buffer full — drop the line
+    if (len + 2 >= cap) { return false; }               // buffer full - drop the line
     if (len > 0) { buf[len++] = '\n'; buf[len] = '\0'; }
     std::size_t i = 0;
     for (; line[i] != '\0' && len + i + 1 < cap; ++i) { buf[len + i] = line[i]; }
@@ -291,7 +279,7 @@ inline bool hudAppendLine(char* buf, std::size_t cap, const char* line) {
 
 // Copy the next display line (up to outCap-1 chars) from *cursor into out and
 // advance the cursor. A line longer than outCap-1 is split: the remainder becomes
-// the next line (exact donor tick() behavior — it costs an extra HUD slot rather
+// the next line (exact donor tick() behavior - it costs an extra HUD slot rather
 // than dropping text). Returns the number of characters copied.
 inline std::size_t hudNextLine(const char*& cursor, char* out, std::size_t outCap) {
     std::size_t n = 0;

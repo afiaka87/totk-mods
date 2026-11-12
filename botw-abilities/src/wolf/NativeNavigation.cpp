@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "NativeNavigation.hpp"
 #include "CliffSearch.hpp"
 #include "NativeApi.hpp"
@@ -10,9 +10,10 @@
 namespace botw_abilities::wolf {
 namespace {
 using namespace totk::engine;
+using namespace totk::port::literals;
 using totk::core::WorldPosition;
 NativeApi g_api;
-constexpr CodeSite kSites[]{
+constexpr totk::port::Site kSites[]{
     {0xB29BF0, 0xD10283FF, 0xFD003BE8}, {0x1103F40, 0xD2EFF808, 0xB20A23E9},
     {0x1103F2C, 0x3940B408, 0x35000048}, {0xEA10C8, 0xF9411408, 0xB4000068},
     {0xA60304, 0xD10283FF, 0xA9067BFD},
@@ -83,8 +84,8 @@ struct GeometryFilter {
 
     GeometryFilter() {
         for (unsigned i = 0; i < 8; ++i)
-            callbacks[i] = readMemory<std::uintptr_t>(g_api.base() + 0x45F3450 + i * sizeof(std::uintptr_t));
-        callbacks[5] = g_api.base() + 0x2ABEA9C;
+            callbacks[i] = readMemory<std::uintptr_t>(g_api.base() + 0x45F3450_v121 + i * sizeof(std::uintptr_t));
+        callbacks[5] = g_api.base() + 0x2ABEA9C_v121;
     }
 };
 static_assert(sizeof(GeometryFilter::Object) == 24 && sizeof(GeometryFilter) == 88);

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Port the supplied sphere's native actors and effects into the combined mod."""
 from __future__ import annotations
 

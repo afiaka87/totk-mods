@@ -20,6 +20,7 @@ target_include_directories(linked_stick_pure_tests PRIVATE
     "${DOCTEST_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs"
     "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../runtime-support/include"
 )
 target_compile_features(linked_stick_pure_tests PRIVATE cxx_std_23)
 if(MSVC)

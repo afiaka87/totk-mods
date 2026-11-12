@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 // The identities the chain shader and the host tests share, written in the subset both GLSL and C++ accept.
 #ifndef CH_INLINE

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 // Raycast layout (TotK 1.2.1): hit flag byte +0x20, position +0x24, normal +0x30, distance +0x40, shape tag +0x50
 // (bit 0 = NoClimb), body id +0x120, body pointer +0x170; motion type 1 keyframed, 2 dynamic, 0 static.

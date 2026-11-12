@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "CryonisWorld.hpp"
 #include "CryonisEngine.hpp"
 #include "CryonisEquipment.hpp"
@@ -49,13 +49,22 @@ Water sample(WorldContext world, float x, float z) {
         world.terrain =
             call<void *(*)(void *, const char **)>(offsets::kTerrainModuleSearchTerrainSceneByName)(
                 reinterpret_cast<void *>(module), &name);
-        if (!valid(reinterpret_cast<std::uintptr_t>(world.terrain))) {
+        // The scene-list fallback's members are unconfirmed on 1.4.3, so it is skipped there.
+        if (!totk::port::is143() && !valid(reinterpret_cast<std::uintptr_t>(world.terrain))) {
             const auto count = read<unsigned>(module + 704);
             const auto list = read<std::uintptr_t>(module + 712);
             if (count > 0 && count <= 256 && valid(list))
                 world.terrain = reinterpret_cast<void *>(read<std::uintptr_t>(list));
         }
         if (!valid(reinterpret_cast<std::uintptr_t>(world.terrain))) {
+            if (totk::port::is143()) {
+                static bool reported{};
+                if (!reported) {
+                    reported = true;
+                    Logging.Log("[cryonis] terrain list fallback off on 1.4.3: the terrain "
+                                "module's scene list is not confirmed");
+                }
+            }
             world.terrain = nullptr;
             return {};
         }
@@ -164,6 +173,17 @@ bool shadowOnly(Handle actor) {
     return true;
 }
 
+// 1.4.3 inlines the motion-type routine, so the mod reads the same members there.
+static unsigned motionType(std::uintptr_t rigid) {
+    if (!totk::port::is143())
+        return call<unsigned (*)(std::uintptr_t)>(offsets::kRigidBodyBaseGetMotionType)(rigid);
+    const auto pending = read<std::uintptr_t>(rigid + 0x60);
+    if (pending && (read<std::uint32_t>(pending + 0xD4) & 4))
+        return read<std::uint32_t>(pending + 0x80);
+    const auto flags = read<std::uint64_t>(rigid + 0x68);
+    return flags & 0x40 ? 0 : flags & 0x80 ? 1 : 2;
+}
+
 bool riderEligible(WorldContext world, Handle actor) {
     if (read<unsigned>(actor.address + eng::layout::kProcessState) != 4)
         return false;
@@ -200,7 +220,7 @@ bool riderEligible(WorldContext world, Handle actor) {
     if (valid(equipment) &&
         call<std::uintptr_t (*)(std::uintptr_t)>(offsets::kDynamicEquipmentGetUser)(equipment))
         return false;
-    return call<unsigned (*)(std::uintptr_t)>(offsets::kRigidBodyBaseGetMotionType)(b) == 2 ||
+    return motionType(b) == 2 ||
            std::strncmp(name, "Animal_", 7) == 0 || std::strncmp(name, "Enemy_", 6) == 0 ||
            std::strncmp(name, "Npc_", 4) == 0;
 }
@@ -346,6 +366,15 @@ void modelInitialized(std::uintptr_t component) {
 }
 
 bool isSwimming(Handle actor) {
+    if (totk::port::is143()) {
+        // 1.4.3 inlines this routine; these are its two calls, both checked at startup.
+        using namespace totk::port::literals;
+        if (!actor.address)
+            return false;
+        const auto state = call<std::uintptr_t (*)(std::uintptr_t)>(0xB1FA20_v143)(actor.address);
+        return state && (call<unsigned (*)(std::uintptr_t, unsigned, std::uint64_t)>(
+                             0xB1FEE0_v143)(state, 0x61, 0) & 1);
+    }
     return call<bool (*)(std::uintptr_t)>(offsets::kGameActorIsSwimming)(actor.address);
 }
 void deleteActor(Handle actor) {

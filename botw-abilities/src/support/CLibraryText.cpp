@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 // Replaces the C library's snprintf family for the module. The library version links about 40 KB of
 // code and keeps its number conversion on the module heap, which is the only sizeable use of that heap.
 #include <cstdarg>

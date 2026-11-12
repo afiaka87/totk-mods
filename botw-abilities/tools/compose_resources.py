@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Merge ability resources against the clean game while preserving every parse-budget floor."""
 
 from __future__ import annotations

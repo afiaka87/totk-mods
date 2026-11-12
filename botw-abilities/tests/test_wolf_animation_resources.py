@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Resource-selection regressions use deliberately different overlapping clips."""
 
 from copy import deepcopy

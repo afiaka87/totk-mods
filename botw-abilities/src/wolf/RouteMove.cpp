@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "RouteMove.hpp"
 #include "WorldMath.hpp"
 #include "NativeNavigation.hpp"

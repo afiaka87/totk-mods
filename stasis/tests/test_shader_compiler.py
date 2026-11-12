@@ -1,4 +1,4 @@
-"""SPDX-License-Identifier: MIT. Copyright (c) Clay Mullis."""
+"""SPDX-License-Identifier: MIT. Copyright (c) HanSoloBlaster, afiaka87."""
 import importlib.util
 from pathlib import Path
 import unittest

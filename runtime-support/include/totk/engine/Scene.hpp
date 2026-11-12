@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (C) Clay Mullis
+// Copyright (C) HanSoloBlaster, afiaka87
 #pragma once
 
 #include "totk/core/Result.hpp"
@@ -61,6 +61,10 @@ using SceneResult = core::Result<SceneContext, SceneResolveError>;
     return SceneResult::success(SceneContext{core::SceneToken{scene}, manager});
 }
 
+// With TOTK_PORT the slot translates to the running game, so this copy has its own name.
+#if defined(TOTK_PORT) && TOTK_PORT
+inline namespace ported {
+#endif
 [[nodiscard]] inline SceneResult resolveScene(std::uintptr_t mainBase) {
     if (!isPlausibleAddress(mainBase)) {
         return SceneResult::failure(SceneResolveError::MainImageUnavailable);
@@ -68,6 +72,9 @@ using SceneResult = core::Result<SceneContext, SceneResolveError>;
     return resolveSceneFromModuleSlot(
         mainBase + Totk121Offsets::kSceneModuleInstance.value);
 }
+#if defined(TOTK_PORT) && TOTK_PORT
+}  // inline namespace ported
+#endif
 
 enum class SceneObservation : std::uint8_t {
     Unavailable,

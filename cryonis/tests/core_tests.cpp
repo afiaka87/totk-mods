@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "../src/pure/CryonisCore.hpp"
 #include "../src/pure/CryonisGrowth.hpp"
 #include "../src/pure/CryonisLift.hpp"

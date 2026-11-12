@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "CryonisInstall.hpp"
 #include <lib.hpp>
 #include "Totk121Offsets.hpp"
@@ -9,6 +9,7 @@
 #include "CryonisRender.hpp"
 #include "CryonisHud.hpp"
 #include "CryonisAudio.hpp"
+#include <cstring>
 namespace {
 namespace cn = cryonis::runtime;
 namespace engine = cryonis::engine;
@@ -50,6 +51,15 @@ HOOK_DEFINE_TRAMPOLINE(CryonisClockHook) {
     static void Callback(void *module, const void *pause, float frames) {
         Orig(module, pause, frames);
         engine::publishPhysicsTime(cn::hooks(), frames);
+    }
+};
+// 1.4.3 runs that routine inline in gameplay, so its frame-rate update is hooked instead.
+HOOK_DEFINE_TRAMPOLINE(CryonisFrameRateHook) {
+    static void Callback(void *rate, float frames) {
+        Orig(rate, frames);
+        float scale;
+        std::memcpy(&scale, static_cast<const char *>(rate) + 16, sizeof(scale));
+        engine::publishPhysicsTime(cn::hooks(), scale);
     }
 };
 HOOK_DEFINE_TRAMPOLINE(CryonisCameraHook) {
@@ -115,7 +125,12 @@ bool cryonis::install(std::uintptr_t base) {
     cryonis::hud::install(base);
     cryonis::audio::install(base);
     CryonisNpadHook::InstallAtOffset(offsets::kNinJoyNpadDeviceCalc);
-    CryonisClockHook::InstallAtOffset(offsets::kPhysicsModuleUpdateDeltaFrame);
+    if (totk::port::is143()) {
+        using namespace totk::port::literals;
+        CryonisFrameRateHook::InstallAtOffset(0x3E67F0_v143);  // words checked by engine::validate
+    } else {
+        CryonisClockHook::InstallAtOffset(offsets::kPhysicsModuleUpdateDeltaFrame);
+    }
     CryonisCameraHook::InstallAtOffset(offsets::kUpdateAimCamera);
     CryonisRayHook::InstallAtOffset(offsets::kRayCast);
     CryonisWheelOpenHook::InstallAtOffset(offsets::kUIShortCutMainItemScreenOpenStartImpl);
@@ -130,6 +145,12 @@ bool cryonis::install(std::uintptr_t base) {
     Logging.Log("[cryonis] water targeting and original-reference mesh renderer installed");
     return true;
 }
+#ifdef TOTK_SUITE_MEMBER
+void cryonis::switched(bool on) { cn::setSwitchedOn(on); }
+#endif
 bool cryonis::chooseFromWheel(std::uintptr_t screen) {
+#ifdef TOTK_SUITE_MEMBER
+    if (!cn::switchedOn()) return false;
+#endif
     return engine::wheelChosen(cn::hooks(), screen);
 }

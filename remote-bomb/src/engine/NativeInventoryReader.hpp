@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #pragma once
 #include "NativeInventoryPolicy.hpp"
+#include "totk/port/Port.hpp"
 #include <lib.hpp>
 
 namespace remote_bomb::inventory {
+// Game places below are named by their TotK 1.2.1 offset; totk::port::Code gives the running game's.
 inline std::uintptr_t managerAt(std::uintptr_t slot) {
     const auto holder = totk::engine::readMemory<std::uintptr_t>(slot);
     if (!totk::engine::isPlausibleAddress(holder))
@@ -29,11 +31,11 @@ struct Reader {
     std::uintptr_t base, manager;
     unsigned count;
     std::uintptr_t handle;
-    Reader(std::uintptr_t b, std::uintptr_t p) : base(b), manager(managerAt(b + 0x462E3D8)),
+    Reader(std::uintptr_t b, std::uintptr_t p) : base(b), manager(managerAt(b + totk::port::Code(0x462E3D8))),
         count(totk::engine::isPlausibleAddress(p) ?
-            reinterpret_cast<unsigned (*)(std::uintptr_t, unsigned)>(b + 0xD44A08)(p, kMaterialCategory) : ~0u),
+            reinterpret_cast<unsigned (*)(std::uintptr_t, unsigned)>(b + totk::port::Code(0xD44A08))(p, kMaterialCategory) : ~0u),
         handle(totk::engine::isPlausibleAddress(p) ?
-            reinterpret_cast<std::uintptr_t (*)(std::uintptr_t, unsigned)>(b + 0xD4499C)(p, kMaterialCategory) : 0) {}
+            reinterpret_cast<std::uintptr_t (*)(std::uintptr_t, unsigned)>(b + totk::port::Code(0xD4499C))(p, kMaterialCategory) : 0) {}
     bool ready() const {
         return manager && count <= kMaximumItems && totk::engine::isPlausibleAddress(handle);
     }
@@ -41,12 +43,12 @@ struct Reader {
         using Slot = unsigned (*)(std::uintptr_t, void *, std::uintptr_t, unsigned, unsigned);
         using Name = unsigned (*)(std::uintptr_t, const char **, const void *, unsigned);
         // Native callers seed both readers with the shared empty string (1A768B4, CDF750).
-        text = totk::engine::readMemory<const char *>(base + 0x462E1B8);
+        text = totk::engine::readMemory<const char *>(base + totk::port::Code(0x462E1B8));
         if (i >= count)
             return NameStage::Index;
-        if (!(reinterpret_cast<Slot>(base + 0x942FE8)(manager, record, handle, 0x4290322E, i) & 1))
+        if (!(reinterpret_cast<Slot>(base + totk::port::Code(0x942FE8))(manager, record, handle, 0x4290322E, i) & 1))
             return NameStage::Slot;
-        if (!(reinterpret_cast<Name>(base + (queued ? 0x935BE0 : 0xD44600))(
+        if (!(reinterpret_cast<Name>(base + totk::port::Code(queued ? 0x935BE0 : 0xD44600))(
                 manager, &text, record, 0x25EFA387) & 1))
             return NameStage::Read;
         if (!validName(text))

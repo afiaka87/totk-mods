@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 // Tick ordering, state-machine inputs and event dispatch.
 #include "HookshotHooks.hpp"
@@ -170,6 +170,13 @@ void runtimeTick(void* device) {
     in.freshInput = fresh;
     in.chordHeld = g_allowActivation && input_policy::aimHeld(buttons);
     in.triggerHeld = (buttons & input_policy::kButtonL) != 0;
+    // Diagnostic: once a second while aim is held and aiming has not started, log what the start waits on.
+    if (input_policy::aimHeld(buttons) && rt.machine.phase == Phase::Idle) {
+        if (rt.session.tick % 60 == 0)
+            ZHLOG("AIM_WAITING world_ready=%u fresh_input=%u activation_allowed=%u trigger_latched=%u starved=%u",
+                  unsigned(ready), unsigned(fresh), unsigned(g_allowActivation),
+                  unsigned(rt.machine.triggerLatched), unsigned(rt.aim.starved));
+    }
     in.bHeld = (buttons & input::kButtonB) != 0;
 
     const bool ownAim = in.chordHeld || rt.machine.phase == Phase::Targeting ||

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "GaleRender.hpp"
 #include "GaleModels.hpp"
 #include "GaleNative.hpp"
@@ -8,7 +8,7 @@
 #include "GalePoseTime.hpp"
 #include "Runtime.hpp"
 #include "totk/engine/ActorRoster.hpp"
-#include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include "totk/render/PoseInput.hpp"
 #include <atomic>
 #include <bit>
@@ -18,14 +18,21 @@ namespace botw_abilities::champions::pose {
 namespace {
 using namespace models;
 using namespace totk::engine;
-constexpr CodeSite kSites[]{
+using namespace totk::port::literals;
+constexpr totk::port::Site kSites[]{
     {0x76B6EC,0xD10283FF,0xA9047BFD}, {0x76C078,0xD103C3FF,0xA9097BFD},
     {0x824A8,0xA9BD7BFD,0xA90157F6}, {0x74F450,0xA9BC7BFD,0xA9015FF8},
     {0x756E98,0xD10283FF,0xA9047BFD}, {0x753530,0xA9BB7BFD,0xF9000BF9},
     {0x86A288,0xA9BD7BFD,0xA90157F6}, {0x6333C8,0xD100C3FF,0xFD000BE8},
     {0x833618,0xA9BA7BFD,0xA9016FFC},
 };
+// 1.4.3 inlines BeforeDraw and CalculateBounds, so function hooks miss them; the resume points have X19 = unit.
+constexpr std::ptrdiff_t kDrawResume143 = 0x7DB70_v143, kBoundsResume143 = 0x7CB38_v143;
+constexpr CodeSite kResumeSites143[]{{kDrawResume143, 0x39405268, 0x52800089},
+                                     {kBoundsResume143, 0xF9402274, 0xB4FEBD54}};
+constexpr totk::port::Member kBufferIndex{0x15, 0x14};
 std::uintptr_t g_base{};
+bool g_installed = false;
 constexpr unsigned kPublishedLimit = 128;
 std::array<std::atomic<std::uintptr_t>, kPublishedLimit> g_models{};
 std::atomic<unsigned> g_count{};
@@ -54,6 +61,19 @@ void refused(Refusal code, unsigned detail = 0, const void* actor = nullptr) {
         unsigned(code), detail, channel, int(label.size()), label.empty() ? "" : label.data());
 }
 
+// A posed copy of one model unit for the bounds routine; it copies only the running game's unit size.
+struct BoundsInput {
+    alignas(16) std::byte unit[kUnitCopyLimit];
+    void prepare(const void* live, const totk::render::PoseInput& animation) {
+        std::memcpy(unit, live, kLayout.size);
+        const void* skeleton = animation.skeleton;
+        std::memcpy(unit + kLayout.skeleton, &skeleton, sizeof(skeleton));
+        const std::array<float, 3> zero{};
+        std::memcpy(unit + kLayout.origin, zero.data(), sizeof(zero));
+        unit[std::ptrdiff_t(kLayout.relativeFlag)] &= std::byte{0xFE};
+    }
+};
+
 struct Workspace {
     std::atomic_flag busy = ATOMIC_FLAG_INIT;
     std::array<LocalPose, 128> local, morph;
@@ -61,7 +81,7 @@ struct Workspace {
     std::array<bool, 128> found{};
     std::array<PoseMatrix, kModelBoneLimit> output;
     totk::render::PoseInput input;
-    totk::render::PoseBoundsInput bounds;
+    BoundsInput bounds;
     View target;
     std::uint64_t tick = UINT64_MAX, scene = 0, time = 0;
     std::uint32_t channel = 0, playerId = 0;
@@ -260,22 +280,50 @@ HOOK_DEFINE_TRAMPOLINE(AnimationSimple) {
         return result;
     }
 };
+void uploadPose(void* unit) {
+    if (!hinted(unit)) return;
+    Lease lease;
+    if (!prepare(unit, lease)) return;
+    const auto buffer = read<std::uint8_t>(unit, kBufferIndex) & 3u;
+    native<void(*)(void*, unsigned)>(g_base, 0x824A8)(lease.work->input.skeleton, buffer);
+    native<void(*)(void*, unsigned)>(g_base, 0x74F450)(lease.work->input.model, buffer);
+}
+
+using NativeBounds = float (*)(void*);
+void poseBounds(void* unit, NativeBounds calculate) {
+    if (!hinted(unit)) return;
+    Lease lease;
+    if (!prepare(unit, lease)) return;
+    auto& work = *lease.work;
+    if (work.target.relative)
+        for (unsigned bone = 0; bone < work.target.identity.boneCount; ++bone)
+            if (!rebasePoseOrigin(work.output[bone], work.target.origin, {})) { refused(Refusal::Transform, bone); return; }
+    work.bounds.prepare(unit, work.input);
+    (void)calculate(work.bounds.unit);
+}
+
+// Integer register `index` of the hooked code; `context->X[]` does not work on a float context.
+std::uint64_t gameRegister(const exl::hook::InlineFloatCtx* context, unsigned index) {
+    return *reinterpret_cast<const std::uint64_t*>(
+        reinterpret_cast<const std::uint8_t*>(context) + 0x200 + index * 8);
+}
+
 HOOK_DEFINE_TRAMPOLINE(BeforeDraw) {
     static std::uintptr_t Callback(void* unit, void* context, const void* views, int count) {
         const auto result = Orig(unit, context, views, count);
-        if (!hinted(unit)) return result;
-        Lease lease;
-        if (prepare(unit, lease)) {
-            const auto buffer = read<std::uint8_t>(unit, 0x15) & 3u;
-            native<void(*)(void*, unsigned)>(g_base, 0x824A8)(lease.work->input.skeleton, buffer);
-            native<void(*)(void*, unsigned)>(g_base, 0x74F450)(lease.work->input.model, buffer);
-        }
+        uploadPose(unit);
         return result;
+    }
+};
+HOOK_DEFINE_INLINE(InlineDrawResume143) {
+    static void Callback(exl::hook::InlineFloatCtx* context) {
+        uploadPose(reinterpret_cast<void*>(gameRegister(context, 19)));
     }
 };
 HOOK_DEFINE_TRAMPOLINE(CalculateView) {
     static void Callback(void* model, unsigned view, const void* camera, unsigned buffer) {
-        const auto* unit = reinterpret_cast<const void*>(reinterpret_cast<std::uintptr_t>(model) - kLayout.embeddedModel);
+        const auto* unit = reinterpret_cast<const void*>(
+            reinterpret_cast<std::uintptr_t>(model) - std::uintptr_t(std::ptrdiff_t(kLayout.embeddedModel)));
         if (!hinted(unit)) { Orig(model, view, camera, buffer); return; }
         Lease lease;
         if (prepare(unit, lease)) Orig(lease.work->input.model, view, camera, buffer);
@@ -285,25 +333,23 @@ HOOK_DEFINE_TRAMPOLINE(CalculateView) {
 HOOK_DEFINE_TRAMPOLINE(CalculateBounds) {
     static float Callback(void* unit) {
         const float result = Orig(unit);
-        if (!hinted(unit)) return result;
-        Lease lease;
-        if (!prepare(unit, lease)) return result;
-        auto& work = *lease.work;
-        if (work.target.relative)
-            for (unsigned bone = 0; bone < work.target.identity.boneCount; ++bone)
-                if (!rebasePoseOrigin(work.output[bone], work.target.origin, {})) { refused(Refusal::Transform, bone); return result; }
-        work.bounds.prepare(unit, work.input, kLayout);
-        const std::array<float, 3> zero{};
-        std::memcpy(work.bounds.unit + 0x338, zero.data(), sizeof(zero));
-        work.bounds.unit[0x355] &= std::byte{0xFE};
-        (void)Orig(work.bounds.unit);
+        poseBounds(unit, [](void* copy) { return Orig(copy); });
         return result;
+    }
+};
+// The game has already stored the live unit's bounds here; the posed copy's bounds replace them.
+HOOK_DEFINE_INLINE(FoldedBounds143) {
+    static void Callback(exl::hook::InlineFloatCtx* context) {
+        poseBounds(reinterpret_cast<void*>(gameRegister(context, 19)),
+                   [](void* copy) { return CalculateBounds::Orig(copy); });
     }
 };
 } // namespace
 
 void publish(const SceneContext& scene, const ActorHandle& player) {
     g_count.store(0, std::memory_order_release);
+    // With pose rendering off (see install) the game's model lists are not read.
+    if (!g_installed) return;
     if (!gale::active()) { g_controller.store(0, std::memory_order_release); return; }
     std::array<std::uintptr_t, kPublishedLimit> units{};
     unsigned count = 0;
@@ -339,13 +385,25 @@ void publish(const SceneContext& scene, const ActorHandle& player) {
 }
 
 bool install(std::uintptr_t base) {
-    if (!codeMatches(base, kSites, "champions", "GALE_RENDER_BUILD_REFUSED")) return false;
+    // On 1.4.3 a failed check turns off only the pose; the rest of Revali's Gale keeps running.
+    const bool is143 = totk::port::is143();
+    if (!totk::port::codeMatches(base, kSites, "champions",
+            is143 ? "Gale pose rendering off on 1.4.3:" : "GALE_RENDER_BUILD_REFUSED")) return is143;
+    if (is143 && !codeMatches(base, kResumeSites143, "champions", "Gale pose rendering off on 1.4.3:")) return true;
     g_base = base;
-    AnimationCalc::InstallAtOffset(0x6333C8);
-    AnimationSimple::InstallAtOffset(0x833618);
-    BeforeDraw::InstallAtOffset(0x76B6EC);
-    CalculateView::InstallAtOffset(0x76C078);
-    CalculateBounds::InstallAtOffset(0x756E98);
+    AnimationCalc::InstallAtOffset(0x6333C8_v121);
+    AnimationSimple::InstallAtOffset(0x833618_v121);
+    BeforeDraw::InstallAtOffset(0x76B6EC_v121);
+    CalculateView::InstallAtOffset(0x76C078_v121);
+    CalculateBounds::InstallAtOffset(0x756E98_v121);
+    if (is143) {
+        InlineDrawResume143::InstallAtOffset(kDrawResume143);
+        FoldedBounds143::InstallAtOffset(kBoundsResume143);
+        Logging.Log("[champions] Gale pose rendering on 1.4.3: unit 0x308, model +0xD8, skeleton +0x110, "
+                    "inline resumes +%#lx +%#lx", static_cast<unsigned long>(kDrawResume143),
+                    static_cast<unsigned long>(kBoundsResume143));
+    }
+    g_installed = true;
     return true;
 }
 } // namespace botw_abilities::champions::pose

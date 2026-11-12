@@ -1,5 +1,5 @@
 // Copyright (c) HanSoloBlaster, afiaka87
-// The player's on/off switch for each member, kept on the SD card and shared by every save.
+// Per-member on/off switches, stored on the SD card for all saves and off until the player turns a member on.
 #pragma once
 
 #include <cstddef>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "BombRuntime.hpp"
 #include "BombPhysics.hpp"
 #include "BombBlast.hpp"
@@ -584,6 +584,14 @@ bool initialize(std::uintptr_t base) {
                 abilityProfile(state.gameplay.upgrade).damage, double(abilityProfile(state.gameplay.upgrade).rechargeSeconds));
     return true;
 }
+#ifdef TOTK_SUITE_MEMBER
+namespace {
+std::atomic<bool> g_switchedOn{true};
+bool g_offApplied{};
+}
+void setSwitchedOn(bool on) { g_switchedOn.store(on, std::memory_order_release); }
+bool switchedOn() { return g_switchedOn.load(std::memory_order_acquire); }
+#endif
 void tick(void *device) {
     if (state.tickLock.test_and_set(std::memory_order_acquire))
         return;
@@ -593,7 +601,27 @@ void tick(void *device) {
     const bool running = state.signals.running.load(std::memory_order_acquire);
     const float frames = float(double(clock - state.priorClock) / 4294967296.0);
     state.priorClock = clock;
-    const bool available = refreshScene();
+    bool available = refreshScene();
+#ifdef TOTK_SUITE_MEMBER
+    if (switchedOn()) {
+        g_offApplied = false;
+    } else {
+        if (available && !g_offApplied) {
+            unsigned removed = 0;
+            for (unsigned i = 0; i < state.roster.count; ++i) {
+                const auto &entry = state.roster.entries[i];
+                if (entry.processState == 4 && current(entry.actor) &&
+                    engine::discard(state.native, state.generation, borrow(entry.actor)))
+                    ++removed;
+            }
+            Logging.Log("[remote-bomb] SWITCHED_OFF bombs_removed=%u", removed);
+            invalidateScene("switched off");
+            g_offApplied = true;
+        }
+        state.signals.player.store(0);
+        available = false;
+    }
+#endif
     engine::explosion::sceneChanged(available ? state.generation : 0);
     engine::explosion::publishPlayer(available ? state.player.address : 0);
     if (available) {
@@ -694,6 +722,9 @@ void publishPhysicsTime(float frames) {
 }
 void wheelOpened(std::uintptr_t screen) { engine::wheelOpened(state.signals, screen); }
 bool chooseFromWheel(std::uintptr_t screen, Shape shape) {
+#ifdef TOTK_SUITE_MEMBER
+    if (!switchedOn()) return false;
+#endif
     const auto wheel=input::unpack(state.signals.wheel.load(std::memory_order_acquire));
     if (!state.signals.player.load(std::memory_order_acquire) || !wheel.open || wheel.exited ||
         state.signals.wheelOwner.load(std::memory_order_acquire)!=screen) return false;

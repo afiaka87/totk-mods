@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #define _CRT_SECURE_NO_WARNINGS
 #include <doctest.h>
 #include "GalePose.hpp"

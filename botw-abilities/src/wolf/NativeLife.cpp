@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "NativeLife.hpp"
 #include "NativeActor.hpp"
 #include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include <algorithm>
 #include <atomic>
 
 namespace botw_abilities::wolf {
 namespace {
 using namespace totk::engine;
+using namespace totk::port::literals;
 // game::component::Life::preCalc, where the game subtracts this frame's damage from the actor's life.
-constexpr CodeSite kSites[]{{0x64B264, 0xD10143FF, 0xA9017BFD}};
+constexpr totk::port::Site kSites[]{{0x64B264, 0xD10143FF, 0xA9017BFD}};
 // Life: the owning actor; the sums the game's own hits and the condition hits are about to subtract;
 // the strongest hit's attacker link (shared link data holding the proc, then the id) and the link's id.
 constexpr std::uintptr_t kActor = 24, kExternalDamage = 424, kInternalDamage = 4656;
@@ -57,9 +59,9 @@ HOOK_DEFINE_TRAMPOLINE(LifePreCalc) {
 
 bool installLifeApi(std::uintptr_t base) {
     if (g_base) return base == g_base;
-    if (!codeMatches(base, kSites, "wolf-link", "LIFE_ABI_REFUSED")) return false;
+    if (!totk::port::codeMatches(base, kSites, "wolf-link", "LIFE_ABI_REFUSED")) return false;
     g_base = base;
-    LifePreCalc::InstallAtOffset(0x64B264);
+    LifePreCalc::InstallAtOffset(0x64B264_v121);
     return true;
 }
 

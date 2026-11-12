@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "BombRender.hpp"
 #include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include "BombRuntime.hpp"
 #include "BombRenderPolicy.hpp"
 #include "BombHighlight.hpp"
@@ -27,9 +28,18 @@
 extern "C" unsigned char __bomb_code_start__[], __bomb_code_end__[];
 #endif
 namespace remote_bomb::render {
+using namespace totk::port::literals;
 namespace {
 using render_policy::Camera;
 using render_policy::Uniforms;
+// Places inside the game's render objects that sit elsewhere on 1.4.3: the TotK 1.2.1 value, then the 1.4.3 one.
+constexpr totk::port::Member kContextTarget{0x540, 0x538}, kContextViewport{0x548, 0x540};
+constexpr totk::port::Member kGraphicsDevice{0x30, 0x168}, kSceneDepthBuffers{0x1EC0, 0x1EC8};
+constexpr totk::port::Member kDepthFull{0x700, 0x618}, kDepthHalf{0xE40, 0x10C0};
+constexpr totk::port::Member kDepthWidth{0x30, 0x40}, kDepthHeight{0x32, 0x42}, kDepthDescriptor{184, 208};
+constexpr totk::port::Member kUniformAddress{0x78, 0x80};
+constexpr totk::port::Member kCameraView{0x100, 0x108}, kCameraProjection{0x160, 0x1A8};
+constexpr totk::port::Member kCameraNear{0x1E0, 0x228}, kCameraFar{0x1E4, 0x22C};
 std::uintptr_t base{};
 NVNdevice *device{};
 PFNNVNDEVICEGETPROCADDRESSPROC getProc{};
@@ -110,8 +120,8 @@ template <class T> T read(const void *pointer, std::size_t offset) {
 template <class T> void write(void *pointer, std::size_t offset, T value) {
     std::memcpy(static_cast<unsigned char *>(pointer) + offset, &value, sizeof(value));
 }
-template <class F> F native(std::uintptr_t offset) { return reinterpret_cast<F>(base + offset); }
-void *global(std::uintptr_t offset) { return read<void *>(reinterpret_cast<void *>(base), offset); }
+template <class F> F native(totk::port::Code place) { return reinterpret_cast<F>(base + place); }
+void *global(totk::port::Code place) { return base ? read<void *>(reinterpret_cast<void *>(base + place), 0) : nullptr; }
 bool refuse(unsigned reason) {
     if (reason < 32 && !(refusals & (1u << reason))) {
         refusals |= 1u << reason;
@@ -126,11 +136,11 @@ template <class F> bool resolve(F &function, const char *name) {
     return function != nullptr;
 }
 bool initializePools() {
-    auto graphics = global(0x4716E48);
-    getProc = reinterpret_cast<PFNNVNDEVICEGETPROCADDRESSPROC>(global(0x46707E8));
+    auto graphics = global(0x4716E48_v121);
+    getProc = reinterpret_cast<PFNNVNDEVICEGETPROCADDRESSPROC>(global(0x46707E8_v121));
     if (!graphics || !getProc)
         return refuse(1);
-    device = read<NVNdevice *>(graphics, 0x30);
+    device = read<NVNdevice *>(graphics, kGraphicsDevice);
     if (!device)
         return refuse(2);
     attempted = true;
@@ -242,7 +252,7 @@ bool initializeTextures() {
         !resolve(init, "nvnTextureInitialize") || !resolve(writePixels, "nvnTextureWriteTexels") ||
         !resolve(flush, "nvnTextureFlushTexels"))
         return refuse(3);
-    auto manager = read<void *>(global(0x462EF90), 0);
+    auto manager = read<void *>(global(0x462EF90_v121), 0);
     if (!manager)
         return refuse(10);
     std::size_t used = 0;
@@ -283,7 +293,7 @@ bool initializeTextures() {
         writePixels(&textures[i], nullptr, &region, source.data);
         flush(&textures[i], nullptr, &region);
 #endif
-        textureIds[i] = native<int (*)(void *, NVNtexture *, NVNtextureView *)>(0xA5B0B4)(manager, &textures[i], nullptr);
+        textureIds[i] = native<int (*)(void *, NVNtexture *, NVNtextureView *)>(0xA5B0B4_v121)(manager, &textures[i], nullptr);
         if (textureIds[i] < 0)
             return refuse(14);
         return true;
@@ -315,19 +325,19 @@ bool initialize() {
 }
 struct Resources { NVNcommandBuffer *command{}; void *sampler{}; unsigned width{}, height{}; float depth[2]{}, sampleScale[2]{1,1}; };
 bool resources(void *drawContext, void *scene, void *context, Resources &out) {
-    if (!drawContext || !scene || !context || !read<void *>(context, 0x540) || !read<void *>(context, 0x548))
+    if (!drawContext || !scene || !context || !read<void *>(context, kContextTarget) || !read<void *>(context, kContextViewport))
         return refuse(15);
     auto command = read<NVNcommandBuffer *>(drawContext, 0xB8);
-    auto buffers = read<const void *>(scene, 0x1EC0);
+    auto buffers = read<const void *>(scene, kSceneDepthBuffers);
     if (!command || !buffers || read<unsigned>(buffers, 8) < 1)
         return refuse(16);
     auto record = read<unsigned char *>(buffers, 0x10);
     const auto flags = read<unsigned>(record, 8);
-    const unsigned slot = flags & 1 ? 0x700 : flags & 2 ? 0xE40 : 0;
+    const unsigned slot = flags & 1 ? unsigned(std::ptrdiff_t(kDepthFull)) : flags & 2 ? unsigned(std::ptrdiff_t(kDepthHalf)) : 0;
     if (!record || !slot)
         return refuse(17);
     const auto sampler = record + slot;
-    const auto width = read<std::uint16_t>(sampler, 0x30), height = read<std::uint16_t>(sampler, 0x32);
+    const auto width = read<std::uint16_t>(sampler, kDepthWidth), height = read<std::uint16_t>(sampler, kDepthHeight);
     if (width < 16 || height < 16 || width > 8192 || height > 8192) {
         if (!(refusals & (1u << 18)))
             Logging.Log("[remote-bomb] TARGET_VIEWPORT_REFUSED width=%u height=%u", unsigned(width), unsigned(height));
@@ -345,16 +355,16 @@ bool resources(void *drawContext, void *scene, void *context, Resources &out) {
 bool ensureSampler(const Resources &r) {
     if (samplerId < 0) {
         alignas(8) unsigned char descriptor[40];
-        std::memcpy(descriptor, static_cast<unsigned char *>(r.sampler) + 184, sizeof(descriptor));
+        std::memcpy(descriptor, static_cast<unsigned char *>(r.sampler) + kDepthDescriptor, sizeof(descriptor));
         write<float>(descriptor, 16, 0); write<float>(descriptor, 20, 0); write<float>(descriptor, 24, 0);
         descriptor[28] = NVN_MAG_FILTER_LINEAR; descriptor[29] = NVN_MIN_FILTER_LINEAR; descriptor[30] = 0;
         descriptor[31] = descriptor[32] = descriptor[33] = NVN_WRAP_MODE_REPEAT;
         descriptor[34] = 1; descriptor[36] = NVN_SAMPLER_REDUCTION_AVERAGE;
         write<std::uint16_t>(descriptor, 38, 0);
-        auto manager = read<void *>(global(0x462EF90), 0);
+        auto manager = read<void *>(global(0x462EF90_v121), 0);
         if (!manager)
             return refuse(20);
-        const auto id = native<unsigned (*)(void *, const void *, const char *)>(0x7F91E0)(manager, descriptor, "Remote Bomb original maps");
+        const auto id = native<unsigned (*)(void *, const void *, const char *)>(0x7F91E0_v121)(manager, descriptor, "Remote Bomb original maps");
         if (id >= 0xffff)
             return refuse(20);
         samplerId = int(id);
@@ -363,7 +373,7 @@ bool ensureSampler(const Resources &r) {
 }
 bool bindTextures(void *drawContext, const Resources &r, unsigned form) {
     if (!ensureSampler(r) ||
-        !native<bool (*)(void *, void *, unsigned, void *)>(0x95EF6C)(samplerBindings, drawContext, 0, r.sampler))
+        !native<bool (*)(void *, void *, unsigned, void *)>(0x95EF6C_v121)(samplerBindings, drawContext, 0, r.sampler))
         return refuse(19);
     barrier(r.command, NVN_BARRIER_INVALIDATE_TEXTURE_DESCRIPTOR_BIT);
     for (unsigned map = 0; map < 4; ++map)
@@ -385,20 +395,29 @@ float curve(const effect_assets::Curve &source, float time, unsigned channel, fl
 // Copies uniforms into a block from the game's per-frame allocator; returns its GPU address or 0.
 template <class T> std::uint64_t uniformBlock(const T &uniform) {
     void *block{};
-    native<void (*)(void **, const void *, std::size_t)>(0x95F604)(&block, &uniform, sizeof(uniform));
-    return read<std::uint64_t>(block, 0x78);
+    native<void (*)(void **, const void *, std::size_t)>(0x95F604_v121)(&block, &uniform, sizeof(uniform));
+    return read<std::uint64_t>(block, kUniformAddress);
 }
 void bindUniforms(NVNcommandBuffer *command, std::uint64_t address, std::size_t size) {
     for (const auto stage : {NVN_SHADER_STAGE_VERTEX, NVN_SHADER_STAGE_FRAGMENT})
         bindUniform(command, stage, 0, address, size);
 }
 bool allocatorReady() {
-    const auto allocator = global(0x4717048);
+    const auto allocator = global(0x4717048_v121);
     return allocator && read<void *>(allocator, 24) && read<unsigned>(allocator, 72);
 }
 // The game's 128-byte graphics state: resetState loads its defaults, applyState sends it to the GPU.
-void resetState(void *state) { native<void (*)(void *)>(0x74C19C)(state); }
-void applyState(void *state, void *drawContext) { native<void (*)(void *, void *)>(0x756A08)(state, drawContext); }
+void resetState(void *state) { native<void (*)(void *)>(0x74C19C_v121)(state); }
+void applyState(void *state, void *drawContext) { native<void (*)(void *, void *)>(0x756A08_v121)(state, drawContext); }
+// The game's barrier after drawing to a render buffer; 1.4.3 adds a third argument, which the game passes as {2, 0}.
+void gameBarrier(void *buffer, void *drawContext) {
+    if (totk::port::is143()) {
+        alignas(8) const unsigned pair[2]{2, 0};
+        native<void (*)(void *, void *, const unsigned *)>(0xC4B7AC_v121)(buffer, drawContext, pair);
+        return;
+    }
+    native<void (*)(void *, void *)>(0xC4B7AC_v121)(buffer, drawContext);
+}
 // Blends the render targets in mask (the word at +4) from the given colour factors, keeping the destination alpha. Each target's factors and equations are six bytes from 40 + 6 * target.
 void blend(unsigned char *state, unsigned mask, NVNblendFunc source, NVNblendFunc destination) {
     write<unsigned>(state, 4, mask);
@@ -505,7 +524,7 @@ void postprocess(const Resources &r, void *context, void *drawContext, const Fil
         drawArrays(r.command, NVN_DRAW_PRIMITIVE_TRIANGLES, 0, 3);
     }
     textureBarrier();
-    native<void (*)(void *, void *)>(0xC5A6FC)(context, drawContext);
+    native<void (*)(void *, void *)>(0xC5A6FC_v121)(context, drawContext);
     viewport(r.command, 0, 0, float(r.width), float(r.height)); scissor(r.command, 0, 0, r.width, r.height);
     blend(state, 1, NVN_BLEND_FUNC_ONE, NVN_BLEND_FUNC_ONE_MINUS_SRC_ALPHA);
     applyState(state, drawContext);
@@ -591,12 +610,12 @@ void draw(void *drawContext, void *scene, void *context, const Camera &camera) {
     // Another glow pass in the same module may still be sampling the shared targets.
     barrier(r.command, NVN_BARRIER_ORDER_FRAGMENTS_BIT | NVN_BARRIER_INVALIDATE_TEXTURE_BIT);
     // The game's own bind first, then the bomb draws straight onto its frame. The body is opaque: it replaces the frame's colour and keeps the frame's alpha.
-    native<void (*)(void *, void *)>(0xC5A6FC)(context, drawContext);
+    native<void (*)(void *, void *)>(0xC5A6FC_v121)(context, drawContext);
     bool bloom{};
     if (!targets::begin(r.command, context, r.width, r.height, bloom)) {
         refuse(30);
-        native<void (*)(void *, void *)>(0x962C18)(context, drawContext);
-        native<void (*)(void *, void *)>(0xC4B7AC)(read<void *>(context, 0x540), drawContext);
+        native<void (*)(void *, void *)>(0x962C18_v121)(context, drawContext);
+        gameBarrier(read<void *>(context, kContextTarget), drawContext);
         resetState(graphics);
         applyState(graphics, drawContext);
         return;
@@ -640,8 +659,8 @@ void draw(void *drawContext, void *scene, void *context, const Camera &camera) {
     }
     if (bloom)
         postprocess(r, context, drawContext, filters);
-    native<void (*)(void *, void *)>(0x962C18)(context, drawContext);
-    native<void (*)(void *, void *)>(0xC4B7AC)(read<void *>(context, 0x540), drawContext);
+    native<void (*)(void *, void *)>(0x962C18_v121)(context, drawContext);
+    gameBarrier(read<void *>(context, kContextTarget), drawContext);
     resetState(graphics);
     applyState(graphics, drawContext);
 }
@@ -657,9 +676,9 @@ std::uint64_t pfx(void *extension, void *args) {
     if (!record)
         return result;
     Camera camera;
-    std::memcpy(camera.view, record + 0x100, sizeof(camera.view));
-    std::memcpy(camera.projection, record + 0x160, sizeof(camera.projection));
-    camera.near = read<float>(record, 0x1E0); camera.far = read<float>(record, 0x1E4);
+    std::memcpy(camera.view, record + kCameraView, sizeof(camera.view));
+    std::memcpy(camera.projection, record + kCameraProjection, sizeof(camera.projection));
+    camera.near = read<float>(record, kCameraNear); camera.far = read<float>(record, kCameraFar);
     if (render_policy::valid(camera))
         draw(read<void *>(args, 0), read<void *>(args, 8), context, camera);
     else
@@ -669,14 +688,14 @@ std::uint64_t pfx(void *extension, void *args) {
 }
 bool install(std::uintptr_t mainBase) {
     base = mainBase;
-    constexpr totk::engine::CodeSite guards[]{
+    constexpr totk::port::Site guards[]{
         {0x7F91E0, 0xD10283FF, 0xA9047BFD}, {0xA5B0B4, 0xD101C3FF, 0xA9017BFD},
         {0x95F604, 0xD103C3FF, 0xA9097BFD}, {0x95EF6C, 0xD10143FF, 0xA9017BFD},
         {0x74C19C, 0x52802028, 0xD280A0A9}, {0xC5A6FC, 0xA9BE7BFD, 0xA9014FF4},
         {0x756A08, 0xD10243FF, 0xA9037BFD}, {0x962C18, 0xF942A000, 0xB4000080},
         {0xC4B7AC, 0xA9BE7BFD, 0xA9014FF4},
     };
-    return totk::engine::codeMatches(base, guards, "remote-bomb", "RENDER_GUARD") &&
+    return totk::port::codeMatches(base, guards, "remote-bomb", "RENDER_GUARD") &&
            totk::render::installPfxHook(base, pfx, previous, "remote-bomb");
 }
 // The HUD icon's centre and half size in the game's 1280x720 layout.
@@ -729,8 +748,8 @@ void drawGauge(std::uintptr_t module, std::uintptr_t args, const HudUniforms& un
     graphics[0] = graphics[1] = graphics[101] = 0;
     blend(graphics, 1, NVN_BLEND_FUNC_SRC_ALPHA, NVN_BLEND_FUNC_ONE_MINUS_SRC_ALPHA);
     applyState(graphics, drawContext);
-    native<void (*)(void *, void *, void *)>(0x74F09C)(reinterpret_cast<void *>(viewPort), drawContext, buffer);
-    native<void (*)(void *, void *, void *, unsigned)>(0x7B9274)(buffer, drawContext, bindScratch, 0);
+    native<void (*)(void *, void *, void *)>(0x74F09C_v121)(reinterpret_cast<void *>(viewPort), drawContext, buffer);
+    native<void (*)(void *, void *, void *, unsigned)>(0x7B9274_v121)(buffer, drawContext, bindScratch, 0);
     bindProgram(command, &hudProgram, 63);
     bindUniforms(command, block, sizeof(uniform));
     const unsigned images[]{image, kHudTextureStart + 4, kHudTextureStart + 5};
@@ -740,7 +759,7 @@ void drawGauge(std::uintptr_t module, std::uintptr_t args, const HudUniforms& un
                     textureHandle(device, textureIds[images[i]], samplerId));
     drawArrays(command, NVN_DRAW_PRIMITIVE_TRIANGLES, 0, 6);
     reinterpret_cast<void (*)(void *, void *)>(complete)(buffer, drawContext);
-    native<void (*)(void *, void *)>(0xC4B7AC)(buffer, drawContext);
+    gameBarrier(buffer, drawContext);
     applyState(reinterpret_cast<void *>(module + 0x110), drawContext);
 }
 } // namespace

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 # Rewrites Wolf Link's animation file from the records made by compact_wolf_animations.py.
 param(
     [Parameter(Mandatory)][string]$ToolboxInit,

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Build private native Champion gameplay actors from the owned clean dump."""
 import argparse
 import copy
@@ -109,7 +109,7 @@ def build(args):
     (output / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
     generated = args.output / 'generated'
     generated.mkdir(parents=True, exist_ok=True)
-    header = '// SPDX-License-Identifier: MIT\n// Copyright (c) Clay Mullis\n#pragma once\n#include <array>\nnamespace botw_abilities::champions {\n'
+    header = '// SPDX-License-Identifier: MIT\n// Copyright (c) HanSoloBlaster, afiaka87\n#pragma once\n#include <array>\nnamespace botw_abilities::champions {\n'
     header += f'inline constexpr char kGaleUpdraftActor[] = "{actor}";\n'
     for field, name in (('launch_speed', 'LaunchSpeed'), ('channel_seconds', 'ChannelSeconds'), ('duration_seconds', 'DurationSeconds')):
         header += f'inline constexpr float kGale{name} = {float(settings[field])}f;\n'

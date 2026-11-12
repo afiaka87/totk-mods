@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "GaleNative.hpp"
 #include "GaleResources.hpp"
 #include "GaleMotion.hpp"
@@ -8,7 +8,7 @@
 #include "Effects.hpp"
 #include "GaleGlide.hpp"
 #include "Runtime.hpp"
-#include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include "totk/engine/Transform.hpp"
 #include <bit>
 #include <lib.hpp>
@@ -16,14 +16,19 @@
 namespace botw_abilities::champions::gale {
 namespace {
 using namespace totk::engine;
-constexpr CodeSite kSites[]{
+using namespace totk::port::literals;
+constexpr totk::port::Site kSites[]{
     {0x107E8BC, 0xA9BE7BFD, 0xA9014FF4}, {0xBC7610, 0xF9400408, 0},
     {0x11BD100, 0xF9411408, 0xB4000068},
-    {0xB7D960, 0xA9BE7BFD, 0xA9014FF4}, {0xA04560, 0xA9BF7BFD, 0x910003FD},
+    {0xB7D960, 0xA9BE7BFD, 0xA9014FF4},
     {0x1722210, 0xD10203FF, 0}, {0x1D6E54C, 0xFC1B0FE8, 0},
     {0xB60C00, 0xD100C3FF, 0xA9027BFD},
     {0x1A8A478, 0xD100C3FF, 0xA9017BFD},
 };
+// The swimming check: 1.4.3 has no such routine, so it is checked and called on 1.2.1 only.
+constexpr totk::port::Site kSites121[]{{0xA04560, 0xA9BF7BFD, 0x910003FD}};
+// TotK 1.4.3 only: the player-state query that the 1.2.1 swimming check calls with state 0x61.
+constexpr std::ptrdiff_t kPlayerState143 = 0xB1FEE0_v143;
 std::uintptr_t g_base{};
 std::atomic<std::uint64_t> g_jumpEpoch{};
 std::atomic<std::uint64_t> g_presentation{};
@@ -38,7 +43,7 @@ struct GlideGuard {
     GlideGuard() { while (g_glideLock.test_and_set(std::memory_order_acquire)) {} }
     ~GlideGuard() { g_glideLock.clear(std::memory_order_release); }
 };
-template <class Fn> Fn call(std::uintptr_t offset) { return reinterpret_cast<Fn>(g_base + offset); }
+template <class Fn> Fn call(totk::port::Code offset) { return reinterpret_cast<Fn>(g_base + offset); }
 
 bool launch(const SceneContext& scene, ActorHandle player, std::uintptr_t component, const Context& context) {
     const auto transforms = TransformService(TransformFunctions::fromMainBase(g_base));
@@ -143,7 +148,10 @@ Motion readMotion(const ActorHandle& player) {
     const bool finite = std::isfinite(velocity.x) && std::isfinite(velocity.y) && std::isfinite(velocity.z);
     const bool grounded = (readMemory<unsigned>(component + 0xE50) & 1) != 0;
     const bool stopped = finite && velocity.x*velocity.x + velocity.z*velocity.z < 0.0225f;
-    const bool swimming = call<bool(*)(std::uintptr_t)>(0xA04560)(player.address);
+    const bool swimming = totk::port::is143()
+        ? (reinterpret_cast<std::uint64_t(*)(std::uintptr_t, std::uint32_t, std::uint64_t)>(
+               g_base + static_cast<std::uintptr_t>(kPlayerState143))(component, 0x61, 0) & 1) != 0
+        : call<bool(*)(std::uintptr_t)>(0xA04560)(player.address);
     const bool damaged = call<bool(*)(std::uintptr_t)>(0xB7D960)(player.address);
     return {component, grounded, stopped, !finite || swimming || damaged};
 }
@@ -237,11 +245,19 @@ void injectLaunchJump(const NpadFrame& input) {
 }
 
 bool install(std::uintptr_t base) {
-    if (!codeMatches(base, kSites, "champions", "GALE_BUILD_REFUSED")) return false;
+    if (!totk::port::codeMatches(base, kSites, "champions", "GALE_BUILD_REFUSED")) return false;
+    if (totk::port::is143()) {
+        const auto site = base + static_cast<std::uintptr_t>(kPlayerState143);
+        const auto first = totk::suite::checkedCode(site), second = totk::suite::checkedCode(site + 4);
+        if (first != 0xF9400C08 || second != 0xF9411508) {
+            Logging.Log("[champions] GALE_BUILD_REFUSED the 1.4.3 player-state query reads %08x,%08x", first, second);
+            return false;
+        }
+    } else if (!totk::port::codeMatches(base, kSites121, "champions", "GALE_BUILD_REFUSED")) return false;
     g_base = base;
-    Jump::InstallAtOffset(0x107E8BC);
-    GlideEntry::InstallAtOffset(0x1722210);
-    GlideEntered::InstallAtOffset(0x1D6E54C);
+    Jump::InstallAtOffset(0x107E8BC_v121);
+    GlideEntry::InstallAtOffset(0x1722210_v121);
+    GlideEntered::InstallAtOffset(0x1D6E54C_v121);
     return true;
 }
 } // namespace botw_abilities::champions::gale

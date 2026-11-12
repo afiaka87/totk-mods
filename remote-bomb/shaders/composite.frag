@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #version 450
 #include "post.glsl"
 layout(binding=1) uniform sampler2D narrowBloom;

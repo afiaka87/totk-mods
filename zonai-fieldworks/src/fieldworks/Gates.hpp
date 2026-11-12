@@ -1,5 +1,5 @@
 // Copyright (c) HanSoloBlaster, afiaka87
-// Every hook a member installs goes through a gate: the member's code when on, the game's when off.
+// Fieldworks installs every member at load; each hook goes through a gate to the member's or the game's code.
 #pragma once
 
 #include <cstddef>
@@ -39,7 +39,7 @@ void apply(std::size_t member, bool on);
 
 namespace fieldworks::climb {
 
-// Installs Phantom Foothold's climbing edits after every member; returns the count, zero when refused.
+// Climbing edits via switchable stubs; install after all members (a changed site refuses), returns edit count.
 unsigned install(std::uintptr_t mainBase, const char* version);
 void apply(bool on);
 

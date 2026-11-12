@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #pragma once
 #include "Totk121Offsets.hpp"
-#include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 namespace stasis::signatures {
-using Site = totk::engine::CodeSite;
+using Site = totk::port::Site;
+// The words are the 1.2.1 words; on 1.4.3 the check compares the words recorded for that game.
 inline constexpr Site kRuntime[]{
     {offsets::kDynamicTextureAllocatorFree, 0xD10143FF, 0xA9027BFD},
     {offsets::kGetStaticEquipment, 0xF9411408, 0xB4000068},
@@ -31,7 +32,6 @@ inline constexpr Site kRuntime[]{
     {offsets::kAsControllerUpdate, 0xD10503FF, 0x6D0D23E9},
     {offsets::kGamePhysicsPreCalc, 0xD10283FF, 0x6D052BEB},
     {offsets::kActorBaseUpdatePositionAndRotation, 0xD103C3FF, 0xFD0033EC},
-    {offsets::kActorSetPose, 0xD10203FF, 0xFD0023EA},
     {offsets::kActorBaseForceSetMatrix, 0xA9BD7BFD, 0xF9000BF5},
     {offsets::kGetAnimationComponent, 0xF9411408, 0xB4000068},
     {offsets::kRayCast, 0xD10743FF, 0xA9187BFD},
@@ -44,8 +44,6 @@ inline constexpr Site kRuntime[]{
     {offsets::kRigidBodyEntityGetActorLink, 0xF9408808, 0x9001B30A},
     {offsets::kActorLinkBaseGetReference, 0xA9BD7BFD, 0xA90157F6},
     {offsets::kSpecialPowerModuleCalc, 0x6DB63BEF, 0x6D0133ED},
-    {offsets::kSpecialPowerRendererReset, 0xA9BA7BFD, 0xA9016FFC},
-    {offsets::kSpecialPowerRendererPrepareExtraModels, 0xA9BA7BFD, 0xA9016FFC},
     {offsets::kSpecialPowerRendererDrawMask, 0xA9BA7BFD, 0xA9016FFC},
     {offsets::kSpecialPowerRendererComposite, 0xA9BA7BFD, 0xA9016FFC},
     {offsets::kMonochromeFilterDraw, 0xD10643FF, 0x6D112BEB},
@@ -59,6 +57,11 @@ inline constexpr Site kRuntime[]{
     {offsets::kUIShortCutMainItemScreenDoOutBefore, 0xA9BE7BFD, 0xA9014FF4},
     {offsets::kUIShortCutMainItemScreenCloseEndImpl, 0xA9BE7BFD, 0xA9014FF4},
     {offsets::kUpdateAimCamera, 0xD102C3FF, 0x6D033BEF}};
+// Routines that 1.4.3 has only as inline copies inside their callers; checked on 1.2.1 alone.
+inline constexpr Site kRuntime121[]{
+    {offsets::kActorSetPose, 0xD10203FF, 0xFD0023EA},
+    {offsets::kSpecialPowerRendererReset, 0xA9BA7BFD, 0xA9016FFC},
+    {offsets::kSpecialPowerRendererPrepareExtraModels, 0xA9BA7BFD, 0xA9016FFC}};
 inline constexpr Site kAudio[]{
     {offsets::kEventCallbackSLinkReplaceAssetInfo, 0xA9BD7BFD, 0xA90157F6},
     {offsets::kUserResourceSearchAssetCallTableByName, 0xA9BA7BFD, 0},

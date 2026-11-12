@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 #include "MapStampService.hpp"
 
@@ -7,8 +7,12 @@
 
 #include <lib.hpp>
 
+#include "totk/port/CodeCheck.hpp"
+
 namespace bivouac::engine {
 namespace {
+
+using namespace totk::port::literals;
 
 #define BVLOG(...) Logging.Log("[bv] " __VA_ARGS__)
 
@@ -30,12 +34,19 @@ constexpr int kMaximumCampsPerTick = 2;
 constexpr int kOrphanScanPerTick = 64;
 constexpr int kDeferredLogGapTicks = 128;
 
-constexpr std::ptrdiff_t kWarpToMarkerOffset = 0x0198CA5C;
-constexpr std::ptrdiff_t kGetSceneComponentOffset = 0x01203C3C;
-constexpr std::ptrdiff_t kSceneModuleIndirectOffset = 0x0462E180;
+// kGetSceneComponentOffset is 1.2.1 only: 1.4.3 has no single routine for it (see warpManagerOn143).
+constexpr totk::port::Code kWarpToMarkerOffset = 0x0198CA5C;
+constexpr totk::port::Code kGetSceneComponentOffset = 0x01203C3C;
+constexpr totk::port::Code kSceneModuleIndirectOffset = 0x0462E180;
 constexpr std::uint64_t kWarpManagerComponentIndex = 32;
 constexpr std::uintptr_t kWarpTargetIndexOffset = 336;
-constexpr std::uintptr_t kMapScreenWarpPendingByteOffset = 3102;
+constexpr totk::port::Member kMapScreenWarpPendingByteOffset{3102, 3246};
+
+// 1.4.3 only: component lookup by index and warp-manager type record; first words checked before use.
+constexpr std::ptrdiff_t kSceneComponentLookup143 = 0x89F9B0_v143;
+constexpr std::ptrdiff_t kWarpManagerTypeRecord143 = 0xC1E574_v143;
+constexpr std::uint32_t kSceneComponentLookupWord143 = 0xA9BE7BFD;
+constexpr std::uint32_t kWarpManagerTypeRecordWord143 = 0xA9BF7BFD;
 
 constexpr float kArrivalHoverMeters = 2.0f;
 constexpr float kArrivalLiftEpsilonMeters = 0.15f;
@@ -48,6 +59,45 @@ bool validPointer(std::uintptr_t value) {
 int centimeters(float meters) {
     return static_cast<int>(
         meters * 100.0f + (meters >= 0.0f ? 0.5f : -0.5f));
+}
+
+// 1.4.3 has no warp-manager routine; this repeats its travel confirm: index lookup, then cast to that type.
+void* warpManagerOn143(std::uintptr_t mainBase, std::uintptr_t sceneModule) {
+    static int usable = 0; // 0 not checked yet, 1 usable, -1 off
+    if (usable == 0) {
+        const bool matches =
+            totk::suite::checkedCode(mainBase + kSceneComponentLookup143)
+                == kSceneComponentLookupWord143
+            && totk::suite::checkedCode(mainBase + kWarpManagerTypeRecord143)
+                == kWarpManagerTypeRecordWord143;
+        usable = matches ? 1 : -1;
+        if (!matches) {
+            Logging.Log("[bivouac] camp warps off on 1.4.3: the scene-component lookup "
+                        "is not the expected game code");
+        }
+    }
+    if (usable < 0) {
+        return nullptr;
+    }
+    const auto lookup = reinterpret_cast<void* (*)(void*, std::uint32_t)>(
+        mainBase + kSceneComponentLookup143);
+    void* component = lookup(
+        reinterpret_cast<void*>(sceneModule),
+        static_cast<std::uint32_t>(kWarpManagerComponentIndex));
+    if (!validPointer(reinterpret_cast<std::uintptr_t>(component))) {
+        return nullptr;
+    }
+    const auto typeRecord = reinterpret_cast<void* (*)()>(
+        mainBase + kWarpManagerTypeRecord143)();
+    const auto vtable = *reinterpret_cast<std::uintptr_t*>(component);
+    if (!validPointer(vtable)) {
+        return nullptr;
+    }
+    const auto castToType = *reinterpret_cast<void* (**)(void*, void*)>(vtable);
+    if (!validPointer(reinterpret_cast<std::uintptr_t>(castToType))) {
+        return nullptr;
+    }
+    return castToType(component, typeRecord);
 }
 
 } // namespace
@@ -263,6 +313,12 @@ void* MapStampService::resolveWarpManager() const {
         *reinterpret_cast<std::uintptr_t*>(holder);
     if (!validPointer(sceneModule)) {
         return nullptr;
+    }
+    if (totk::port::is143()) {
+        void* manager = warpManagerOn143(mMainBase, sceneModule);
+        return validPointer(reinterpret_cast<std::uintptr_t>(manager))
+            ? manager
+            : nullptr;
     }
     const auto getComponent =
         reinterpret_cast<void* (*)(void*, std::uint64_t)>(

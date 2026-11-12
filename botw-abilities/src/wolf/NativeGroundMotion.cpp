@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "NativeGroundMotion.hpp"
 #include "GroundMotion.hpp"
 #include "NativeBrain.hpp"
@@ -11,12 +11,13 @@
 namespace botw_abilities::wolf {
 namespace {
 using namespace totk::engine;
+using namespace totk::port::literals;
 using Vector = totk::core::WorldPosition;
 NativeApi g_api;
 std::atomic<unsigned> g_reported{}, g_capped{};
 std::atomic<float> g_speedScale{1.0f};
 constexpr unsigned kCappedLogs = 12;
-constexpr CodeSite kSites[]{
+constexpr totk::port::Site kSites[]{
     {0xB0E5B8, 0xD10183FF, 0xFD0013E8},
     {0xFCE23C, 0xF9408808, 0x9001B30A},
     {0x2A8CCD8, 0xF9401008, 0x9106A100},
@@ -84,7 +85,7 @@ void setGroundSpeedScale(float scale) {
 bool installGroundMotionApi(std::uintptr_t base) {
     if (g_api.ready()) return g_api.base() == base;
     if (!initializeActorApi(base) || !g_api.bind(base, kSites, "GROUND_ABI_REFUSED")) return false;
-    GroundVelocity::InstallAtOffset(0xB0E5B8);
+    GroundVelocity::InstallAtOffset(0xB0E5B8_v121);
     return true;
 }
 

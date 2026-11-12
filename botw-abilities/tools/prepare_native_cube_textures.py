@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Encode the owned cube maps in the accepted native sphere's TXTG layout."""
 import argparse
 import hashlib

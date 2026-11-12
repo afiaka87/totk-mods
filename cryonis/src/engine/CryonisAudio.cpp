@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "CryonisAudio.hpp"
 #include "CryonisEngine.hpp"
 #include "Totk121Signatures.hpp"
@@ -52,13 +52,26 @@ const Row *custom(const Table *table) {
             return &row;
     return nullptr;
 }
+// 1.4.3 (record not read there): rename only over an empty or name-like slot, else stay silent.
+bool nameSlotAccepted(std::uintptr_t wrapper) {
+    if (!totk::port::is143())
+        return true;
+    const auto current = read<std::uintptr_t>(wrapper);
+    if (!current || totk::engine::isPlausibleStringAddress(current))
+        return true;
+    static std::atomic<bool> logged{false};
+    if (!logged.exchange(true))
+        Logging.Log("[cryonis] AUDIO_REFUSED 1.4.3 sound record name slot holds %p",
+                    reinterpret_cast<void *>(current));
+    return false;
+}
 HOOK_DEFINE_TRAMPOLINE(AssetNameHook) {
     static std::uintptr_t Callback(std::uintptr_t self, std::uintptr_t info,
                                    std::uintptr_t argument) {
         if (valid(argument))
             if (const auto *row = custom(read<const Table *>(argument + 0x20))) {
                 const auto wrapper = read<std::uintptr_t>(argument);
-                if (!valid(wrapper))
+                if (!valid(wrapper) || !nameSlotAccepted(wrapper))
                     return 2;
                 const auto *name = row->table.name;
                 std::memcpy(reinterpret_cast<void *>(wrapper), &name, sizeof(name));
@@ -99,7 +112,8 @@ std::uintptr_t speaker() {
 }
 }
 void install(std::uintptr_t base) {
-    if (!totk::engine::codeMatches(base, signatures::kAudio, "cryonis", "AUDIO_REFUSED"))
+    // 1.4.3 has the same name callback and sound-link format 0x21; nameSlotAccepted guards the record.
+    if (!totk::port::codeMatches(base, signatures::kAudio, "cryonis", "AUDIO_REFUSED"))
         return;
     AssetNameHook::InstallAtOffset(offsets::kEventCallbackSLinkReplaceAssetInfo);
     g_ready = true;

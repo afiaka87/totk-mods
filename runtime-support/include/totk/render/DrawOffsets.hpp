@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //
-// Shared TotK runtime support — world-draw offsets.
-// Copyright (C) Clay Mullis
+// Shared TotK runtime support - world-draw offsets.
+// Copyright (C) HanSoloBlaster, afiaka87
 //
-// TotK 1.2.1 / build 9B4E43650501A4D4 — the world-space immediate-line draw
+// TotK 1.2.1 / build 9B4E43650501A4D4 - the world-space immediate-line draw
 // path, and the one string constant that path will not work without.
 //
 // This is the approved offset file for world drawing: raw addresses for the
@@ -32,11 +32,11 @@ struct DrawOffsets {
     static constexpr const char* kGameVersion = "1.2.1";
     static constexpr const char* kBuildId = "9B4E43650501A4D4";
 
-    // sead::GraphicsContext::GraphicsContext — named in the symbol database,
+    // sead::GraphicsContext::GraphicsContext - named in the symbol database,
     // 37 instructions, fills a 0x80 block of default render state.
     static constexpr totk::core::ImageOffset kGraphicsContextCtor{0x0074C19C};
 
-    // sead::GraphicsContext::apply — pushes that state through the renderer.
+    // sead::GraphicsContext::apply - pushes that state through the renderer.
     static constexpr totk::core::ImageOffset kGraphicsContextApply{0x00756A08};
 
     // Opens an immediate-mode pass against a camera/projection matrix pair.
@@ -48,7 +48,7 @@ struct DrawOffsets {
     // One world-space FILLED TRIANGLE: three corners and a colour. The symbol
     // database calls this `drawLineImm_0`; the name is wrong. Its own bytes read
     // three vertices through three pointers, upload them as a three-vertex
-    // block, and issue graphics primitive 4 (triangles) — and the retail memory
+    // block, and issue graphics primitive 4 (triangles) - and the retail memory
     // graph uses it for filled bars with the line helper for their outlines.
     //
     // Its arguments are pointers, exactly like the line helper's, so declaring
@@ -63,14 +63,14 @@ struct DrawOffsets {
     // machinery: it stages two vertices and issues its own draw, which is why a
     // dense Survey costs one GPU draw call per line. Both helpers underneath it
     // take a COUNT, so submitting many lines in one draw needs no new engine
-    // capability — only these three entry points and the two data slots below.
+    // capability - only these three entry points and the two data slots below.
     //
     // Read off the disassembly of `drawLineImm` itself (0x00D977E8), in the
     // order it calls them.
 
     // sead uniform-block write. Called (program, drawCtx, slot, data). The line
     // helper passes slot 3 with a 16-byte colour, and the block is bound for the
-    // whole draw — which is the reason one batch carries exactly one colour.
+    // whole draw - which is the reason one batch carries exactly one colour.
     static constexpr totk::core::ImageOffset kSetUniformBlock{0x0096D8A0};
 
     // The vertex upload. Called (program, drawCtx, slot, vec3Array, count),
@@ -108,7 +108,7 @@ struct DrawOffsets {
     //
     // The outer per-step dispatch in agl::lyr::RenderDisplay::drawRenderStep
     // (0x00818EF0). That callback runs after the layer's draw delegate has
-    // RETURNED — after drawOpa above has already unbound its targets. Sharing a
+    // RETURNED - after drawOpa above has already unbound its targets. Sharing a
     // layer, a render step and a draw context does not make a target bound.
     static constexpr totk::core::ImageOffset kDrawModelSceneOpa{0x0248B4E4};
 
@@ -133,7 +133,7 @@ struct DrawOffsets {
     // ⚠ ONE CLAIM ABOUT THIS SEAM IS NOT TRUE AND MUST NOT BE REPEATED: that it
     // reaches a different, "default" frame buffer than the opaque seam above.
     // bindDefaultFrameBuffer binds `context + 0x540` through the viewport at
-    // `context + 0x548` — the SAME two fields gsys::ModelScene::drawOpa binds at
+    // `context + 0x548` - the SAME two fields gsys::ModelScene::drawOpa binds at
     // 0x00A43120 before the phase-0 callback. The seams differ in when they run,
     // not in which target they use.
     static constexpr totk::core::ImageOffset kDrawQueue{0x00A43BE4};
@@ -166,7 +166,7 @@ inline constexpr std::uintptr_t kImmDrawModuleSlot = 0x046381D8;
 
 // Inside that module: a program count, then the program table.
 // `drawLineImm` refuses to run when the count is below 0x3D, and this mod
-// declines to draw rather than reproducing what the engine does next — with a
+// declines to draw rather than reproducing what the engine does next - with a
 // null program the engine's own uniform write would fault on a null read.
 inline constexpr int kImmModuleProgramCount = 0x08;   // u32
 inline constexpr int kImmModuleProgramTable = 0x10;   // pointer
@@ -178,7 +178,7 @@ inline constexpr unsigned int kImmColourSlot = 3;
 inline constexpr unsigned int kImmVertexSlot = 4;
 
 // The first argument the engine hands its line-width wrapper. The wrapper
-// ignores it — it reloads the command buffer from the draw context — but it is
+// ignores it (it reloads the command buffer from the draw context) but it is
 // resolved and passed faithfully so a future build that starts using it cannot
 // silently receive garbage.
 inline constexpr std::uintptr_t kLineWidthContextSlot = 0x0462EF90;
@@ -206,7 +206,7 @@ inline constexpr int kDrawMgrCapacity = 1888;
 // a blank screen rather than an error. `sead::PrimitiveDrawMgrNvn` is a different animal: a real
 // vertex-buffer pipeline that takes an ARBITRARY vertex count. This mod already
 // brings that drawer up, already ships its shader asset, and already draws the
-// Porter Pack grid through it — so nothing new has to be created.
+// Porter Pack grid through it - so nothing new has to be created.
 //
 // `sead::PrimitiveDrawMgrNvn::beginImpl @ 0x021C2C90` binds, on drawCtx+0xB8:
 //     BindProgram(cb, manager + 8, stageMask 31)
@@ -244,7 +244,7 @@ inline constexpr int kDrawMgrRingRetire = 1892;   // u32, the retired-frame base
 // The attrib and stream states `beginImpl` binds: `BindVertexAttribState(cb, 3,
 // mgr + 440)` and `BindVertexStreamState(cb, 1, mgr + 456)`. Both are built at
 // runtime from the shipped shader binary, so the stride is REPORTED once from
-// here rather than asserted — two independent sources already say 36.
+// here rather than asserted - two independent sources already say 36.
 inline constexpr int kDrawMgrVertexAttribState = 440;
 inline constexpr int kDrawMgrVertexStreamState = 456;
 
@@ -268,7 +268,7 @@ inline constexpr std::uintptr_t kNvnBindUniformBufferSlot = 0x04617088;
 
 // The vertex the primitive drawer's program reads: position, an unused texture
 // coordinate, then a per-vertex rate that lerps between the draw's two colours.
-// Pinned twice over — the binary sizes its own buffer `36 * count`, and sead's
+// Pinned twice over - the binary sizes its own buffer `36 * count`, and sead's
 // published `primitive_renderer.vert` declares exactly
 // `vec3 Vertex; vec2 TexCoord0; vec4 ColorRate`.
 inline constexpr int kPrimitiveVertexStride = 36;
@@ -281,7 +281,7 @@ inline constexpr int kPrimitiveModelUniformIndex = 1;
 
 // The constant 4th row `drawImpl_` appends when promoting the Matrix34f, read
 // out of the image at 0x037FB320: (0, 0, 0, 1). Confirming it is what lets this
-// mod pass an IDENTITY model matrix with confidence — identity is identity in
+// mod pass an IDENTITY model matrix with confidence - identity is identity in
 // every row/column convention, so the shader's `vec4(Vertex,1) * user * wvp`
 // cannot be got wrong by us. World coordinates go straight into the buffer.
 inline constexpr float kPrimitiveMatrixLastRow[4] = {0.0f, 0.0f, 0.0f, 1.0f};
@@ -324,7 +324,7 @@ inline constexpr int kSceneContextLayer = 0x5F0;     // agl::lyr::Layer*
 //       camera = *(void**)(layer + 0x78);  projection = *(void**)(layer + 0x80)
 //
 // The engine substitutes two module globals when the layer's own pointers are
-// null. This mod declines to draw instead, and says so in the log once — a
+// null. This mod declines to draw instead, and says so in the log once - a
 // gameplay layer with no camera is a situation we would want to hear about
 // rather than paper over.
 inline constexpr int kLayerCamera = 0x78;
@@ -347,7 +347,7 @@ inline constexpr unsigned short kViewOverrideEnabled = 0x0002;
 //
 // The comparison value is an ordinary graphics-API enum and its meaning IS
 // knowable. `apply` passes byte 100 through UNCHANGED to the depth-comparison
-// setter — no table, no remap — so the value the game stores is the value the
+// setter (no table, no remap) so the value the game stores is the value the
 // graphics API receives, and the local API header defines that enum as
 // 1 never, 2 less, 3 equal, 4 less-or-equal, 5 greater, 6 not-equal,
 // 7 greater-or-equal, 8 always. The constructor's default of 4 is therefore
@@ -358,7 +358,7 @@ inline constexpr int kGcDepthFunc = 0x64;
 inline constexpr int kGcPolygonOffsetEnable = 0x6D;
 inline constexpr int kGraphicsContextSize = 128;
 
-// "Nearer or equal wins" — the constructor's own default, restated here so the
+// "Nearer or equal wins" - the constructor's own default, restated here so the
 // renderer names what it is asking for instead of relying on the default.
 inline constexpr unsigned char kGcDepthFuncNearerOrEqual = 4;
 
@@ -368,7 +368,7 @@ inline constexpr unsigned char kGcDepthFuncNearerOrEqual = 4;
 inline constexpr unsigned char kGcDepthFuncFarther = 5;
 inline constexpr unsigned char kGcDepthFuncAlways = 8;
 
-// The gameplay 3D layer. There is NO layer named "3D" — drawing against that
+// The gameplay 3D layer. There is NO layer named "3D" - drawing against that
 // name silently produces nothing at all, which cost Living Glue an entire
 // version. Treat this string as load-bearing as the addresses above.
 inline constexpr const char* kGameplayLayer = "Main_3D_0";

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "NativeBombActions.hpp"
+#ifdef TOTK_PORT
+#include "totk/port/Port.hpp"
+#endif
 #include <array>
 #include <cstring>
 
@@ -21,8 +24,15 @@ constexpr Guard guards[] = {
     {0x83AA68, {0xD10143FF, 0xA9017BFD}},
     {0x9F9B28, {0xF9411408, 0xB40000E8}},
 };
+// Offsets are TotK 1.2.1 places; a build that also serves 1.4.3 translates them where they are used.
 template <typename Fn>
-Fn at(std::uintptr_t base, std::uintptr_t offset) { return reinterpret_cast<Fn>(base + offset); }
+Fn at(std::uintptr_t base, std::uintptr_t offset) {
+#ifdef TOTK_PORT
+    return reinterpret_cast<Fn>(base + totk::port::Code(static_cast<std::uint32_t>(offset)));
+#else
+    return reinterpret_cast<Fn>(base + offset);
+#endif
+}
 }
 bool bindTotk121(std::uintptr_t mainBase, Bindings &out, BindingFailure *failure) {
     out = {};
@@ -38,6 +48,19 @@ bool bindTotk121(std::uintptr_t mainBase, Bindings &out, BindingFailure *failure
         return refuse(BindingError::NullImage, 0, 1, 0);
     for (const auto &guard : guards) {
         std::uint64_t actual{}, expected{};
+#ifdef TOTK_PORT
+        if (totk::port::is143()) {
+            const totk::port::Code place(static_cast<std::uint32_t>(guard.offset));
+            const std::uint32_t *words = place.available() ? totk::port::recordedWords(place.source()) : nullptr;
+            if (!words)
+                return refuse(BindingError::SignatureMismatch, guard.offset, 0, 0);
+            std::memcpy(&actual, reinterpret_cast<const void *>(mainBase + place), sizeof(actual));
+            std::memcpy(&expected, words, sizeof(expected));
+            if (actual != expected)
+                return refuse(BindingError::SignatureMismatch, guard.offset, expected, actual);
+            continue;
+        }
+#endif
         std::memcpy(&actual, reinterpret_cast<const void *>(mainBase + guard.offset), sizeof(actual));
         std::memcpy(&expected, guard.words.data(), sizeof(expected));
         if (actual != expected)

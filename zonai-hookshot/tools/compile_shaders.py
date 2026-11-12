@@ -1,4 +1,4 @@
-"""SPDX-License-Identifier: MIT. Copyright (c) Clay Mullis.
+"""SPDX-License-Identifier: MIT. Copyright (c) HanSoloBlaster, afiaka87.
 
 Compile the mod's GLSL to NVN shader binaries and emit them as a C++ header; the pinned external
 compiler and disassembler are never vendored, and every declared resource, code size and pin is checked first.
@@ -16,6 +16,10 @@ from pathlib import Path
 
 EXPECTED_UAM = "2bf51f6713b0219cdfbee6b8ab3c7b87169b85a001e1466129e44359f13aa6fb"
 EXPECTED_NVDISASM = "1138409fc6d4202c533e357a55668e11186a114b84d345a8438a84e6216d58c0"
+# The compiler and disassembler are Windows programs; other systems run them under Wine.
+WINE = [] if os.name == "nt" else ["wine"]
+if WINE:
+    os.environ.setdefault("WINEDEBUG", "-all")
 
 EXPECTED_BINDINGS = {
     "frag": {"DCL CONST[2][0..13]", "DCL SAMP[0]", "DCL SVIEW[0], 2D, FLOAT"},
@@ -64,7 +68,7 @@ def disassemble_shader(name: str, code: Path, nvdisasm: Path) -> Path:
     raw_path, assembly_path = code.with_suffix(".raw"), code.with_suffix(".sass")
     raw_path.write_bytes(raw)
     result = subprocess.run(
-        [str(nvdisasm), "-b", "SM53", "-hex", "-base", "0x80", str(raw_path)],
+        [*WINE, str(nvdisasm), "-b", "SM53", "-hex", "-base", "0x80", str(raw_path)],
         capture_output=True, text=True, timeout=60, check=False)
     if result.returncode:
         raise RuntimeError(f"{name}: GPU disassembly failed: {result.stderr}")
@@ -111,7 +115,7 @@ def compile_shaders(uam: Path, nvdisasm: Path, runtime: str, source: Path, outpu
         control, code = stage_dir / "control.bin", stage_dir / "program.bin"
         tgsi = stage_dir / "shader.tgsi"
         result = subprocess.run(
-            [str(uam), "--glslcbinds", f"--tgsi={tgsi}", f"--nvnctrl={control}",
+            [*WINE, str(uam), "--glslcbinds", f"--tgsi={tgsi}", f"--nvnctrl={control}",
              f"--nvngpu={code}", "-s", stage, str(compiled_source)],
             cwd=stage_dir, env=env, capture_output=True, text=True, timeout=60, check=False)
         if result.returncode or not control.is_file() or not code.is_file():

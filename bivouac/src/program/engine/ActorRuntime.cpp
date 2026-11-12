@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 #include "ActorRuntime.hpp"
+
+#include "totk/port/Port.hpp"
 
 #include <cstddef>
 
@@ -15,13 +17,13 @@ constexpr std::ptrdiff_t kControllerSetOffset = 0x020;
 constexpr std::ptrdiff_t kMainRigidBodyOffset = 0x150;
 constexpr std::ptrdiff_t kPreactorActorOffset = 0x20;
 
-constexpr std::ptrdiff_t kActorManagerInstanceOffset = 0x04722920;
-constexpr std::ptrdiff_t kRequestCreateActorAsyncOffset = 0x00AB92CC;
-constexpr std::ptrdiff_t kForceSetMatrixOffset = 0x006BA86C;
-constexpr std::ptrdiff_t kRequestChangeMotionTypeOffset = 0x00E8BE30;
-constexpr std::ptrdiff_t kRequestSetLinearVelocityOffset = 0x00ACC874;
-constexpr std::ptrdiff_t kRequestDeleteOffset = 0x0083AA68;
-constexpr std::ptrdiff_t kPhiveSystemGlobalOffset = 0x0462E038;
+constexpr totk::port::Code kActorManagerInstanceOffset = 0x04722920;
+constexpr totk::port::Code kRequestCreateActorAsyncOffset = 0x00AB92CC;
+constexpr totk::port::Code kForceSetMatrixOffset = 0x006BA86C;
+constexpr totk::port::Code kRequestChangeMotionTypeOffset = 0x00E8BE30;
+constexpr totk::port::Code kRequestSetLinearVelocityOffset = 0x00ACC874;
+constexpr totk::port::Code kRequestDeleteOffset = 0x0083AA68;
+constexpr totk::port::Code kPhiveSystemGlobalOffset = 0x0462E038;
 
 struct NativeCreateArgument {
     float position[3];

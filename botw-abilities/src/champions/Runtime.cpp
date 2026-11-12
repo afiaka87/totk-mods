@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
+#include <atomic>
 #include "Runtime.hpp"
 #include "RuntimeFrame.hpp"
 #include "Audio.hpp"
@@ -16,7 +17,7 @@
 #include "Mipha.hpp"
 #include "SageProgress.hpp"
 #include "totk/engine/ActorRoster.hpp"
-#include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include "totk/engine/GameData.hpp"
 #include "totk/engine/Npad.hpp"
 #include "totk/engine/Raycast.hpp"
@@ -25,7 +26,8 @@
 namespace botw_abilities::champions {
 namespace {
 using namespace totk::engine;
-constexpr CodeSite kSites[]{
+using namespace totk::port::literals;
+constexpr totk::port::Site kSites[]{
     {0x7EDC00, 0xF9400828, 0xB40002A8}, {0x2A267BC, 0xD102C3FF, 0xA9057BFD},
     {0x858590, 0xD10743FF, 0}, {0x69A030, 0xA9BE7BFD, 0xF9000BF3},
     {0x172F5D4, 0xA9BE7BFD, 0xA9014FF4},
@@ -49,13 +51,15 @@ struct SoundSink {
     bool stop(audio::Cue cue) { return audio::stop(cue); }
 } g_soundSink;
 
-template <class Fn> Fn call(std::uintptr_t offset) { return reinterpret_cast<Fn>(g_base + offset); }
+template <class Fn> Fn call(totk::port::Code offset) { return reinterpret_cast<Fn>(g_base + offset); }
 
 bool contexts(std::array<Context, kBlessingCount>& output) {
-    const auto scene = resolveGameDataManagerFromHolder(g_base + 0x462E180);
-    const auto gmd = resolveGameDataManagerFromHolder(g_base + 0x462E3D8);
+    const auto scene = resolveGameDataManagerFromHolder(g_base + 0x462E180_v121);
+    const auto gmd = resolveGameDataManagerFromHolder(g_base + 0x462E3D8_v121);
     if (!scene || !gmd) return false;
-    const auto location = call<std::uintptr_t(*)(std::uintptr_t, int)>(0x172F5D4)(scene.value, 7);
+    // 1.4.3: the location list layout is unverified, so the castle check (recharge speed-up only) is off.
+    const auto location = totk::port::is143() ? std::uintptr_t{0}
+        : call<std::uintptr_t(*)(std::uintptr_t, int)>(0x172F5D4)(scene.value, 7);
     const auto castle = castleFromLocations(isPlausibleAddress(location) ? location : 0,
                                             [](std::uintptr_t address, void* out, std::size_t bytes) {
         if (!isPlausibleStringAddress(address) || bytes > (1ull << 40) - address) return false;
@@ -64,7 +68,9 @@ bool contexts(std::array<Context, kBlessingCount>& output) {
     });
     if (!castle) {
         static unsigned reports{};
-        if (reports++ < 8) Logging.Log("[champions] CONTEXT_DEGRADED castle=unknown location=%u", unsigned(castle.error));
+        if (totk::port::is143()) {
+            if (!reports++) Logging.Log("[champions] castle recharge speed-up off on 1.4.3: location list layout not verified");
+        } else if (reports++ < 8) Logging.Log("[champions] CONTEXT_DEGRADED castle=unknown location=%u", unsigned(castle.error));
     }
     const bool shrine = call<bool(*)()>(0x69A030)();
     unsigned missing = 0;
@@ -166,6 +172,11 @@ void serviceSaveProbe(totk::core::SceneGeneration generation, ActorHandle player
     }
 }
 
+#ifdef TOTK_SUITE_MEMBER
+std::atomic<bool> g_switchedOn{true};
+bool g_offApplied{};
+#endif
+
 void tick(void* device) {
     const auto input = g_input.read(device);
     if (input.snapshot().freshSampleCount) ++g_ticks;
@@ -188,6 +199,22 @@ void tick(void* device) {
         pause();
         return;
     }
+#ifdef TOTK_SUITE_MEMBER
+    if (g_switchedOn.load(std::memory_order_acquire)) {
+        g_offApplied = false;
+    } else {
+        // Ends every ability; the effect pass still runs to remove leftover effect actors; nothing can start.
+        if (!g_offApplied) {
+            resetScene();
+            audio::stopAll();
+            g_offApplied = true;
+            Logging.Log("[champions] SWITCHED_OFF abilities ended");
+        }
+        pause();
+        effects::service(scene.context, player.value.player, 0);
+        return;
+    }
+#endif
     publishContext(scene.context, snapshot.generation, current);
     const float seconds = simulationSeconds(elapsed, changed);
     const auto completed = data::state().tick(current, seconds);
@@ -217,7 +244,7 @@ HOOK_DEFINE_TRAMPOLINE(Controller) {
 HOOK_DEFINE_TRAMPOLINE(Clock) {
     static void Callback(void* module, const void* pauseState, float frames) {
         Orig(module, pauseState, frames);
-        const auto system = readMemory<std::uintptr_t>(g_base + 0x471DCB0);
+        const auto system = readMemory<std::uintptr_t>(g_base + 0x471DCB0_v121);
         const auto time = isPlausibleAddress(system) ? readMemory<std::uintptr_t>(system + 0xC8) : 0;
         const bool running = isPlausibleAddress(time) && !(readMemory<unsigned>(time + 0x18) & 1) &&
                              std::isfinite(frames) && frames > 0 && frames < 100;
@@ -225,6 +252,30 @@ HOOK_DEFINE_TRAMPOLINE(Clock) {
         g_running.store(running, std::memory_order_release);
     }
 };
+
+// 1.4.3: the Clock hook's routine misses the gameplay frame path; this update runs every frame (scale at +16).
+constexpr std::ptrdiff_t kFrameRateUpdate143 = 0x3E67F0_v143;
+HOOK_DEFINE_TRAMPOLINE(FrameRate143) {
+    static void Callback(void* rate, float rawFrames) {
+        Orig(rate, rawFrames);
+        const float frames = readMemory<float>(reinterpret_cast<std::uintptr_t>(rate) + 16);
+        const auto system = readMemory<std::uintptr_t>(g_base + 0x471DCB0_v121);
+        const auto time = isPlausibleAddress(system) ? readMemory<std::uintptr_t>(system + 0xC8) : 0;
+        const bool running = isPlausibleAddress(time) && !(readMemory<unsigned>(time + 0x18) & 1) &&
+                             std::isfinite(frames) && frames > 0 && frames < 100;
+        if (running) g_clock.fetch_add(std::uint64_t(double(frames) * 4294967296.0 + 0.5), std::memory_order_release);
+        g_running.store(running, std::memory_order_release);
+    }
+};
+bool frameRateUpdateMatches(std::uintptr_t base) {
+    const auto site = base + static_cast<std::uintptr_t>(kFrameRateUpdate143);
+    const auto first = totk::suite::checkedCode(site), second = totk::suite::checkedCode(site + 4),
+               store = totk::suite::checkedCode(site + 0x30);
+    if (entryMatches(first, 0x6DBD23E9) && (second == 0xA9017BFD || chainedAbsoluteTail(site, first)) &&
+        store == 0xBD001001) return true;
+    Logging.Log("[champions] off on 1.4.3: the frame-rate update reads %08x,%08x store=%08x", first, second, store);
+    return false;
+}
 
 HOOK_DEFINE_TRAMPOLINE(Raycast) {
     static std::uint64_t Thunk(const void* from, const void* to, const void* query, const void* out,
@@ -239,6 +290,10 @@ HOOK_DEFINE_TRAMPOLINE(Raycast) {
     }
 };
 } // namespace
+
+#ifdef TOTK_SUITE_MEMBER
+void switched(bool on) { g_switchedOn.store(on, std::memory_order_release); }
+#endif
 
 Context currentContext(Blessing blessing) {
     const auto packed = g_context.load(std::memory_order_acquire);
@@ -258,14 +313,16 @@ bool notifyUsed(UseEvent event) {
 }
 
 bool install(std::uintptr_t base) {
-    if (!codeMatches(base, kSites, "champions", "RUNTIME_BUILD_REFUSED")) return false;
+    if (!totk::port::codeMatches(base, kSites, "champions", "RUNTIME_BUILD_REFUSED")) return false;
+    if (totk::port::is143() && !frameRateUpdateMatches(base)) return false;
     if (!hud::install(base) || !data::install(base) || !items::install(base) || !effects::install(base) ||
         !mipha::install(base) || !gale::install(base) || !pose::install(base) || !daruk::install(base) ||
         !fury_native::install(base)) return false;
     g_base = base;
-    Controller::InstallAtOffset(0x2A267BC);
-    Clock::InstallAtOffset(0x7EDC00);
-    Raycast::InstallAtOffset(0x858590);
+    Controller::InstallAtOffset(0x2A267BC_v121);
+    if (totk::port::is143()) FrameRate143::InstallAtOffset(kFrameRateUpdate143);
+    else Clock::InstallAtOffset(0x7EDC00_v121);
+    Raycast::InstallAtOffset(0x858590_v121);
     return true;
 }
 } // namespace botw_abilities::champions

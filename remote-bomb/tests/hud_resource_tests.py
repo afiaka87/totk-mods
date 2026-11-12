@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Check the generated HUD against owned original pixels, not the render recipe."""
 import argparse
 import hashlib

@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #pragma once
-#include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include <cstddef>
 #include <cstdint>
 
-// TotK 1.2.1 (9B4E4365) game routines and wheel-screen layout used by the abilities page.
+// TotK 1.2.1 (9B4E4365) routines and wheel-screen layout for the abilities page; on 1.4.3 only the routines move.
 namespace botw_abilities::wheel::game {
 namespace offset {
-inline constexpr std::uintptr_t kNpadCalc = 0x2A267BC;
+inline constexpr totk::port::Code kNpadCalc = 0x2A267BC;
 // game::ui::UIShortCutMainItemScreen, the hold-L ability wheel.
-inline constexpr std::uintptr_t kWheelOpen = 0x1B1DC94;   // openStartImpl_
-inline constexpr std::uintptr_t kWheelUpdate = 0x1B1E65C; // updateImpl_
-inline constexpr std::uintptr_t kWheelExit = 0x19AD3F4;   // doOutBefore
-inline constexpr std::uintptr_t kWheelClose = 0x1B1EEB8;  // closeEndImpl_
+inline constexpr totk::port::Code kWheelOpen = 0x1B1DC94;   // openStartImpl_
+inline constexpr totk::port::Code kWheelUpdate = 0x1B1E65C; // updateImpl_
+inline constexpr totk::port::Code kWheelExit = 0x19AD3F4;   // doOutBefore
+inline constexpr totk::port::Code kWheelClose = 0x1B1EEB8;  // closeEndImpl_
 // One wedge (UIShortCutMainItemCirclePartsScreen) and the caption.
-inline constexpr std::uintptr_t kRequestIcon = 0x1ACC35C;
-inline constexpr std::uintptr_t kUnloadIcon = 0x1ACC39C;
-inline constexpr std::uintptr_t kSetValid = 0x1B1E514;
-inline constexpr std::uintptr_t kSetCheck = 0x1B1E534;
-inline constexpr std::uintptr_t kPouchName = 0x1A89340;
-inline constexpr std::uintptr_t kFindMessage = 0xB51940;
-inline constexpr std::uintptr_t kLayoutSetMessage = 0xB519B0;
+inline constexpr totk::port::Code kRequestIcon = 0x1ACC35C;
+inline constexpr totk::port::Code kUnloadIcon = 0x1ACC39C;
+inline constexpr totk::port::Code kSetValid = 0x1B1E514;
+inline constexpr totk::port::Code kSetCheck = 0x1B1E534;
+inline constexpr totk::port::Code kPouchName = 0x1A89340;
+inline constexpr totk::port::Code kFindMessage = 0xB51940;
+inline constexpr totk::port::Code kLayoutSetMessage = 0xB519B0;
 } // namespace offset
 
 namespace field {
@@ -61,7 +61,7 @@ inline const char *abilityActor(std::int32_t id) {
 }
 
 // Entries the abilities already hooked start with a jump, which the check accepts.
-inline constexpr totk::engine::CodeSite kSites[]{
+inline constexpr totk::port::Site kSites[]{
     {offset::kNpadCalc, 0xD102C3FF, 0xA9057BFD},
     {offset::kWheelOpen, 0xD10283FF, 0xFD001BE8},
     {offset::kWheelUpdate, 0xD10203FF, 0x6D032BEB},

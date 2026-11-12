@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #pragma once
 namespace stasis::audio {
 enum class Cue : unsigned { Start, Hit, HitEnd, End, EndMedium, EndStrong, Countdown };

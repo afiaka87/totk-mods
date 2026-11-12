@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 // Plays the game's own sounds through sound users the game keeps registered. Which sound belongs to which moment is
 // decided in pure/HookshotCues.hpp.

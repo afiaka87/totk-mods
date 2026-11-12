@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 param([string]$Toolbox, [string]$Tasks)
 $ErrorActionPreference = 'Stop'
 $library = Join-Path $Toolbox 'Lib'

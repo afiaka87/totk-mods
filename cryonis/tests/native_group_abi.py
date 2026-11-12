@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Execute the built Cryonis adapter against the owned TotK 1.2.1 group getter."""
 import argparse
 from pathlib import Path

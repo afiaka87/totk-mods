@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 #pragma once
 
@@ -14,6 +14,8 @@
 #include <cstdint>
 
 namespace totk::engine {
+// Fleet Sync's own copy; the inline namespace keeps it apart from other copies linked into Zonai Fieldworks.
+inline namespace fleet_sync_member {
 enum class VisitControl : std::uint8_t { Continue, Stop };
 
 enum class RosterError : std::uint8_t {
@@ -215,4 +217,5 @@ visitActiveProcesses(const ActiveProcessRosterAccess& roster, Visitor&& visitor)
     return core::Result<RosterWalkReport, RosterError>::success(report);
 }
 
+} // inline namespace fleet_sync_member
 }

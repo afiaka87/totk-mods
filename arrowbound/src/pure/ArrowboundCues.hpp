@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 // Ability sounds shared by Arrowbound and Glideshot.
 #pragma once
 
 namespace arrowbound::pure {
-// Use interface fallbacks when ExpressionSound is unavailable; AmiiboMarker_OK loops indefinitely.
+// Travel cues prefer Ultrahand's sounds with interface fallbacks; never use AmiiboMarker_OK (it loops forever).
 inline constexpr const char* kCueAbilityUser = "ExpressionSound";
 inline constexpr const char* kCueTravel = "UltraHand_Start";
 inline constexpr const char* kCueTravelFallback = "mc_PlusMenuOpen";

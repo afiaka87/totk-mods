@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Split private effects from the composed ELink; never ship the shared-file override."""
 import argparse
 import hashlib
@@ -61,7 +61,7 @@ def main():
         raise ValueError('private ELink round-trip changed effect definitions')
     data = binary.read_bytes()
     write_changed(args.build / 'romfs' / PRIVATE, data)
-    info = ('// SPDX-License-Identifier: MIT\n// Copyright (c) Clay Mullis\n#pragma once\n'
+    info = ('// SPDX-License-Identifier: MIT\n// Copyright (c) HanSoloBlaster, afiaka87\n#pragma once\n'
             '#include <cstddef>\n#include <cstdint>\nnamespace botw_abilities::effects {\n'
             f'inline constexpr std::size_t kPrivateEffectBytes = {len(data)};\n'
             f'inline constexpr std::uint32_t kPrivateEffectChecksum = 0x{fingerprint(data):08x};\n'

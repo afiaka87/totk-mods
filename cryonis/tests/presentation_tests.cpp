@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "../src/pure/CryonisPresentation.hpp"
 #include "../../runtime-support/include/totk/ui/NativeFont.hpp"
 #include <thread>

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Fit Wolf Link's clips with fewer keys and join the one-shot clips into shared banks.
 
 Every clip costs a fixed block of bookkeeping (one record per bone plus one per curve), which is as

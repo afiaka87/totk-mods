@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (C) Clay Mullis
-
+// Copyright (C) HanSoloBlaster, afiaka87
 // Geometry transfers the accepted BindFS baseline/bearing recipe; no font artwork is embedded.
 #include "totk/ui/NativeFont.hpp"
 

@@ -1,10 +1,24 @@
-# BotW Abilities v0.3.0
+# BotW Abilities v0.4.3
 
-Upgrading: replace the previous add-on folder so its obsolete shared ELink file is
-removed. On Switch, remove the old ELink override only if it belongs to this mod;
-keep any ELink file supplied by another mod or mod manager.
+Upgrading: replace the previous add-on folder so no file from the earlier version remains.
+
+## Changes in v0.4.3
+
+- Runs on Tears of the Kingdom **1.4.3** as well as 1.2.1, from the same download. The mod
+  detects the game version when it starts.
+- Everything works the same on both versions, except that on 1.4.3 the Cryonis aim labels and the
+  faster Champion recharge in Hyrule Castle are off.
+- On 1.4.3 the four Champions appear through their own copies of the Champion models, because the
+  1.4.x game no longer draws the originals' materials. 1.2.1 still uses the originals.
+- Tested in Citron on 1.2.1 and 1.4.3 inside Zonai Fieldworks v0.9.3, which runs this same code and
+  these same game files. This download has not had its own boot, and there is no Switch test.
+- Emulator download only for now; the Switch download stays at v0.3.0.
 
 ## Changes in v0.3.0
+
+Upgrading from v0.2.x: replace the previous add-on folder so its obsolete shared ELink file is
+removed. On Switch, remove the old ELink override only if it belongs to this mod;
+keep any ELink file supplied by another mod or mod manager.
 
 Adds Wolf Link as a companion on the second ability-wheel page. Hold L, tap R,
 and select his icon to summon or dismiss him. He follows Link, has Stay/Come
@@ -58,7 +72,7 @@ Visuals, controls, recharge times and memory reserves are unchanged.
 
 Fixes abilities disappearing when used alongside Zonai Survey and Self Recall.
 The startup check now recognizes their combined controller hooks instead of disabling
-Stasis, Cryonis, bombs, the ability wheel and Champions. Clay reports that everything
+Stasis, Cryonis, bombs, the ability wheel and Champions. HanSoloBlaster reports that everything
 appears to work again in Citron. No new Switch test is claimed for this correction.
 
 Existing visuals, controls, recharge times and memory reserves are unchanged.
@@ -126,7 +140,7 @@ Champion spirits remain absent. The module maps 4,157,440 bytes (3.965 MiB),
 excluding game-managed resources and GPU memory.
 
 Breath of the Wild's Stasis, Remote Bomb, Cryonis and Champions' Blessings in Tears of the Kingdom
-1.2.1, in one add-on, usable together. Stasis, Remote Bomb and Cryonis are the abilities from the
+1.2.1 and 1.4.3, in one add-on, usable together. Stasis, Remote Bomb and Cryonis are the abilities from the
 standalone mods, built into one module so they can be enabled at the same time; the Champions'
 Blessings exist only in this add-on.
 
@@ -238,14 +252,16 @@ cues, and Gale uses BotW's crouch pose.
 
 ## Requirements and installation
 
-Requires Tears of the Kingdom **1.2.1**, build `9B4E43650501A4D4`.
+Requires Tears of the Kingdom **1.2.1** (build `9B4E43650501A4D4`) or **1.4.3** (build
+`277178B7DBA1B6D4`).
 
-**Emulator:** extract `botw-abilities-v0.3.0-emulator-subsdk7.zip` and copy its `BotW Abilities`
+**Emulator:** extract `botw-abilities-v0.4.3-emulator-subsdk7.zip` and copy its `BotW Abilities`
 folder into the game's mod folder (right-click the game, **Open Mod Data Location**). Enable
 **BotW Abilities** in the game's add-on list.
 
-**Switch (Atmosphere):** extract `botw-abilities-v0.3.0-switch-subsdk7.zip` and copy its
-`0100F2C0115B6000` folder into `atmosphere/contents/` on the SD card.
+**Switch (Atmosphere):** v0.4.3 has no Switch download yet. The Switch download is still
+`botw-abilities-v0.3.0-switch-subsdk7.zip` (1.2.1 only): copy its `0100F2C0115B6000` folder into
+`atmosphere/contents/` on the SD card.
 
 **Upgrading from v0.1.0:** remove the old BotW Abilities add-on before installing this update.
 On Switch, remove this mod's old `exefs/subsdk5` before copying the new files. Leaving both
@@ -254,7 +270,7 @@ modules installed loads the abilities twice. Preserve files belonging to other m
 **Upgrading from v0.1.4:** replace the whole add-on folder so no file from the earlier version
 remains. Existing saves load, and the Champion Key Items are added on the first load.
 
-Both archives contain the same game payload: `exefs/subsdk7`, `exefs/main.npdm`, and resources under
+Each archive contains the game payload: `exefs/subsdk7`, `exefs/main.npdm`, and resources under
 `romfs/`. Keep both `romfs/BotwAbilities/Textures/*.bin` files and
 `romfs/BotwAbilities/Champions/GalePose.bin`; they hold streamed textures and Gale's pose.
 

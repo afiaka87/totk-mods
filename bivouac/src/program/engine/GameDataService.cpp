@@ -1,26 +1,28 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 #include "GameDataService.hpp"
 
 #include "RefundPolicy.hpp"
 
+#include "totk/port/Port.hpp"
+
 namespace bivouac::engine {
 namespace {
 
-constexpr std::ptrdiff_t kGameDataManagerIndirectOffset = 0x0462E3D8;
-constexpr std::ptrdiff_t kPouchGameDataGlobalOffset = 0x046CBC98;
-constexpr std::ptrdiff_t kEmptyString64Offset = 0x0462E1B8;
-constexpr std::ptrdiff_t kGetStructOffset = 0x00DDBB04;
-constexpr std::ptrdiff_t kGetStructStructOffset = 0x0080E6C4;
-constexpr std::ptrdiff_t kGetStructByIndexOffset = 0x00942FE8;
-constexpr std::ptrdiff_t kGetStructString64Offset = 0x00D44600;
-constexpr std::ptrdiff_t kGetStructEnumOffset = 0x00BAD788;
-constexpr std::ptrdiff_t kSetStructString64Offset = 0x00C12E4C;
-constexpr std::ptrdiff_t kAddStructIntOffset = 0x015D6930;
-constexpr std::ptrdiff_t kSetStructEnumOffset = 0x0080F2F0;
-constexpr std::ptrdiff_t kSetStructVector2Offset = 0x0199D7A0;
-constexpr std::ptrdiff_t kSetStructBoolOffset = 0x007AB63C;
+constexpr totk::port::Code kGameDataManagerIndirectOffset = 0x0462E3D8;
+constexpr totk::port::Code kPouchGameDataGlobalOffset = 0x046CBC98;
+constexpr totk::port::Code kEmptyString64Offset = 0x0462E1B8;
+constexpr totk::port::Code kGetStructOffset = 0x00DDBB04;
+constexpr totk::port::Code kGetStructStructOffset = 0x0080E6C4;
+constexpr totk::port::Code kGetStructByIndexOffset = 0x00942FE8;
+constexpr totk::port::Code kGetStructString64Offset = 0x00D44600;
+constexpr totk::port::Code kGetStructEnumOffset = 0x00BAD788;
+constexpr totk::port::Code kSetStructString64Offset = 0x00C12E4C;
+constexpr totk::port::Code kAddStructIntOffset = 0x015D6930;
+constexpr totk::port::Code kSetStructEnumOffset = 0x0080F2F0;
+constexpr totk::port::Code kSetStructVector2Offset = 0x0199D7A0;
+constexpr totk::port::Code kSetStructBoolOffset = 0x007AB63C;
 
 constexpr std::uint32_t kMaterialArrayHash = 0x4290322E;
 constexpr std::uint32_t kPouchNameFieldHash = 0x25EFA387;

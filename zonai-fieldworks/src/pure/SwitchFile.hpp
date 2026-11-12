@@ -1,5 +1,6 @@
 // Copyright (c) HanSoloBlaster, afiaka87
 // The switch file and the wheel captions, kept free of game code so the host tests can cover them.
+// The file holds one "member-id=1" or "member-id=0" line per member.
 #pragma once
 
 #include <cstddef>
@@ -44,7 +45,7 @@ inline std::size_t formatSwitches(const char* const* ids, const bool* on, std::s
     return at;
 }
 
-// When a changed switch takes effect.
+// When a changed switch takes effect (design 06, section 3a).
 enum class Pending : unsigned char {
     None,         // the saved switch is the running one
     Now,          // changes on the next controller update

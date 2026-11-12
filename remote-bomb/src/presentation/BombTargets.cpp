@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "BombTargets.hpp"
 #include "totk/render/GlowTargets.hpp"
+#include "totk/port/Port.hpp"
 #include <lib.hpp>
 #include <cstring>
 #include <type_traits>
@@ -72,14 +73,15 @@ bool initialize(NVNdevice *gpu, PFNNVNDEVICEGETPROCADDRESSPROC getProc, std::uin
         !resolve(clearColor, "nvnCommandBufferClearColor") ||
         !resolve(clearDepth, "nvnCommandBufferClearDepthStencil") ||
         !resolve(textureHandle, "nvnDeviceGetTextureHandle")) return false;
-    const auto manager = read<void *>(read<std::uintptr_t>(base + 0x462EF90));
+    using namespace totk::port::literals;
+    const auto manager = read<void *>(read<std::uintptr_t>(base + 0x462EF90_v121));
     if (!manager) {
         Logging.Log("[remote-bomb] TARGET_MANAGER_MISSING");
         return false;
     }
     // Without the glow images the bomb is still drawn onto the game's frame, only without bloom.
     glow = totk::render::glowTargets(
-        device, getProc, manager, reinterpret_cast<totk::render::RegisterTexture>(base + 0xA5B0B4),
+        device, getProc, manager, reinterpret_cast<totk::render::RegisterTexture>(base + 0xA5B0B4_v121),
         "remote-bomb");
     if (!glow)
         Logging.Log("[remote-bomb] TARGET_GLOW_FALLBACK drawing without bloom");

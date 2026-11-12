@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 #include "CampStampRenderer.hpp"
+
+#include "totk/port/Port.hpp"
 
 namespace bivouac::presentation {
 namespace {
 
-constexpr std::ptrdiff_t kGameDataManagerIndirectOffset = 0x0462E3D8;
-constexpr std::ptrdiff_t kGetStructEnumOffset = 0x00BAD788;
+constexpr totk::port::Code kGameDataManagerIndirectOffset = 0x0462E3D8;
+constexpr totk::port::Code kGetStructEnumOffset = 0x00BAD788;
 
 constexpr std::uint32_t kIconTypeFieldHash = 1952810469;
 constexpr std::uint32_t kCampStampIcon = 184548161;

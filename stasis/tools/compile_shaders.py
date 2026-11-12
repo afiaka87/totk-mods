@@ -1,4 +1,4 @@
-"""SPDX-License-Identifier: MIT. Copyright (c) Clay Mullis.
+"""SPDX-License-Identifier: MIT. Copyright (c) HanSoloBlaster, afiaka87.
 
 Compile the mod's GLSL to NVN shader binaries and emit them as a C++ header; the pinned external
 compiler and disassembler are never vendored, and every declared resource, code size and pin is checked first.

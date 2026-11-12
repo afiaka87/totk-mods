@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "Runtime.hpp"
 #include "Revival.hpp"
 #include "Awareness.hpp"
@@ -32,6 +32,7 @@
 #include "champions/Runtime.hpp"
 #include "totk/engine/CodeCheck.hpp"
 #include "totk/engine/Npad.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include <algorithm>
 #include <atomic>
 #include <cstring>
@@ -65,19 +66,11 @@ constexpr int kLeadTries = 8;
 // The original checks for ground within two units of the player. It checks every tick; this does not need to.
 constexpr float kPathRadius = 2;
 constexpr unsigned kPathCheckTicks = 8;
-// Follow pacing (Clay, wolf-compact-12: always right beside Link, playful slack only while Link is
-// slow). Player speed in the original's per-tick units (metres per second / 30): below kIdleSpeed he
-// is standing, above kSprintSpeed he is sprinting. Within kCatchUpRange: while Link stands the wolf
-// only ever ambles in (kPlayRange), and while Link moves, gear floors keep the wolf at pace with a
-// gentle kBoostSlope scale from kBoostStart. Past kCatchUpRange the wolf stops matching Link's pace
-// entirely: full gear and a ground-speed scale that grows kCatchUpSlope per unit of gap up to
-// kCatchUpLimit (Clay, wolf-compact-15: "He should really haul ass to catch up when we are far away
-// ... If that means he looks a little strange with a super fast running speed, so be it"; catch-up
-// previously worked only "within the 10 m area").
+// Follow pacing in per-tick speed (m/s / 30): near, the wolf matches Link; past kCatchUpRange he runs ever faster.
 constexpr float kIdleSpeed = 0.03f, kSprintSpeed = 0.21f, kPlayRange = 15;
 constexpr float kBoostStart = 5, kBoostSlope = 0.06f, kBoostLimit = 1.4f;
 constexpr float kCatchUpRange = 10, kCatchUpSlope = 0.15f, kCatchUpLimit = 3.0f;
-// Nearer than this a player moving away does not count as leaving yet (Clay, wolf-compact-14: "a very
+// Nearer than this a player moving away does not count as leaving yet (HanSoloBlaster, wolf-compact-14: "a very
 // small threshold - like 5 m").
 constexpr float kFleeRange = 5;
 constexpr float kHeadHeight = 1;
@@ -88,7 +81,7 @@ constexpr std::uint64_t kDismissLimit = 240;
 // that has stood this long is settled enough that losing him again earns another return.
 constexpr std::uint64_t kResummonDelay = 120, kSettledTicks = 600;
 // game::scene::IsSmallDungeon(): true inside a shrine, where the original's wolf never goes.
-constexpr std::uintptr_t kIsSmallDungeon = 0x69A030;
+constexpr totk::port::Code kIsSmallDungeon = 0x69A030;
 
 // Set once at install, before either thread reads them.
 std::uintptr_t g_base{};
@@ -605,7 +598,7 @@ RouteRequest chooseRoute(const ActorReference& actor, const ActorReference& play
         const float pace = originalFollowSpeed(leader.velocity);
         const float distance = input.playerDistance;
         // A planned catch-up route also runs at full gear; it was left to the corridor checks, which
-        // chose slower gaits (Clay, wolf-compact-18: "He doesn't run at full gallop").
+        // chose slower gaits (HanSoloBlaster, wolf-compact-18: "He doesn't run at full gallop").
         if (distance > kCatchUpRange) route.gearFloor = route.routeGear = kFullGear;
         else if (pace >= kSprintSpeed) route.gearFloor = distance > 3.5f ? kFullGear : 3;
         else if (pace >= kIdleSpeed) route.gearFloor = distance > 6 ? 3 : distance > 3 ? 2 : 0;
@@ -662,7 +655,7 @@ void updateBrain(const ActorReference& actor, BrainTick tick) {
     const auto facing = bodyForward(wolf->transform);
     auto input = readInput(actor, tick.delta, leaderPosition, position, facing, seen);
     // The player is leaving when his velocity points away from the wolf past a small gap; sprinting
-    // away pulls the wolf out of meals, hunts and fights (Clay's wolf-compact-14 directives).
+    // away pulls the wolf out of meals, hunts and fights (HanSoloBlaster's wolf-compact-14 directives).
     const float pace = originalFollowSpeed(leader->velocity);
     const bool receding = leader->velocity.x * (leaderPosition.x - position.x) +
                           leader->velocity.z * (leaderPosition.z - position.z) > 0;
@@ -715,10 +708,7 @@ void updateBrain(const ActorReference& actor, BrainTick tick) {
     if (output.move == CompanionMove::Follow) logPace(input, route);
 }
 
-// The original searches five units ahead of the player, then thirty degrees to either side. Beside
-// and behind come next (stairs often fail every ahead probe and landed the wolf on the player —
-// Clay, wolf-compact-14); the player's own spot is tried last, so a player at a cliff edge still
-// gets the wolf back.
+// Warp probes: five units ahead, 30 degrees either side, then beside, behind, and last the player's own spot.
 std::optional<WorldPosition> warpPoint(const totk::core::WorldTransform& player) {
     constexpr float kOffsets[][2]{{0, 5.0f}, {3.0f, 5.0f}, {-3.0f, 5.0f},
                                   {2.5f, 0.5f}, {-2.5f, 0.5f}, {0, -3.0f}, {0, 0}};
@@ -938,6 +928,11 @@ void serviceWorld(const SceneContext& scene, ActorStatus status, std::uint64_t t
     }
 }
 
+#ifdef TOTK_SUITE_MEMBER
+std::atomic<bool> g_switchedOn{true};
+bool g_offApplied{};
+#endif
+
 void service(void* device) {
     const auto scene = g_scene.observe(resolveScene(g_base));
     const auto status = g_lifecycle.update(scene);
@@ -947,6 +942,24 @@ void service(void* device) {
         noteLoss(status, clock >> 32);
         g_status = status;
     }
+#ifdef TOTK_SUITE_MEMBER
+    if (g_switchedOn.load(std::memory_order_acquire)) {
+        g_offApplied = false;
+    } else {
+        // Sends the wolf away at once (no fade) and cancels any summon or comeback; the lifecycle update still runs.
+        if (!g_offApplied) {
+            if (status == ActorStatus::Creating || status == ActorStatus::Ready) finishDismiss(status, clock >> 32);
+            g_offApplied = true;
+            Logging.Log("[wolf-link] SWITCHED_OFF state=%u", unsigned(status));
+        }
+        g_summoned = g_cameBack = g_recreate = false;
+        g_resummonDue = 0;
+        g_requestedScene.store(0, std::memory_order_release);
+        g_promptAllowed.store(false, std::memory_order_release);
+        setPrompt(PromptText::None);
+        return;
+    }
+#endif
     const bool running = trackGameClock(clock);
     const bool prompting = scene.context.isReady() && status == ActorStatus::Ready && g_brainQuiet < kBrainSilence;
     g_promptAllowed.store(prompting, std::memory_order_release);
@@ -961,7 +974,14 @@ HOOK_DEFINE_TRAMPOLINE(Controller) {
 };
 }
 
+#ifdef TOTK_SUITE_MEMBER
+void switched(bool on) { g_switchedOn.store(on, std::memory_order_release); }
+#endif
+
 bool chooseFromWheel(std::uintptr_t) {
+#ifdef TOTK_SUITE_MEMBER
+    if (!g_switchedOn.load(std::memory_order_acquire)) return false;
+#endif
     if (!canSummon()) return false;
     const auto scene = resolveScene(g_base);
     if (!scene) return false;
@@ -992,8 +1012,9 @@ const char16_t* wheelCaption() {
 }
 
 bool install(std::uintptr_t base) {
-    constexpr CodeSite sites[]{{0x2A267BC, 0xD102C3FF, 0xA9057BFD}, {kIsSmallDungeon, 0xA9BE7BFD, 0xF9000BF3}};
-    if (!codeMatches(base, sites, "wolf-link", "RUNTIME_REFUSED") ||
+    using namespace totk::port::literals;
+    constexpr totk::port::Site sites[]{{0x2A267BC, 0xD102C3FF, 0xA9057BFD}, {kIsSmallDungeon, 0xA9BE7BFD, 0xF9000BF3}};
+    if (!totk::port::codeMatches(base, sites, "wolf-link", "RUNTIME_REFUSED") ||
         !initializeInputApi(base) || !initializeNavigationApi(base) || !initializeMotionApi(base) ||
         !initializeAnimationApi(base) || !initializeActionApi(base) || !initializeAwarenessApi(base) ||
         !initializePromptApi(base) || !initializeStatusApi(base) || !installLifeApi(base) || !initializeSensorApi(base) ||
@@ -1002,7 +1023,7 @@ bool install(std::uintptr_t base) {
     initializeMemoryLog(base);
     g_routes = initializeMoveApi(base);
     if (!g_routes) Logging.Log("[wolf-link] ROUTES_UNAVAILABLE running-straight=1");
-    Controller::InstallAtOffset(0x2A267BC);
+    Controller::InstallAtOffset(0x2A267BC_v121);
     Logging.Log("[wolf-link] COMPANION summon-dismiss=wheel-right state-bytes=%zu",
         sizeof(g_follow) + sizeof(g_companion) + sizeof(g_lifecycle) + sizeof(g_scene));
     return true;

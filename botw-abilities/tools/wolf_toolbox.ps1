@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 param([string]$ToolboxDir,[string]$UnsafeCompatPath,[string]$TotkRomfs)
 function Get-AssemblyVersion([string]$path) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }

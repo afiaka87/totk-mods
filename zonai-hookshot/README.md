@@ -1,4 +1,13 @@
-# Zonai Hookshot (formerly Glideshot) v0.12.4
+# Zonai Hookshot (formerly Glideshot) v0.12.5
+
+## Changes in v0.12.5
+
+Gyro aiming now also works on TotK 1.4.3, with the same settings as on 1.2.1. Other supported game
+versions keep their existing stick aiming.
+
+Gyro aiming on 1.4.3 passed a Citron test inside Zonai Fieldworks v0.9.3. This download uses the same
+1.4.3 code and checks, but has not had its own boot, and there is no Switch test. Emulator download
+only for now; the Switch download stays at v0.12.3.
 
 ## Changes in v0.12.4
 
@@ -35,8 +44,8 @@ with the paraglider open. No replacement game models, textures or sound files ar
 - Drawing the bow releases manual traversal. ZL + L releases an Arrowbound trip before aiming.
 
 During the pull, the paraglider is hidden and its sounds are muted. It returns for the final
-approach or cancellation. The tether stays connected to Link's hand. On 1.2.1, enable motion
-controls in the game options to aim with gyro. Both camera inversion settings are respected;
+approach or cancellation. The tether stays connected to Link's hand. On 1.2.1 and 1.4.3, enable
+motion controls in the game options to aim with gyro. Both camera inversion settings are respected;
 stick aiming remains available. Other game versions use normal camera controls.
 
 ## Targets
@@ -65,12 +74,12 @@ other executable mod is not guaranteed.
 
 Close the game and back up the existing mod installation before replacing files.
 
-- **Emulator:** extract `zonai-hookshot-v0.12.3-emulator-subsdk5.zip`. Put its `zonai-hookshot`
+- **Emulator:** extract `zonai-hookshot-v0.12.5-emulator-subsdk5.zip`. Put its `zonai-hookshot`
   folder in the game's mod directory, then enable it in the emulator's Add-Ons menu.
-- **Switch:** extract `zonai-hookshot-v0.12.3-switch-subsdk5.zip`. Merge its
-  `0100F2C0115B6000` folder under `atmosphere/contents/` on the SD card.
+- **Switch:** extract `zonai-hookshot-v0.12.3-switch-subsdk5.zip` (no v0.12.5 Switch download yet).
+  Merge its `0100F2C0115B6000` folder under `atmosphere/contents/` on the SD card.
 
-Both packages contain the same `exefs/subsdk5` and `exefs/main.npdm`. Check `SHA256SUMS.txt`.
+Each package contains `exefs/subsdk5` and `exefs/main.npdm`. Check `SHA256SUMS.txt`.
 The NPDM requests 8 MiB of system resource memory.
 
 Do not enable standalone Arrowbound beside this combined build, or another mod using `subsdk5`.
@@ -154,6 +163,6 @@ The default tests require no game files.
 
 ## Credits and license
 
-Original source: MIT, copyright Clay Mullis. See the repository's root LICENSE.
+Original source: MIT, copyright HanSoloBlaster, afiaka87. See the repository's root LICENSE.
 The compiled module includes exlaunch (GPL-2.0). Host tests use doctest (MIT); native builds use
 devkitPro/devkitA64. See NOTICE.txt for source links. No Nintendo game assets are distributed.

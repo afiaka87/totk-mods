@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "Daruk.hpp"
 #include "Blocking.hpp"
 #include "Combat.hpp"
@@ -8,7 +8,7 @@
 #include "Runtime.hpp"
 #include "totk/engine/ActorReference121.hpp"
 #include "totk/engine/ActorRoster.hpp"
-#include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include "totk/engine/NativeRead.hpp"
 #include <algorithm>
 #include <optional>
@@ -18,7 +18,8 @@ namespace botw_abilities::champions::daruk {
 namespace {
 using namespace totk::engine;
 using namespace totk::engine::native_read;
-constexpr CodeSite kSites[]{
+using namespace totk::port::literals;
+constexpr totk::port::Site kSites[]{
     {0x9E8454,0xA9BC7BFD,0xF9000BF7}, {0xA07690,0xD10183FF,0xA9027BFD},
     {0x16F2A44,0xA9BA7BFD,0xA9016FFC}, {0xC9C920,0xA9BE7BFD,0xF9000BF3},
     {0x753530,0xA9BB7BFD,0xF9000BF9}, {0x86A288,0xA9BD7BFD,0xA90157F6},
@@ -34,7 +35,7 @@ std::atomic<bool> g_active{};
 std::array<std::atomic<std::uint64_t>, 3> g_reported{};
 bool g_previous{};
 std::atomic<bool> g_zlHeld{};
-template<class Fn> Fn call(std::uintptr_t offset) { return reinterpret_cast<Fn>(g_base + offset); }
+template<class Fn> Fn call(totk::port::Code offset) { return reinterpret_cast<Fn>(g_base + offset); }
 
 struct Gate {
     Context context;
@@ -293,13 +294,13 @@ void service(Context context, bool zlHeld, bool freshInput) {
 }
 
 bool install(std::uintptr_t base) {
-    if (!codeMatches(base,kSites,"champions","DARUK_BUILD_REFUSED")) return false;
+    if (!totk::port::codeMatches(base,kSites,"champions","DARUK_BUILD_REFUSED")) return false;
     g_base = base;
-    RegisterDamage::InstallAtOffset(0x9E8454);
-    GuardReaction::InstallAtOffset(0xA07690);
-    FinalGuardReaction::InstallAtOffset(0x276E6B4);
-    GuardChemicalContact::InstallAtOffset(0x9EEB38);
-    EquipmentWear::InstallAtOffset(0x16F2A44);
+    RegisterDamage::InstallAtOffset(0x9E8454_v121);
+    GuardReaction::InstallAtOffset(0xA07690_v121);
+    FinalGuardReaction::InstallAtOffset(0x276E6B4_v121);
+    GuardChemicalContact::InstallAtOffset(0x9EEB38_v121);
+    EquipmentWear::InstallAtOffset(0x16F2A44_v121);
     return true;
 }
 } // namespace botw_abilities::champions::daruk

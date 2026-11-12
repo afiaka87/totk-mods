@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "Awareness.hpp"
 #include "champions/FuryBalance.hpp"
 #include "champions/Runtime.hpp"
@@ -15,14 +15,14 @@ namespace botw_abilities::wolf {
 namespace {
 using namespace totk::engine;
 using totk::core::WorldPosition;
-constexpr CodeSite kSites[]{
+constexpr totk::port::Site kSites[]{
     {0x1327B90, 0xF9411408, 0xB4000168}, {0x83AA68, 0xD10143FF, 0xA9017BFD},
 };
 constexpr float kBattleRange = 45, kDropRange = 100, kFoodRange = 30, kDropGap = 6, kChainRange = 20;
 constexpr float kSubmerged = 1.25f, kStartleRange = 30;
 constexpr std::uintptr_t kMessageLink = 184, kMessageId = 20;
-constexpr std::uintptr_t kTerrainSlot = 0x462E178, kTerrainByName = 0x1334BAC,
-                         kGroundHeight = 0x7FE7C0, kWaterDepth = 0xCE8C94, kSetMatrix = 0x6BA86C;
+constexpr totk::port::Code kTerrainSlot = 0x462E178, kTerrainByName = 0x1334BAC,
+                           kGroundHeight = 0x7FE7C0, kWaterDepth = 0xCE8C94, kSetMatrix = 0x6BA86C;
 NativeApi g_api;
 std::atomic_flag g_lock{};
 Awareness g_view;

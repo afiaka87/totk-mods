@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Build a standalone resource table with the same parse budgets as the shared local table."""
 
 from __future__ import annotations

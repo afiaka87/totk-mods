@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "BombSignals.hpp"
 #include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include "BombInput.hpp"
 #include "NativePlayerKeys.hpp"
 #include "NativeAbilityAdmission.hpp"
@@ -11,9 +12,12 @@
 
 namespace remote_bomb::engine {
 namespace eng = totk::engine;
+using namespace totk::port::literals;
 namespace {
-constexpr totk::engine::CodeSite guards[]{
-    {0x7EDC00, 0xF9400828, 0xB40002A8}, {0x2A267BC, 0xD102C3FF, 0xA9057BFD},
+// The clock routine hooked on 1.2.1; 1.4.3 takes its clock from the frame-rate update, checked in BombInstall.cpp.
+constexpr totk::port::Site clockGuard[]{{0x7EDC00, 0xF9400828, 0xB40002A8}};
+constexpr totk::port::Site guards[]{
+    {0x2A267BC, 0xD102C3FF, 0xA9057BFD},
     {0x1B1DC94, 0xD10283FF, 0xFD001BE8},
     {0x19AD3F4, 0xA9BE7BFD, 0xA9014FF4}, {0x1B1EEF8, 0xD10103FF, 0xA9017BFD},
     {0x1B1EEB8, 0xA9BE7BFD, 0xA9014FF4}, {0x1D30CBC, 0xD10143FF, 0xA9027BFD},
@@ -43,10 +47,12 @@ bool validateRuntime(std::uintptr_t base) {
         Logging.Log("[remote-bomb] BUILD_REFUSED base=0");
         return false;
     }
-    return totk::engine::codeMatches(base, guards, "remote-bomb", "BUILD_REFUSED");
+    if (!totk::port::is143() && !totk::port::codeMatches(base, clockGuard, "remote-bomb", "BUILD_REFUSED"))
+        return false;
+    return totk::port::codeMatches(base, guards, "remote-bomb", "BUILD_REFUSED");
 }
 void publishPhysicsTime(std::uintptr_t base, Signals &signals, float frames) {
-    const auto system = eng::readMemory<std::uintptr_t>(base + 0x471DCB0);
+    const auto system = eng::readMemory<std::uintptr_t>(base + 0x471DCB0_v121);
     const auto time = eng::isPlausibleAddress(system) ? eng::readMemory<std::uintptr_t>(system + 0xC8) : 0;
     const bool running = eng::isPlausibleAddress(time) &&
                          !(eng::readMemory<unsigned>(time + 0x18) & 1) &&
@@ -92,7 +98,7 @@ void maskRecentAbilityKey(std::uintptr_t base, const Signals &signals, std::uint
     if (!signals.remembered.load(std::memory_order_acquire) ||
         !signals.running.load(std::memory_order_acquire))
         return;
-    const auto actor = reinterpret_cast<std::uintptr_t (*)(std::uintptr_t)>(base + 0xBC7610)(node);
+    const auto actor = reinterpret_cast<std::uintptr_t (*)(std::uintptr_t)>(base + 0xBC7610_v121)(node);
     if (actor != signals.player.load(std::memory_order_acquire))
         return;
     const auto result = filterAbilityKeys(node, true,
@@ -137,7 +143,7 @@ std::uint64_t nativeAbilityAdmission(std::uint64_t (*original)(std::uintptr_t),
 void cancelOwnedAmiibo(std::uintptr_t base, const Signals &signals, std::uintptr_t node) {
     if (!signals.remembered.load(std::memory_order_acquire) || !eng::isPlausibleAddress(node))
         return;
-    const auto actor = reinterpret_cast<std::uintptr_t (*)(std::uintptr_t)>(base + 0xBC7610)(node);
+    const auto actor = reinterpret_cast<std::uintptr_t (*)(std::uintptr_t)>(base + 0xBC7610_v121)(node);
     const auto state = eng::readMemory<unsigned>(node + 32);
     if (!input::cancelNativeAmiibo(true, signals.running.load(std::memory_order_acquire),
                                    actor == signals.player.load(std::memory_order_acquire), state))

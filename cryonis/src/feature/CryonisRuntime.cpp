@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
+#include <atomic>
 #include "CryonisRuntime.hpp"
 #include "CryonisRuntimeState.hpp"
 #include "CryonisFeature.hpp"
@@ -230,6 +231,14 @@ bool presentation(Presentation &out, bool hud) {
     out = hud ? state.hudMailbox.consume() : state.renderMailbox.consume();
     return out.sceneReady;
 }
+#ifdef TOTK_SUITE_MEMBER
+namespace {
+std::atomic<bool> g_switchedOn{true};
+bool g_offApplied{};
+}
+void setSwitchedOn(bool on) { g_switchedOn.store(on, std::memory_order_release); }
+bool switchedOn() { return g_switchedOn.load(std::memory_order_acquire); }
+#endif
 void tick(void *device) {
     auto &controls = runtimeState.controls;
     auto &gameplay = runtimeState.gameplay;
@@ -247,6 +256,20 @@ void tick(void *device) {
     controls.previousClock = clock;
     if (!refreshScene())
         return;
+#ifdef TOTK_SUITE_MEMBER
+    if (switchedOn()) {
+        g_offApplied = false;
+    } else {
+        if (!g_offApplied) {
+            for (unsigned slot = 0; slot < kPillarLimit; ++slot)
+                if (runtimeState.pillars.actors[slot].address)
+                    erase(slot, "switched off");
+            reset("switched off");
+            g_offApplied = true;
+        }
+        return;
+    }
+#endif
     const bool swimming = isSwimming(runtimeState.scene.player);
     exitSwimming(swimming, running);
     advanceSimulation(frames, running);

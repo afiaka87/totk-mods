@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #pragma once
 #include <lib.hpp>
 #include <nvn/nvn.h>
@@ -7,6 +7,9 @@
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
+#if defined(TOTK_PORT) && TOTK_PORT
+#include "totk/port/Port.hpp"
+#endif
 
 namespace totk::render {
 // Each pass clears shared glow storage and finishes sampling before the next pass reuses it.
@@ -140,6 +143,30 @@ struct GameFrame {
 };
 
 // Resolve colour target zero through the same registry lookup as the native framebuffer bind.
+#if defined(TOTK_PORT) && TOTK_PORT
+// Each pick is 1.2.1 then 1.4.3, read from each game's framebuffer bind (1.2.1 0x7B9274, 1.4.3 0x36DA0).
+inline namespace ported {
+inline bool gameFrame(std::uintptr_t moduleBase, void* context, GameFrame& out) {
+    using detail::load;
+    using port::pick;
+    using namespace port::literals;
+    const auto address = reinterpret_cast<std::uintptr_t>(context);
+    const auto buffer = load<std::uintptr_t>(address + pick<std::uintptr_t>(0x540, 0x538));
+    const auto target = load<std::uintptr_t>(buffer + 0x20);
+    const auto manager = load<std::uintptr_t>(load<std::uintptr_t>(moduleBase + 0x462EF90_v121));
+    if (!buffer || !target || !manager) return false;
+    auto index = load<std::uint32_t>(target + pick<std::uintptr_t>(96, 112)) -
+                 load<std::uint16_t>(manager + pick<std::uintptr_t>(1442, 2730));
+    if (index >= load<std::uint32_t>(manager + pick<std::uintptr_t>(1328, 2616))) index = 0;
+    const auto table = load<std::uintptr_t>(manager + pick<std::uintptr_t>(1336, 2624));
+    out.texture = table ? load<NVNtexture*>(table + pick<std::uintptr_t>(32, 40) * std::uintptr_t(index) +
+                                            pick<std::uintptr_t>(24, 32))
+                        : nullptr;
+    out.view = reinterpret_cast<const NVNtextureView*>(target + pick<std::uintptr_t>(184, 208));
+    return out.texture != nullptr;
+}
+}  // inline namespace ported
+#else
 inline bool gameFrame(std::uintptr_t moduleBase, void* context, GameFrame& out) {
     using detail::load;
     const auto address = reinterpret_cast<std::uintptr_t>(context);
@@ -154,4 +181,5 @@ inline bool gameFrame(std::uintptr_t moduleBase, void* context, GameFrame& out) 
     out.view = reinterpret_cast<const NVNtextureView*>(target + 184);
     return out.texture != nullptr;
 }
+#endif
 }  // namespace totk::render

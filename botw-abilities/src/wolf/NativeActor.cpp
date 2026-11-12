@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "NativeActor.hpp"
 #include "NativeApi.hpp"
 #include <algorithm>
@@ -9,10 +9,11 @@
 namespace botw_abilities::wolf {
 namespace {
 using namespace totk::engine;
+using namespace totk::port::literals;
 NativeApi g_api;
 constexpr const char* kActor = "BotwWolfLink";
 constexpr float kActorScale = 1.2f;
-constexpr CodeSite kSites[]{
+constexpr totk::port::Site kSites[]{
     {0xAB92CC, 0xA9BA7BFD, 0xA9016FFC}, {0x83AA68, 0xD10143FF, 0xA9017BFD},
     {0xAB91A8, 0xD10143FF, 0xA9037BFD}, {0xEC9C2C, 0xA9BD7BFD, 0xF9000BF5},
     {0x13C358C, 0xA9BD7BFD, 0xF9000BF5}, {0x86A288, 0xA9BD7BFD, 0xA90157F6},
@@ -72,7 +73,7 @@ bool NativeActor::create(const totk::core::WorldTransform& transform) {
         Logging.Log("[wolf-link] SPAWN_REFUSED transform=nonfinite");
         return false;
     }
-    const auto manager = readMemory<std::uintptr_t>(g_api.base() + 0x4722920);
+    const auto manager = readMemory<std::uintptr_t>(g_api.base() + 0x4722920_v121);
     if (!isPlausibleAddress(manager)) {
         Logging.Log("[wolf-link] SPAWN_REFUSED manager=%p", reinterpret_cast<void*>(manager));
         return false;

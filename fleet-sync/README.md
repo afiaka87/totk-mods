@@ -1,4 +1,15 @@
-# Fleet Sync v0.2.4
+# Fleet Sync v0.3.1
+
+## Changes in v0.3.1
+
+- Runs on Tears of the Kingdom **1.4.3** as well as 1.2.1, from the same download. The mod detects
+  the game version when it starts.
+- The formation keeps working when another mod (such as Arrowbound) hooks the same game routine
+  first. Before this, Fleet Sync quietly fell back to sharing input only, and the receivers stopped
+  following the controller.
+- Tested in Citron on 1.2.1 and 1.4.3 inside Zonai Fieldworks v0.9.3, which runs this same code.
+  This download has not had its own boot, and there is no Switch test.
+- Emulator download only for now; the Switch download stays at v0.2.4.
 
 ## Changes in v0.2.4
 
@@ -11,8 +22,9 @@ fast alignment keep the fleet together through takeoff and turns, without an ext
 
 ## Installation
 
-Requires Tears of the Kingdom **1.2.1**, build `9B4E43650501A4D4`. Uses **subsdk6**.
-Switch and emulator archives contain the same executable with different folder layouts.
+Requires Tears of the Kingdom **1.2.1** (build `9B4E43650501A4D4`) or **1.4.3** (build
+`277178B7DBA1B6D4`). Uses **subsdk6**. v0.3.1 has an emulator download only; the Switch download
+(v0.2.4, 1.2.1 only) uses the same layout as below.
 
 - **Emulator:** extract into the game's mod/load directory, producing
   `Fleet Sync/exefs/`. Enable **Fleet Sync** in the add-ons list.

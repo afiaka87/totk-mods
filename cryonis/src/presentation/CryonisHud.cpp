@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "CryonisHud.hpp"
 #include "CryonisPrompt.hpp"
 #include "CryonisRuntime.hpp"
@@ -60,11 +60,14 @@ HOOK_DEFINE_TRAMPOLINE(UiHook) {
 };
 }
 void install(std::uintptr_t base) {
-    if (!totk::engine::codeMatches(base, signatures::kUi, "cryonis", "HUD_REFUSED"))
+    if (!totk::port::codeMatches(base, signatures::kUi, "cryonis", "HUD_REFUSED"))
         return;
     engine::configurePrompt(base);
     if (font::configure(base, totk::ui::native_font_data::atlas(),
                         {nullptr, read, diagnostic, nullptr}))
         UiHook::InstallAtOffset(offsets::kUIModuleDraw2D);
+    else if (totk::port::is143())
+        Logging.Log("[cryonis] aim labels and A-prompt hiding off on 1.4.3: the shared text "
+                    "renderer did not start");
 }
 }

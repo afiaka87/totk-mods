@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //
-// Shared TotK runtime support — the depth-correct world-draw seam.
-// Copyright (C) Clay Mullis
+// Shared TotK runtime support - the depth-correct world-draw seam.
+// Copyright (C) HanSoloBlaster, afiaka87
 //
 // ONE place in the frame where mods draw solid geometry into the world, shared
 // by every feature that needs it.
@@ -13,11 +13,11 @@
 // are process-wide resources: a second copy of this machinery would install a
 // second hook at the same address, open a second begin/end pair inside the
 // first, and restore the engine's render state twice. So features do not each
-// carry their own — they register a drawer here and the seam runs them in
+// carry their own - they register a drawer here and the seam runs them in
 // registration order inside one correctly-bracketed pass.
 //
 // Promoted out of porter-bridges-redux on 2026-08-21, when the Survey and the
-// Porter Pack grid — which had shared this seam inside one mod — became separate
+// Porter Pack grid (which had shared this seam inside one mod) became separate
 // mods that must also compose inside zonai-fieldworks.
 //
 // Threading: registration and configure() happen at module init on the game
@@ -78,7 +78,7 @@ static_assert(sizeof(PrimitiveVertex) == kPrimitiveVertexStride,
               "the drawer sizes its own buffer as 36 * count; this must match exactly");
 
 // Everything one vertex-buffer draw needs, resolved fresh each frame exactly as
-// the engine resolves its own — the manager and its ring are engine state, not
+// the engine resolves its own - the manager and its ring are engine state, not
 // constants, and caching them across a scene change would be a stale-pointer bug.
 //
 // The five entry points are stored as void* and cast at the call site inside the
@@ -99,7 +99,7 @@ struct VertexDrawPath {
 };
 
 // One pass's vertex block: where it lives in the drawer's ring, and how far into
-// it the caller has written. There is no CPU-side scratch — this IS the upload
+// it the caller has written. There is no CPU-side scratch - this IS the upload
 // buffer and the only copy.
 struct VertexBlock {
     PrimitiveVertex* cpu = nullptr;
@@ -122,7 +122,7 @@ struct VertexBlock {
 
 // One draw out of the bound block: however many consecutive vertices share a
 // pair of colours and a line width. `lastWidth` lets a caller skip re-sending a
-// width that has not changed — line width is fixed-function state and survives
+// width that has not changed - line width is fixed-function state and survives
 // between draws.
 bool submitRange(const VertexDrawPath& path, agl::DrawContext* drawContext,
                  std::uint32_t firstVertex, std::uint32_t vertexCount,

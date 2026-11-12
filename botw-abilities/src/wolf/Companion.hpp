@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #pragma once
 #include <cstdint>
 
 namespace botw_abilities::wolf {
 
-// Quarter hearts. BotW clamps the amiibo's byte to 12..80; the wolf comes at the top tier, twenty
-// hearts, so a 30-point swing takes six hits (Clay, wolf-compact-15 run 2: he should take about six
-// swings from a strong enemy). Changed in wolf-compact-17 from 12, BotW's unsaved amiibo.
+// Quarter hearts: BotW's top amiibo tier (range 12..80), twenty hearts, so 30-point swings take six hits.
 inline constexpr int kMaxLife = 80;
 
 [[nodiscard]] constexpr int companionPower(int maxLife, bool fed) {

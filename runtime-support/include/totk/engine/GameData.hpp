@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (C) Clay Mullis
-
+// Copyright (C) HanSoloBlaster, afiaka87
 // Guarded flat-int GameData access for TotK 1.2.1.
 
 #pragma once
@@ -42,6 +41,10 @@ struct GameDataFunctions {
     GameDataSetIntFunction setInt = nullptr;
 };
 
+// With TOTK_PORT fromMainBase translates its three places to the running game, so the class has its own name.
+#if defined(TOTK_PORT) && TOTK_PORT
+inline namespace ported {
+#endif
 class GameDataService {
 public:
     GameDataService(std::uintptr_t managerHolderSlot, GameDataFunctions functions)
@@ -98,5 +101,8 @@ private:
     std::uintptr_t managerHolderSlot_ = 0;
     GameDataFunctions functions_{};
 };
+#if defined(TOTK_PORT) && TOTK_PORT
+}  // inline namespace ported
+#endif
 
 } // namespace totk::engine

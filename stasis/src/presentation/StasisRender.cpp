@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 // Draws the Stasis effects after the opaque scene, from the game's effect draw pass.
 #include "StasisRender.hpp"
 #include "StasisProjection.hpp"
@@ -36,6 +36,20 @@ constexpr std::size_t kContextCamera = 0x18;
 
 // Scene render-target record, for the depth texture.
 constexpr std::size_t kBuffersRecord = 0x10;
+
+// Members at a different offset on 1.4.3: {1.2.1, 1.4.3}.
+constexpr totk::port::Member kDeviceHandle{0x30, 0x168};
+constexpr totk::port::Member kCameraProjection{0x160, 0x1a8}, kCameraView{0x100, 0x108};
+constexpr totk::port::Member kCameraNear{0x1e0, 0x228}, kCameraFar{0x1e4, 0x22c};
+constexpr totk::port::Member kContextTarget{0x540, 0x538}, kContextViewport{0x548, 0x540};
+constexpr totk::port::Member kSceneBuffers{0x1ec0, 0x1ec8};
+constexpr totk::port::Member kDepthFull{0x700, 0x618}, kDepthHalf{0xe40, 0x10c0};
+// Texture width in a sampler or texture header; the height follows two bytes later.
+constexpr totk::port::Member kTextureWidth{0x30, 0x40};
+constexpr totk::port::Member kBlockAddress{0x78, 0x80}, kBlockSize{0x38, 0x40};
+constexpr totk::port::Member kSamplerTextureId{88, 104}, kSamplerDescriptorId{234, 258};
+// A sampler object is 240 bytes on 1.2.1 and 264 on 1.4.3.
+constexpr std::size_t kSamplerBytes = 288;
 
 bool g_ready{}, g_attempted{}, g_programReady{}, g_programAttempted{};
 unsigned g_lastRefusal{};
@@ -137,7 +151,7 @@ template <class F> bool resolve(F &target, const char *name) {
 }
 
 unsigned depthSlot(unsigned flags) {
-    return (flags & 1) ? unsigned(0x700) : (flags & 2) ? unsigned(0xe40) : 0;
+    return (flags & 1) ? unsigned(kDepthFull) : (flags & 2) ? unsigned(kDepthHalf) : 0;
 }
 
 // GPU setup, done lazily on the first draw callback, once the device exists.
@@ -154,7 +168,7 @@ bool initializeGpuStorage() {
         refuse(1);
         return false;
     }
-    g_device = read<NVNdevice *>(graphics, 0x30);
+    g_device = read<NVNdevice *>(graphics, kDeviceHandle);
     if (!g_device) {
         refuse(2);
         return false;
@@ -295,10 +309,10 @@ bool readCamera(const void *context, Camera &camera) {
     const auto *record = read<const unsigned char *>(context, kContextCamera);
     if (!record)
         return false;
-    std::memcpy(camera.proj, record + 0x160, sizeof(camera.proj));
-    std::memcpy(camera.view, record + 0x100, sizeof(camera.view));
-    camera.nearMetres = read<float>(record, 0x1e0);
-    camera.farMetres = read<float>(record, 0x1e4);
+    std::memcpy(camera.proj, record + kCameraProjection, sizeof(camera.proj));
+    std::memcpy(camera.view, record + kCameraView, sizeof(camera.view));
+    camera.nearMetres = read<float>(record, kCameraNear);
+    camera.farMetres = read<float>(record, kCameraFar);
     for (float value : camera.proj)
         if (!std::isfinite(value))
             return false;
@@ -322,8 +336,8 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
     if (!snapshot.aiming && !snapshot.frozen && snapshot.cooldownFrames <= 0.0f &&
         snapshot.releaseFlash <= 0.0f && !snapshot.trail.visible())
         return;
-    if (!drawContext || (!scene && !maskBuffers) || !context || !read<void *>(context, 0x540) ||
-        !read<void *>(context, 0x548)) {
+    if (!drawContext || (!scene && !maskBuffers) || !context ||
+        !read<void *>(context, kContextTarget) || !read<void *>(context, kContextViewport)) {
         refuse(9);
         return;
     }
@@ -334,7 +348,7 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
     }
 
     // Borrow the scene depth texture.
-    const auto *buffers = maskBuffers ? maskBuffers : read<const void *>(scene, 0x1ec0);
+    const auto *buffers = maskBuffers ? maskBuffers : read<const void *>(scene, kSceneBuffers);
     if (!buffers || read<unsigned>(buffers, 8) < 1) {
         refuse(11);
         return;
@@ -351,8 +365,8 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
         return;
     }
     void *sampler = record + slot;
-    const unsigned width = read<std::uint16_t>(sampler, 0x30);
-    const unsigned height = read<std::uint16_t>(sampler, 0x30 + 2);
+    const unsigned width = read<std::uint16_t>(sampler, kTextureWidth);
+    const unsigned height = read<std::uint16_t>(sampler, kTextureWidth + 2);
     if (width < 16 || height < 16 || width > 8192 || height > 8192) {
         refuse(14, width);
         return;
@@ -373,8 +387,8 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
     void *hoverDepth = nullptr;
     bool masked = useSurface && surface::masks(modelDepth, hoverDepth);
     if (masked) {
-        const auto maskWidth = read<std::uint16_t>(modelDepth, 48);
-        const auto maskHeight = read<std::uint16_t>(modelDepth, 50);
+        const auto maskWidth = read<std::uint16_t>(modelDepth, kTextureWidth);
+        const auto maskHeight = read<std::uint16_t>(modelDepth, kTextureWidth + 2);
         if (maskWidth < 16 || maskHeight < 16 || maskWidth > 8192 || maskHeight > 8192) {
             refuse(20, (unsigned(maskWidth) << 16) | maskHeight);
             masked = false;
@@ -418,15 +432,15 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
     for (unsigned i = 0; i < blockCount; ++i) {
         call<void (*)(void **, const void *, std::size_t)>(offsets::kUtlCreateDynamicUniformBlock)(
             &blocks[i], &variants[i], sizeof(Uniforms));
-        if (!blocks[i] || !read<std::uint64_t>(blocks[i], 0x78)) {
+        if (!blocks[i] || !read<std::uint64_t>(blocks[i], kBlockAddress)) {
             refuse(18, i);
             return;
         }
     }
     bool sampled = call<bool (*)(void *, void *, unsigned, void *)>(
         offsets::kShaderProgramActivateSampler)(g_samplerBindings, drawContext, 0, sampler);
-    alignas(8) unsigned char maskSampler[240]{};
-    alignas(8) unsigned char hoverSampler[240]{};
+    alignas(8) unsigned char maskSampler[kSamplerBytes]{};
+    alignas(8) unsigned char hoverSampler[kSamplerBytes]{};
     if (masked) {
         call<void (*)(void *)>(offsets::kSamplerConstruct)(maskSampler);
         call<void (*)(void *, void *)>(offsets::kSamplerApplyTexture)(maskSampler, modelDepth);
@@ -449,7 +463,7 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
             masked && hoverDepth ? hoverSampler : sampler) && sampled;
     alignas(8) unsigned char state[128]{};
     if (sampled) {
-        const int samplerId = read<std::int16_t>(sampler, 234);
+        const int samplerId = read<std::int16_t>(sampler, kSamplerDescriptorId);
         const auto bindPrivate = [&](unsigned location, unsigned texture) {
             g_bindTexture(command, NVN_SHADER_STAGE_FRAGMENT, location,
                           g_textureHandle(g_device, g_targets->ids[texture], samplerId));
@@ -474,8 +488,8 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
         };
         const auto bindBlock = [&](unsigned index) {
             for (const auto stage : {NVN_SHADER_STAGE_VERTEX, NVN_SHADER_STAGE_FRAGMENT})
-                g_bindUniform(command, stage, 0, read<std::uint64_t>(blocks[index], 0x78),
-                              read<unsigned>(blocks[index], 0x38));
+                g_bindUniform(command, stage, 0, read<std::uint64_t>(blocks[index], kBlockAddress),
+                              read<unsigned>(blocks[index], kBlockSize));
         };
         const auto fullscreen = [&](Pass pass, unsigned block) {
             g_bindProgram(command, &g_programs[pass], 63);
@@ -578,19 +592,27 @@ void draw(void *drawContext, void *scene, void *context, bool useSurface = false
     } else
         refuse(19);
     if (masked) {
-        call<void (*)(void *)>(offsets::kSamplerDestroyDescriptor)(maskSampler + 234);
-        call<void (*)(void *)>(offsets::kSamplerDestroyTexture)(maskSampler + 88);
+        call<void (*)(void *)>(offsets::kSamplerDestroyDescriptor)(maskSampler +
+                                                                   kSamplerDescriptorId);
+        call<void (*)(void *)>(offsets::kSamplerDestroyTexture)(maskSampler + kSamplerTextureId);
     }
     if (masked && hoverDepth) {
-        call<void (*)(void *)>(offsets::kSamplerDestroyDescriptor)(hoverSampler + 234);
-        call<void (*)(void *)>(offsets::kSamplerDestroyTexture)(hoverSampler + 88);
+        call<void (*)(void *)>(offsets::kSamplerDestroyDescriptor)(hoverSampler +
+                                                                   kSamplerDescriptorId);
+        call<void (*)(void *)>(offsets::kSamplerDestroyTexture)(hoverSampler + kSamplerTextureId);
     }
 
     // Restore the game's render target and state.
     call<void (*)(void *, void *)>(offsets::kModelRenderContextUnbindDefaultFrameBuffer)(
         context, drawContext);
-    auto *target = read<void *>(context, 0x540);
-    call<void (*)(void *, void *)>(offsets::kRestoreRenderBuffers)(target, drawContext);
+    auto *target = read<void *>(context, kContextTarget);
+    if (totk::port::is143()) {
+        // 1.4.3 reads two access values through a third argument; the game's own passes send {2, 0}.
+        const std::uint32_t access[2]{2, 0};
+        call<void (*)(void *, void *, const std::uint32_t *)>(offsets::kRestoreRenderBuffers)(
+            target, drawContext, access);
+    } else
+        call<void (*)(void *, void *)>(offsets::kRestoreRenderBuffers)(target, drawContext);
     call<void (*)(void *)>(offsets::kGraphicsContextGraphicsContext)(state);
     call<void (*)(void *, void *)>(offsets::kGraphicsContextApply)(state, drawContext);
 }

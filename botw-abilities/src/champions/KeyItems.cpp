@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 #include "KeyItems.hpp"
 #include "KeyItemUI.hpp"
 #include "GameData.hpp"
 #include "ChampionSaveSchema.hpp"
-#include "totk/engine/CodeCheck.hpp"
+#include "totk/port/CodeCheck.hpp"
 #include "totk/engine/GameData.hpp"
 #include "totk/engine/KeyItemGrant.hpp"
 #include "totk/engine/PouchSelection.hpp"
@@ -13,7 +13,8 @@
 namespace botw_abilities::champions::items {
 namespace {
 using namespace totk::engine;
-constexpr CodeSite kSites[]{
+using namespace totk::port::literals;
+constexpr totk::port::Site kSites[]{
     {0x1B16650, 0xD10343FF, 0}, {0x1B1241C, 0xFC190FEA, 0},
     {0x1A58EE0, 0xD107C3FF, 0}, {0x1B171AC, 0x910083E0, 0},
 };
@@ -24,8 +25,8 @@ std::uint64_t g_generation = UINT64_MAX, g_nextScan{};
 bool g_granted{};
 EmptyPouch g_empty;
 
-template <class Fn> Fn call(std::uintptr_t offset) { return reinterpret_cast<Fn>(g_base + offset); }
-std::uintptr_t manager(std::uintptr_t slot) {
+template <class Fn> Fn call(totk::port::Code offset) { return reinterpret_cast<Fn>(g_base + offset); }
+std::uintptr_t manager(totk::port::Code slot) {
     const auto result = resolveGameDataManagerFromHolder(g_base + slot);
     return result ? result.value : 0;
 }
@@ -38,7 +39,7 @@ const char* slotName(std::uint32_t category, std::uint32_t index) {
     using ByIndex = std::uint32_t(*)(std::uintptr_t, void*, std::uintptr_t, std::uint32_t, std::uint32_t);
     using Name = std::uint32_t(*)(std::uintptr_t, const char**, const void*, std::uint32_t);
     if (!(call<ByIndex>(0x942FE8)(gmd, record, pouch + 0x88, 0x4290322E, index) & 1)) return nullptr;
-    auto name = readMemory<const char*>(g_base + 0x462E1B8);
+    auto name = readMemory<const char*>(g_base + 0x462E1B8_v121);
     if (!(call<Name>(0x935BE0)(gmd, &name, record, 0x25EFA387) & 1) ||
         !isPlausibleStringAddress(reinterpret_cast<std::uintptr_t>(name)) || !std::memchr(name, 0, 64))
         return nullptr;
@@ -112,7 +113,9 @@ HOOK_DEFINE_TRAMPOLINE(Select) {
 HOOK_DEFINE_INLINE(Deal) {
     static void Callback(exl::hook::InlineCtx* context) {
         static const char* const deal = "SageSoul_Fire";
-        if (g_selecting) context->X[1] = reinterpret_cast<std::uintptr_t>(&deal);
+        // 1.4.3 does the deal-name lookup in line and already holds the name itself in X10.
+        if (g_selecting && totk::port::is143()) context->X[10] = reinterpret_cast<std::uintptr_t>(deal);
+        else if (g_selecting) context->X[1] = reinterpret_cast<std::uintptr_t>(&deal);
     }
 };
 
@@ -169,7 +172,7 @@ void service(GameDataWriteReadiness readiness, std::uint64_t tick) {
     for (std::size_t i = 0; i < kBlessingCount; ++i) {
         if (scan.found & (1u << i)) continue;
         const auto result = grantKeyItem(gmd, pouch, kSaveKeys[i].actor,
-            reinterpret_cast<void* const*>(g_base + 0x462E0F0),
+            reinterpret_cast<void* const*>(g_base + 0x462E0F0_v121),
             {call<ResolvePouchCategory>(0x1706D80), call<AddToPouch>(0xCE0EEC)}, readiness);
         Logging.Log("[champions] ITEM_GRANT blessing=%u error=%u native=%llu", unsigned(i),
                     unsigned(result.error), result.nativeResult);
@@ -179,12 +182,12 @@ void service(GameDataWriteReadiness readiness, std::uint64_t tick) {
 }
 
 bool install(std::uintptr_t base) {
-    if (!codeMatches(base, kSites, "champions", "ITEM_BUILD_REFUSED")) return false;
+    if (!totk::port::codeMatches(base, kSites, "champions", "ITEM_BUILD_REFUSED")) return false;
     g_base = base;
-    Select::InstallAtOffset(0x1B16650);
-    Action::InstallAtOffset(0x1B1241C);
-    SetSlot::InstallAtOffset(0x1A58EE0);
-    Deal::InstallAtOffset(0x1B171AC);
+    Select::InstallAtOffset(0x1B16650_v121);
+    Action::InstallAtOffset(0x1B1241C_v121);
+    SetSlot::InstallAtOffset(0x1A58EE0_v121);
+    Deal::InstallAtOffset(0x1B171AC_v121);
     return true;
 }
 } // namespace botw_abilities::champions::items

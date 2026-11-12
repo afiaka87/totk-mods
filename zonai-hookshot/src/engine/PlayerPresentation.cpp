@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) Clay Mullis
+// Copyright (c) HanSoloBlaster, afiaka87
 
 #include "PlayerPresentation.hpp"
 #include "PlayerPresentationProfiles.hpp"
@@ -68,6 +68,9 @@ struct Result {
     bool ready{};
 };
 Result g_result{};
+// The same hand point read during the controller update, used when the draw-time one has stopped arriving.
+Result g_updateHand{};
+std::atomic<unsigned> g_unitDraws{}, g_bodyDraws{}, g_handSource{};
 std::atomic<unsigned> g_failuresLogged{};
 pose::EffectMasks<64> g_effectMasks;
 std::atomic<std::uintptr_t> g_climbingPlayer{};
@@ -355,8 +358,10 @@ void visibility(void* unit, bool override, const Control& c) {
     nn::os::UnlockMutex(&g_lock);
 }
 void publishHand(void* unit, const Control& c) {
+    g_unitDraws.fetch_add(1, std::memory_order_relaxed);
     if (!c.trackHand || unit != c.body || read<void*>(unit, g_profile->model.skeleton) != c.bodySkeleton)
         return;
+    g_bodyDraws.fetch_add(1, std::memory_order_relaxed);
     const auto count = read<std::uint16_t>(read<void*>(read<void*>(unit, g_profile->model.skeleton), 0), 0x38);
     const auto wrist = bone(unit, "Wrist_R");
     if (wrist >= count) {
@@ -1391,7 +1396,12 @@ void reset() {
     g_control.glideBoard = nullptr;
     g_control.glideBlend = {};
     g_result = {};
+    g_updateHand = {};
+    unsigned hidden = 0;
+    for (const auto& slot : g_visibilitySlots) hidden += slot.active;
     nn::os::UnlockMutex(&g_lock);
+    // Diagnostic: models (glider, arm) still hidden at reset; each shows again only on its own next hooked draw.
+    if (hidden) Logging.Log("[zonai-hookshot] VISIBILITY_PENDING hidden_models=%u", hidden);
 }
 void update(const HookshotRuntime& rt) {
     if (!g_installed)
@@ -1453,7 +1463,17 @@ void update(const HookshotRuntime& rt) {
     if (glowing && frequency)
         c.glowFrame = static_cast<float>((svcGetSystemTick() - glowStart) % (frequency * 16)) /
                       static_cast<float>(frequency) * 30.f;
+    Result updateHand{};
+    if (c.trackHand && c.body && c.bodySkeleton) {
+        const auto bones = read<std::uint16_t>(read<void*>(c.bodySkeleton, 0), 0x38);
+        const auto wrist = bone(c.body, "Wrist_R");
+        if (wrist < bones) {
+            const Vec3 hand = pose::handOrigin(matrix(c.body, wrist));
+            if (finite3(hand)) updateHand = {hand, c.generation, svcGetSystemTick(), true};
+        }
+    }
     nn::os::LockMutex(&g_lock);
+    g_updateHand = updateHand;
     if (!c.trackHand || c.generation != g_control.generation || c.body != g_control.body)
         g_result = {};
     // Retain an identity token solely so the old model's own callback can restore its visuals.
@@ -1492,18 +1512,34 @@ void observeClimb(void* action) {
     auto* player = native<void* (*)(void*)>(g_profile->functions.actionPlayer.offset)(action);
     g_climbingPlayer.store(reinterpret_cast<std::uintptr_t>(player), std::memory_order_release);
 }
-bool handOrigin(Vec3& out) {
+unsigned handOriginState(Vec3& out) {
     if (!g_installed)
-        return false;
+        return kHandNotInstalled;
     nn::os::LockMutex(&g_lock);
     const auto frequency = nn::os::GetSystemTickFrequency(), now = svcGetSystemTick();
-    const bool ok = g_control.trackHand && g_result.ready &&
-                    g_result.generation == g_control.generation && frequency &&
-                    now >= g_result.time && now - g_result.time <= frequency / 4;
-    if (ok)
+    unsigned state = 0;
+    if (!g_control.trackHand) state |= kHandNotTracked;
+    if (!g_result.ready) state |= kHandNotPublished;
+    if (g_result.generation != g_control.generation) state |= kHandOldGeneration;
+    if (!frequency || now < g_result.time || now - g_result.time > frequency / 4) state |= kHandStale;
+    const unsigned drawState = state;
+    if (!state) {
         out = g_result.hand;
+    } else if (!(state & kHandNotTracked) && g_updateHand.ready &&
+               g_updateHand.generation == g_control.generation && frequency && now >= g_updateHand.time &&
+               now - g_updateHand.time <= frequency / 4) {
+        out = g_updateHand.hand;
+        state = 0;
+    }
     nn::os::UnlockMutex(&g_lock);
-    return ok;
+    // Diagnostic: which hand point is in use, and how often the draw step ran.
+    const unsigned source = state ? 0 : drawState ? 0x100 | drawState : 1;
+    if (source && g_handSource.exchange(source, std::memory_order_relaxed) != source)
+        Logging.Log("[zonai-hookshot] HAND_SOURCE %s draw_reason=%u unit_draws=%u body_draws=%u",
+                    drawState ? "update" : "draw", drawState, g_unitDraws.exchange(0, std::memory_order_relaxed),
+                    g_bodyDraws.exchange(0, std::memory_order_relaxed));
+    return state;
 }
+bool handOrigin(Vec3& out) { return handOriginState(out) == 0; }
 bool usesHandOrigin() { return g_installed; }
 }

@@ -1,6 +1,6 @@
-"""Verify the native-bloom routing against Clay's local relocated TotK 1.2.1 executable."""
+"""Verify the native-bloom routing against the local relocated TotK 1.2.1 executable."""
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 import argparse
 import hashlib
 import json

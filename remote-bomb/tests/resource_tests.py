@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) Clay Mullis
+# Copyright (c) HanSoloBlaster, afiaka87
 """Validate private actor output against the original data and clean native tables."""
 from __future__ import annotations
 import argparse

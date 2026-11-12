@@ -1,5 +1,7 @@
 // Copyright (c) HanSoloBlaster, afiaka87
-// One four-word stub per gated hook: stub i jumps to fieldworks_gate_targets[i].
+// One stub per gated hook: the game reaches stub i, which jumps to fieldworks_gate_targets[i].
+// The target is the member's callback when the member is on and the original code when it is off.
+// Each stub is four words so stub i sits at fieldworks_gate_stubs + 16 * i.
 
     .section .text.fieldworks_gate_stubs, "ax", %progbits
     .global fieldworks_gate_stubs
