@@ -19,6 +19,9 @@ The romfs files in the release archive are the members' release files, combined:
 - Material Columns' four small quick-menu layout derivatives and its first-party label and
   category files.
 - Eight wheel icons made for Fieldworks.
+- `romfs/Fieldworks/Merge`: the parts of the edited data files above that are not in the game's
+  originals (added rows, save flags, tags, names, sounds and memory budgets), in Fieldworks' own
+  formats.
 
 Game-derived and third-party assets retain their original rights and are not MIT licensed. They
 only work with a legally owned copy of the game. Native builds use devkitPro/devkitA64.

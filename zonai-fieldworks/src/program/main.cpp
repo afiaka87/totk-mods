@@ -4,6 +4,7 @@
 
 #include "arrowbound/GameProfiles.hpp"
 #include "fieldworks/Gates.hpp"
+#include "fieldworks/SharedFiles.hpp"
 #include "fieldworks/Switches.hpp"
 #include "totk/port/Generated.hpp"
 #include "totk/suite/Member.hpp"
@@ -106,8 +107,12 @@ extern "C" void exl_main(void* /*x0*/, void* /*x1*/) {
         Logging.Log("[fieldworks] unknown game build main_text=%zx; nothing installed", textSize);
         return;
     }
-    Logging.Log("[fieldworks] v0.9.4 TotK %s module_offset=%lx", g_game->name,
+    Logging.Log("[fieldworks] v0.9.8 TotK %s module_offset=%lx", g_game->name,
                 exl::util::modules::GetSelfStart() - base);
+    // Before any game file loads: Fieldworks adds its own content to the files other mods also replace.
+    if (g_game->version == GameVersion::V121) fieldworks::shared::install(base, fieldworks::shared::Game::V121);
+    else if (g_game->version == GameVersion::V143) fieldworks::shared::install(base, fieldworks::shared::Game::V143);
+    else Logging.Log("[fieldworks] SHARED_OFF reason=game_version_not_supported game=%s", g_game->name);
     // Fleet Sync, Bivouac and BotW Abilities name game code by its 1.2.1 offset (totk/port/Port.hpp);
     // they install on 1.2.1 and 1.4.3 and refuse the other versions.
     const auto ported = g_game->version == GameVersion::V121   ? totk::port::Game::V121
