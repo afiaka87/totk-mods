@@ -1,4 +1,18 @@
-# Zonai Fieldworks v0.9.8
+# Zonai Fieldworks v0.9.9
+
+## Changes in v0.9.9
+
+- **Switch download only.** The emulator download stays at v0.9.8.
+- The Switch download now works with **The Second Quest** as well. When the copy of a shared game
+  file the game loads is not Fieldworks' own, Fieldworks adds its content to it as it loads, as the
+  emulator download has done since v0.9.8.
+- When another mod's `main.npdm` is the one in effect and reserves more than Fieldworks' 8 MiB (The
+  Second Quest's reserves 24 MiB), Fieldworks gives the game's memory pool the difference at start-up.
+  Before, a larger `main.npdm` left the game short of memory on a Switch and it did not start.
+- Fieldworks writes the first 64 KiB of its log to `ZonaiFieldworks/startup-log.txt` on the SD card each
+  time the game starts. Attach it to a bug report.
+- Played on a Switch at 1.2.1 and 1.4.3 with The Second Quest copied over it (its `main.npdm` in
+  effect): starting, loading a save, the Fieldworks page and members, and fast travel.
 
 ## Changes in v0.9.8
 
@@ -71,8 +85,8 @@ installed next to it.
 
 - Tears of the Kingdom **1.2.1** or **1.4.3**.
 - Emulator download (v0.9.8): played on Citron at both versions (see Known issues).
-- Switch download (v0.9.4): for a Switch running Atmosphere, and for Ryujinx/Ryubing. Played on a Switch at
-  1.2.1 and 1.4.3, and on Ryujinx 1.3.3 at 1.2.1.
+- Switch download (v0.9.9): for a Switch running Atmosphere, and for Ryujinx/Ryubing. Played on a Switch at
+  1.2.1 and 1.4.3 with The Second Quest. Not played on Ryujinx/Ryubing yet (v0.9.4 was, at 1.2.1).
 - Other game versions are untested. Material Columns, Self Recall and Zonai Survey support other
   versions on their own, but the Fieldworks wheel page is only available on 1.2.1 and 1.4.3.
 
@@ -89,9 +103,10 @@ installed next to it.
    together.
 
 **Switch:** copy the archive's `0100F2C0115B6000/` folder into `atmosphere/contents/` on the SD
-card. Remove the standalone members and any other `subsdk6` mod from that title folder first. Keep
-this package's `exefs/main.npdm`: it reserves 8 MiB for mod code, and a larger one from another mod
-leaves the game short of memory.
+card. Remove the standalone members and any other `subsdk6` mod from that title folder first. To
+use The Second Quest as well, copy it over Fieldworks afterwards and let it replace files, its
+`exefs/main.npdm` included. Its copies of the shared files have to be the ones on the card, and
+Fieldworks makes up its larger memory reservation.
 
 **Ryujinx/Ryubing:** put the contents of the Switch archive's `0100F2C0115B6000/` folder (`exefs/`
 and `romfs/`) into a new folder under `mods/contents/0100f2c0115b6000/`, for example
@@ -99,8 +114,8 @@ and `romfs/`) into a new folder under `mods/contents/0100f2c0115b6000/`, for exa
 
 The package carries its own resource-size tables (`ResourceSizeTable.Product.121.rsizetable.zs` for
 1.2.1 and `ResourceSizeTable.Product.143.Nin_NX_NVN.rsizetable.zs` for 1.4.3). If another mod also
-ships the table for your game version, only one of the two is loaded. With the emulator download,
-Fieldworks adds its own budgets when the other mod's table is the one loaded. When Fieldworks' table
+ships the table for your game version, only one of the two is loaded. Fieldworks adds its own
+budgets when the other mod's table is the one loaded. When Fieldworks' table
 is the one loaded, the other mod's budgets are lost; merge the tables with a mod manager or expect
 missing items from that mod. The same holds for the other eight files listed under v0.9.8.
 
@@ -129,16 +144,15 @@ missing items from that mod. The same holds for the other eight files listed und
 - On 1.4.3 the faster Champion recharge in Hyrule Castle and Bivouac's backup trigger from the
   pouch are off.
 - Only 1.2.1 and 1.4.3 have been played.
-- With The Second Quest, fast travel and long sessions have not been tried.
+- With The Second Quest, long sessions have not been tried, and fast travel only on a Switch.
 - The Second Quest is the only other mod the shared-file change was tried with. If your emulator or
   mod manager loads Fieldworks' copy of a shared file and not the other mod's, the other mod still
   loses its changes to that file. Citron loads the copy from the folder whose name sorts first.
 - Without The Second Quest, v0.9.8 was played at 1.2.1 only, with the test setup's resource-size
   table and not the one in the download.
-- The Switch download is still v0.9.4 and does not have the v0.9.8 changes.
-- The final Switch build (v0.9.4) has not been played on a Switch. It differs from the last build played
-  there only by the Self Recall fused-material fix, which was tested on Ryujinx. Fleet Sync and
-  Cryonis have not been checked on a Switch at 1.2.1.
+- The Switch download (v0.9.9) has not been played on Ryujinx/Ryubing, or on a Switch without The
+  Second Quest. Fleet Sync and Cryonis have not been checked on a Switch at 1.2.1.
+- With The Second Quest on Ryujinx/Ryubing, which copy of a shared file is loaded has not been checked.
 - Ryujinx closed once during a shield surf with Daruk's Protection up. It did not happen again and
   the cause is not known.
 
@@ -155,7 +169,9 @@ guarantee that it builds or works as-is.
 - The build option `FIELDWORKS_TARGET` is `emulator` (default) or `switch`. `switch` builds Self
   Recall with its `switch-compressed` storage profile and 10 seconds of SD-card history; the other
   members are the same in both downloads. `emulator` also sets Self Recall's
-  `SELF_RECALL_ARENA_TAIL` option (its buffers at the end of the game's memory pool). That code is
+  `SELF_RECALL_ARENA_TAIL` option (its buffers at the end of the game's memory pool); `switch` sets
+  `SELF_RECALL_POOL_GROWTH` (the buffers stay in the module and only the larger reservation is made
+  up) and writes the start-up log (`src/fieldworks/StartupReport.cpp`). That Self Recall code is
   newer than the published Self Recall folder (v1.1.4).
 - `src/fieldworks/SharedFiles.cpp` and `src/pure/merge/` add Fieldworks' content to a shared game
   file as the game loads it. `scripts/merge_deltas.py` writes the additions (the archive's

@@ -107,7 +107,7 @@ extern "C" void exl_main(void* /*x0*/, void* /*x1*/) {
         Logging.Log("[fieldworks] unknown game build main_text=%zx; nothing installed", textSize);
         return;
     }
-    Logging.Log("[fieldworks] v0.9.8 TotK %s module_offset=%lx", g_game->name,
+    Logging.Log("[fieldworks] v0.9.9 TotK %s module_offset=%lx", g_game->name,
                 exl::util::modules::GetSelfStart() - base);
     // Before any game file loads: Fieldworks adds its own content to the files other mods also replace.
     if (g_game->version == GameVersion::V121) fieldworks::shared::install(base, fieldworks::shared::Game::V121);
