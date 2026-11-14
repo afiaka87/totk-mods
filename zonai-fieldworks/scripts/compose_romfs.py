@@ -5,7 +5,8 @@
 `compose` writes <output>/romfs, <output>/restbl-forces.tsv and <output>/compose-receipt.json:
 - every member's RomFS files, except its own resource-size table;
 - the files Bivouac and BotW Abilities both replace, merged against the clean 1.2.1 files with BotW
-  Abilities' merge code, which refuses two members changing the same value differently;
+  Abilities' merge code, which refuses two members changing the same value differently (a text
+  language only 1.4.3 has merges against the clean 1.4.3 archive, into <output>/romfs143-extra);
 - the eight wheel glyph icons;
 - parse-budget floors: every budget a member's own table raises, the merged files' floors and the
   icons' floors.
@@ -41,7 +42,13 @@ sys.path[:0] = [str(REPO / "scripts"), str(BOTW_TOOLS)]
 RESOURCE_TABLE = "System/Resource/ResourceSizeTable.Product.121.rsizetable.zs"
 GAMEDATA = "GameData/GameDataList.Product.110.byml.zs"
 TABLES = ("RSDB/ActorInfo.Product.121.rstbl.byml.zs", "RSDB/GameActorInfo.Product.121.rstbl.byml.zs")
-MALS = "Mals/USen.Product.121.sarc.zs"
+
+
+def is_mals(path: str) -> bool:
+    """A 1.2.1 text archive in any language (was English only until 2026-11-13)."""
+    return path.startswith("Mals/") and path.endswith(".Product.121.sarc.zs")
+
+
 ICON_TEMPLATE_RESOURCE = "UI/Tex/Icon/Obj_Camera.bntx"
 # Texture name (and file stem) per glyph. The template bank's name entry holds at most 13 characters.
 GLYPHS = {
@@ -177,7 +184,7 @@ def merge_shared(path: str, clean: bytes, members: dict[str, bytes]):
             if [row["__RowId"] for row in mine] != sorted(row["__RowId"] for row in mine):
                 raise ValueError(f"{path}: {name}'s rows are not in the sorted order the merge writes")
         return raw, added
-    if path == MALS:
+    if is_mals(path):
         raw, owners = merge_mals_exact(clean, members)
         files = sarc_files(raw)
         for name, value in members.items():
@@ -390,11 +397,14 @@ def compose(args) -> int:
     digest = inputs.hexdigest()
     romfs_out, receipt_path, forces_path = args.output / "romfs", args.output / "compose-receipt.json", \
         args.output / "restbl-forces.tsv"
+    extra_out = args.output / "romfs143-extra" / "romfs"  # 1.4.3-only files: `port143` writes them as given
     if receipt_path.is_file() and forces_path.is_file():
         previous = json.loads(receipt_path.read_text(encoding="utf-8"))
         if previous.get("inputs_sha256") == digest and all(
                 (romfs_out / path).is_file() and sha256((romfs_out / path).read_bytes()) == value
-                for path, value in previous["files"].items()):
+                for path, value in previous["files"].items()) and all(
+                (extra_out / path).is_file() and sha256((extra_out / path).read_bytes()) == value
+                for path, value in previous.get("extra143", {}).items()):
             print("[fieldworks] game files unchanged")
             return 0
 
@@ -408,6 +418,8 @@ def compose(args) -> int:
     forces: dict[str, int] = {}
     unnamed: dict[str, int] = {}
     ported, carried, left_out = ported_names(), carried_only(), {}
+    from totk_version_port import romfs_rebase as carry
+    extras: dict[str, list[tuple[str, Path]]] = {}
     for member, payload in member_payloads(root, members):
         romfs = payload / "romfs"
         if not romfs.is_dir():
@@ -422,6 +434,11 @@ def compose(args) -> int:
             if path in carried or (path in ported and ported[path] in shipped):
                 left_out.setdefault(member["slug"], []).append(path)
                 continue
+            # A text language only 1.4.3 has (Portuguese): no 1.2.1 file to merge, so several members' copies
+            # merge against the clean 1.4.3 one (was one member only until 2026-11-13).
+            if carry.EXTRA_143.fullmatch(path) and path not in ported:
+                extras.setdefault(path, []).append((member["slug"], source))
+                continue
             if path in ported:
                 raise ValueError(f"{member['slug']}: {path} has no 1.2.1 file to carry it from")
             owners.setdefault(path, []).append((member["slug"], source))
@@ -433,7 +450,24 @@ def compose(args) -> int:
             unnamed[member["slug"]] = sum(key not in names for key in hashed)
 
     shutil.rmtree(romfs_out, ignore_errors=True)
-    files, merges = {}, {}
+    shutil.rmtree(extra_out.parent, ignore_errors=True)
+    extra143, files, merges = {}, {}, {}
+    for path, sources in sorted(extras.items()):
+        target = extra_out / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if len(sources) == 1:
+            shutil.copyfile(sources[0][1], target)
+        else:
+            if not args.romfs143:
+                raise ValueError(f"{path} is shipped by {[name for name, _ in sources]}: merging it needs --romfs143")
+            z143 = TotkZstd(args.romfs143)
+            raw, owners143 = merge_mals_exact(z143.decompress(args.romfs143 / path),
+                                              {name: z143.decompress(source) for name, source in sources})
+            target.write_bytes(z143.compress(raw, target.name))
+            if z143.decompress(target) != raw:
+                raise ValueError(f"{path} does not decompress to the merged bytes")
+            merges[path] = {"members": [name for name, _ in sources], "added": owners143, "raw_bytes": len(raw)}
+        extra143[path] = sha256(target.read_bytes())
     for path, sources in sorted(owners.items()):
         target = romfs_out / path
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -449,7 +483,7 @@ def compose(args) -> int:
             growth = len(raw) - len(clean)
             if path in TABLES:
                 floor = max(budget(resource), len(raw)) + max(4096, growth * 10)
-            elif path == MALS:
+            elif is_mals(path):
                 floor = max(budget(resource), len(raw)) + max(65536, growth * 4)
             else:
                 floor = max(budget(resource), len(raw)) + max(65536, growth * 10)
@@ -469,7 +503,7 @@ def compose(args) -> int:
                            encoding="utf-8", newline="\n")
     receipt = {"inputs_sha256": digest,
                "members": {member["slug"]: member["artifact"] for member in members},
-               "files": files, "merges": merges, "icons": icons, "forces": len(forces),
+               "files": files, "extra143": extra143, "merges": merges, "icons": icons, "forces": len(forces),
                "member_budgets_without_a_resource_name": unnamed,
                "member_143_files_left_to_port143": left_out}
     receipt_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8", newline="\n")
@@ -485,7 +519,8 @@ def port143(args) -> int:
     try:
         receipt = carry.run(args.output / "romfs", args.romfs, args.romfs143, args.output / "romfs143",
                             converter=args.xlink, sound_names=args.xlink_names,
-                            table121=args.output / "release-restbl" / RESOURCE_TABLE)
+                            table121=args.output / "release-restbl" / RESOURCE_TABLE,
+                            extra=args.output / "romfs143-extra")
     except carry.RebaseError as error:
         print(f"[fieldworks] 1.4.3 game files FAILED: {error}")
         return 1
@@ -527,6 +562,8 @@ def main() -> int:
     build = commands.add_parser("compose")
     build.add_argument("--romfs", type=Path, required=True, help="clean TotK 1.2.1 RomFS")
     build.add_argument("--output", type=Path, required=True, help="build directory")
+    build.add_argument("--romfs143", type=Path, help="clean TotK 1.4.3 files, to merge a 1.4.3-only text language "
+                                                     "several members ship")
     check_budgets = commands.add_parser("budgets")
     check_budgets.add_argument("--romfs", type=Path, required=True, help="clean TotK 1.2.1 RomFS")
     check_budgets.add_argument("--output", type=Path, required=True, help="build directory")

@@ -3,7 +3,7 @@ project(zonai_fieldworks_host_tests LANGUAGES CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_executable(zonai_fieldworks_switch_file_test switch_file_test.cpp)
-target_include_directories(zonai_fieldworks_switch_file_test PRIVATE ../src)
+target_include_directories(zonai_fieldworks_switch_file_test PRIVATE ../src ../../runtime-support/include)
 target_compile_features(zonai_fieldworks_switch_file_test PRIVATE cxx_std_23)
 target_compile_options(zonai_fieldworks_switch_file_test PRIVATE -Wall -Wextra -Werror)
 

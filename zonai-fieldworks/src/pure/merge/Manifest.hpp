@@ -22,7 +22,7 @@ struct Entry {
     u32 packed = 0, size = 0, eighths = 0, fixed = 0;
 };
 
-constexpr u32 kMaxEntries = 16;
+constexpr u32 kMaxEntries = 32;  // was 16 until every text language got an entry (2026-11-13)
 
 struct Manifest {
     Entry entries[kMaxEntries];

@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <string_view>
 
+#include "FieldworksText.hpp"
+
 namespace fieldworks::pure {
 
 // Missing members, unknown ids and malformed lines leave a member off.
@@ -53,18 +55,20 @@ enum class Pending : unsigned char {
     Unavailable,  // the member could not be installed, so it cannot turn on
 };
 
-// "Bivouac: On"; while a change waits: "Fleet Sync: Off when the current action ends".
-inline std::size_t switchCaption(const char16_t* name, bool saved, Pending pending, char16_t* out,
-                                 std::size_t capacity) {
+// "Bivouac: On", or while a change waits "Fleet Sync: Off when the current action ends", in one language.
+// `newAreas` adds Phantom Foothold's note that it shows only in newly loaded areas (not if it could not start).
+inline std::size_t switchCaption(const char16_t* name, bool saved, Pending pending, bool newAreas,
+                                 const text::Switches& words, char16_t* out, std::size_t capacity) {
     std::size_t at = 0;
     const auto append = [&](const char16_t* text) {
         for (; *text && at + 1 < capacity; ++text) out[at++] = *text;
     };
     if (!capacity) return 0;
     append(name);
-    append(saved ? u": On" : u": Off");
-    if (pending == Pending::Busy) append(u" when the current action ends");
-    if (pending == Pending::Unavailable) append(u" (could not start)");
+    append(saved ? words.on : words.off);
+    if (pending == Pending::Busy) append(words.afterAction);
+    if (pending == Pending::Unavailable) append(words.couldNotStart);
+    else if (newAreas) append(words.newAreas);
     out[at] = u'\0';
     return at;
 }

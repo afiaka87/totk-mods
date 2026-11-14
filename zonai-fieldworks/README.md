@@ -1,4 +1,22 @@
-# Zonai Fieldworks v0.9.9
+# Zonai Fieldworks v0.9.15
+
+## Changes in v0.9.15
+
+- Emulator and Switch downloads.
+- Text follows the game's language. BotW Abilities' item names and captions, the Cryonis aim
+  labels, the captions on the Fieldworks page, the Arrowbound emblem, Material Columns' sort-mode
+  name, Bivouac's camp shop and Zonai Survey's notice now appear in the language the game shows its
+  own text in. Before, BotW Abilities' items showed `MsgNotFound` in other languages and the rest
+  was English. Member names on the Fieldworks page stay in English.
+- Material Columns picks the game's text language, not the console's. The two differ when the game
+  has no text in the console's language.
+- The Cryonis aim labels now show inside Fieldworks, on 1.2.1 and 1.4.3.
+- The Champion ability icons no longer show on the game-over screen. They come back after Continue.
+- New member versions: Zonai Hookshot v0.12.7 (Arrowbound v0.2.7), Material Columns v0.1.7, BotW
+  Abilities v0.4.9, Bivouac v0.27.1 and Zonai Survey v0.4.3. Their standalone releases have not
+  been updated yet.
+- Played on Citron at 1.2.1 and 1.4.3 in English, German, Japanese, Korean, Spanish and Brazilian
+  Portuguese; the game-over change at 1.4.3. The v0.9.15 Switch download has not been played.
 
 ## Changes in v0.9.9
 
@@ -67,16 +85,17 @@ The standalone releases are still the right choice if you only want one or two o
 | Member | Version | What it does | Its own README |
 |---|---|---|---|
 | Phantom Foothold | v1.2.2 | Climb every surface with collision, ceilings included. | `../phantom-foothold/` |
-| Zonai Hookshot (with Arrowbound) | v0.12.5 | Chain to any climbable wall, zip along it and land in the climb. | `../zonai-hookshot/` |
+| Zonai Hookshot (with Arrowbound) | v0.12.7 | Chain to any climbable wall, zip along it and land in the climb. | `../zonai-hookshot/` |
 | Fleet Sync | v0.3.2 | Fly up to four identical vehicles from one Steering Stick. | `../fleet-sync/` |
-| Material Columns | v0.1.6 | A materials quick-menu mode that groups materials into families. | `../material-columns/` |
-| BotW Abilities | v0.4.4 | Stasis, Remote Bombs, Cryonis, Wolf Link and the four Champions' Blessings. | `../botw-abilities/` |
-| Bivouac | v0.27.0 | Eat an ingredient while climbing to build a camp you can travel back to. | `../bivouac/` |
+| Material Columns | v0.1.7 | A materials quick-menu mode that groups materials into families. | `../material-columns/` |
+| BotW Abilities | v0.4.9 | Stasis, Remote Bombs, Cryonis, Wolf Link and the four Champions' Blessings. | `../botw-abilities/` |
+| Bivouac | v0.27.1 | Eat an ingredient while climbing to build a camp you can travel back to. | `../bivouac/` |
 | Self Recall | v1.1.4 | Recall Link through his own movement history. | `../self-recall/` |
-| Zonai Survey | v0.4.2 | Scan the landscape for collectibles with names and icons. | `../zonai-survey/` |
+| Zonai Survey | v0.4.3 | Scan the landscape for collectibles with names and icons. | `../zonai-survey/` |
 
 Every member keeps the controls and behaviour of its standalone release. Read its README for how
-to use it.
+to use it. Zonai Hookshot, Material Columns, BotW Abilities, Bivouac and Zonai Survey are newer
+here than their own folders; the differences are the v0.9.15 changes above.
 
 Ultimate Ascend and Drive-by are patch-file mods. They are not part of Fieldworks and can be
 installed next to it.
@@ -84,9 +103,9 @@ installed next to it.
 ## Requirements
 
 - Tears of the Kingdom **1.2.1** or **1.4.3**.
-- Emulator download (v0.9.8): played on Citron at both versions (see Known issues).
-- Switch download (v0.9.9): for a Switch running Atmosphere, and for Ryujinx/Ryubing. Played on a Switch at
-  1.2.1 and 1.4.3 with The Second Quest. Not played on Ryujinx/Ryubing yet (v0.9.4 was, at 1.2.1).
+- Emulator download (v0.9.15): played on Citron at both versions (see Known issues).
+- Switch download (v0.9.15): for a Switch running Atmosphere, and for Ryujinx/Ryubing. Not played
+  yet; v0.9.9 was played on a Switch at 1.2.1 and 1.4.3 with The Second Quest.
 - Other game versions are untested. Material Columns, Self Recall and Zonai Survey support other
   versions on their own, but the Fieldworks wheel page is only available on 1.2.1 and 1.4.3.
 
@@ -117,7 +136,8 @@ The package carries its own resource-size tables (`ResourceSizeTable.Product.121
 ships the table for your game version, only one of the two is loaded. Fieldworks adds its own
 budgets when the other mod's table is the one loaded. When Fieldworks' table
 is the one loaded, the other mod's budgets are lost; merge the tables with a mod manager or expect
-missing items from that mod. The same holds for the other eight files listed under v0.9.8.
+missing items from that mod. The same holds for the other eight files listed under v0.9.8 and,
+since v0.9.15, the text archive of every language.
 
 ## Switching members
 
@@ -148,10 +168,13 @@ missing items from that mod. The same holds for the other eight files listed und
 - The Second Quest is the only other mod the shared-file change was tried with. If your emulator or
   mod manager loads Fieldworks' copy of a shared file and not the other mod's, the other mod still
   loses its changes to that file. Citron loads the copy from the folder whose name sorts first.
-- Without The Second Quest, v0.9.8 was played at 1.2.1 only, with the test setup's resource-size
-  table and not the one in the download.
-- The Switch download (v0.9.9) has not been played on Ryujinx/Ryubing, or on a Switch without The
-  Second Quest. Fleet Sync and Cryonis have not been checked on a Switch at 1.2.1.
+- In testing, the test setup's resource-size table was the one loaded and Fieldworks added its
+  budgets to it; the tables in the download have not been the ones loaded.
+- Fieldworks now adds its text to every language's text archive, not only English. Languages other
+  than English have not been played with The Second Quest.
+- The Switch download (v0.9.15) has not been played. Its v0.9.9 base was played on a Switch with
+  The Second Quest, but not on Ryujinx/Ryubing or on a Switch without The Second Quest. Fleet Sync
+  and Cryonis have not been checked on a Switch at 1.2.1.
 - With The Second Quest on Ryujinx/Ryubing, which copy of a shared file is loaded has not been checked.
 - Ryujinx closed once during a shield surf with Daruk's Protection up. It did not happen again and
   the cause is not known.
@@ -183,6 +206,9 @@ guarantee that it builds or works as-is.
   `EXL_MODULE_NAME "zonai-fieldworks"`, keep `EXL_USE_FAKEHEAP`, and use `HeapSize 0x80000`,
   `JitSize 0x20000`, `InlinePoolSize 0x4000`, `LogBufferSize 1024`.
 - Program ID `0100F2C0115B6000`, module `subsdk6`.
+- `src/pure/FieldworksText.hpp` holds the Fieldworks page's captions in every game language. It is
+  generated from the mod's text table; the language rule it uses is `totk/text/Language.hpp` in
+  `../runtime-support/`.
 - `src/fieldworks/generated/ClimbPatches.hpp` is Phantom Foothold's climbing patch as a table,
   written by `scripts/climb_patches.py`.
 - `scripts/compose_romfs.py` builds the package's game files from the members' release packages

@@ -215,7 +215,11 @@ def build_set(version: str, clean_root: Path, mine_root: Path, mine_table: Path,
     plans += [
         ("gamedata", "GameData/GameDataList.Product.*.byml.zs", gamedata_delta, 1, 4, 4 * SLACK),
         ("tag", "RSDB/Tag.Product.*.rstbl.byml.zs", tag_delta, 10, 4, SLACK),
-        ("messages", "Mals/USen.Product.*.sarc.zs", mals_delta, 1, 4, SLACK),
+    ]
+    # One entry per text language Fieldworks ships (was English only until 2026-11-13).
+    languages = sorted({path.name.split(".")[0] for path in mine_root.glob("Mals/*.Product.*.sarc.zs")})
+    plans += [("messages", f"Mals/{lang}.Product.*.sarc.zs", mals_delta, 1, 4, SLACK) for lang in languages]
+    plans += [
         ("sounds", "Sound/Resource/UI_Static.bars.zs", bank_delta, 0, 1, SLACK),
     ]
     entries = []
